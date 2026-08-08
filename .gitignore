@@ -1,0 +1,10 @@
+.env
+node_modules/
+admin/node_modules/
+admin/dist/
+dist/
+*.log
+.DS_Store
+.idea/
+.vscode/
+
