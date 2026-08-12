@@ -7,7 +7,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY admin/package.json ./
+COPY admin/package.json admin/package-lock.json ./
 RUN npm config set registry https://registry.npmmirror.com \
   && npm ci
 COPY admin/ ./
