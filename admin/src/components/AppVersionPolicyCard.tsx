@@ -38,15 +38,14 @@ function PolicyEditor({ platform }: { platform: Platform }) {
   const [saving, setSaving] = useState(false)
   const [exists, setExists] = useState(false)
   const [updatedAt, setUpdatedAt] = useState('')
-  const [enabled, setEnabled] = useState(false)
   const [messageApi, contextHolder] = message.useMessage()
+  const enabled = Form.useWatch('enabled', form) ?? false
 
   async function load() {
     setLoading(true)
     try {
       const policy = await api<AppVersionPolicy>(`/api/v1/settings/app-versions/${platform}`)
       form.setFieldsValue(policy)
-      setEnabled(policy.enabled)
       setExists(true)
       setUpdatedAt(policy.updated_at)
     } catch (error) {
@@ -54,7 +53,6 @@ function PolicyEditor({ platform }: { platform: Platform }) {
       if (error instanceof Error && error.message.includes('not found')) {
         const initial = emptyPolicy(platform)
         form.setFieldsValue(initial)
-        setEnabled(initial.enabled)
         setExists(false)
         setUpdatedAt('')
       } else {
@@ -79,7 +77,6 @@ function PolicyEditor({ platform }: { platform: Platform }) {
         body: JSON.stringify(values),
       })
       form.setFieldsValue(policy)
-      setEnabled(policy.enabled)
       setExists(true)
       setUpdatedAt(policy.updated_at)
       messageApi.success(policy.enabled ? '更新策略已发布' : '更新策略已停用')
@@ -102,8 +99,8 @@ function PolicyEditor({ platform }: { platform: Platform }) {
         description="保存只会写入 ivapp 的 app_versions 数据库；运营后台浏览器不会接触 ivapp 内部发布密钥。"
       />
       <Form form={form} layout="vertical" onFinish={(values) => void save(values)}>
-        <Form.Item name="enabled" label="启用更新策略" valuePropName="checked">
-          <Switch checkedChildren="启用" unCheckedChildren="停用" onChange={setEnabled} />
+        <Form.Item name="enabled" label="下发更新提示" valuePropName="checked">
+          <Switch checkedChildren="启用" unCheckedChildren="停用" />
         </Form.Item>
         <Space size={16} align="start" wrap>
           <Form.Item name="latest_version" label="最新版本号" rules={[{ required: true, message: '必填' }]}>
@@ -122,7 +119,14 @@ function PolicyEditor({ platform }: { platform: Platform }) {
         <Form.Item
           name="store_url"
           label="安装包 / 商店 HTTPS 地址"
-          rules={enabled ? [{ required: true, type: 'url', message: '启用时必须填写 HTTPS 地址' }] : []}
+          rules={enabled ? [
+            { required: true, type: 'url', message: '启用时必须填写 HTTPS 地址' },
+            {
+              validator: (_, value) => !value || String(value).startsWith('https://')
+                ? Promise.resolve()
+                : Promise.reject(new Error('地址必须使用 HTTPS')),
+            },
+          ] : []}
         >
           <Input placeholder="https://cdn.pixopixo.cn/apps/pixo-v1.0.13.apk" />
         </Form.Item>
@@ -163,10 +167,13 @@ function PolicyEditor({ platform }: { platform: Platform }) {
 
 export default function AppVersionPolicyCard() {
   return (
-    <Card className="page-card" title="App 更新策略" style={{ marginTop: 16 }}>
-      <Typography.Paragraph type="secondary">
-        先把签名后的 APK 上传到受控 HTTPS/CDN 地址，再填写此策略。最新构建号高于客户端构建号时提示更新；低于最低构建号时强制更新。
-      </Typography.Paragraph>
+    <Card className="page-card" title="平台策略">
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="最新构建号高于客户端时提示更新；低于最低构建号时强制更新。"
+      />
       <Tabs
         items={(['android', 'ios'] as const).map((platform) => ({
           key: platform,

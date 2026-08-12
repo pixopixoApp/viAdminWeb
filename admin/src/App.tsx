@@ -15,6 +15,8 @@ import StoryEditPage, { StoryRedirect } from './pages/StoryEditPage'
 import CreatorInvitesPage from './pages/CreatorInvitesPage'
 import ModerationPage from './pages/ModerationPage'
 import HtmlImportsPage from './pages/HtmlImportsPage'
+import AppVersionPolicyPage from './pages/AppVersionPolicyPage'
+import InteractionIntentCatalogPage from './pages/InteractionIntentCatalogPage'
 
 function Private({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth()
@@ -29,11 +31,11 @@ function ChangePasswordGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-function SettingsGate() {
+function AdminGate({ page }: { page: React.ReactNode }) {
   const { me, loading } = useAuth()
   if (loading) return null
   if (me?.role !== 'admin') return <Navigate to="/" replace />
-  return <SettingsPage />
+  return <>{page}</>
 }
 
 function StaffGate() {
@@ -80,7 +82,9 @@ function AppRoutes() {
         <Route path="moderation" element={<OperationsGate page={<ModerationPage />} />} />
         <Route path="html-imports" element={<OperationsGate page={<HtmlImportsPage />} />} />
         <Route path="staff" element={<StaffGate />} />
-        <Route path="settings" element={<SettingsGate />} />
+        <Route path="interaction-intents" element={<AdminGate page={<InteractionIntentCatalogPage />} />} />
+        <Route path="app-versions" element={<AdminGate page={<AppVersionPolicyPage />} />} />
+        <Route path="settings" element={<AdminGate page={<SettingsPage />} />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

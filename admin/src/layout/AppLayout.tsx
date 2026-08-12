@@ -3,6 +3,8 @@ import {
   KeyOutlined,
   LaptopOutlined,
   LogoutOutlined,
+  BulbOutlined,
+  CloudDownloadOutlined,
   SettingOutlined,
   TeamOutlined,
   SafetyCertificateOutlined,
@@ -66,6 +68,16 @@ export default function AppLayout() {
       : []),
     ...(me?.role === 'admin'
       ? [
+          {
+            key: '/interaction-intents',
+            icon: <BulbOutlined />,
+            label: <Link to="/interaction-intents">创作意图目录</Link>,
+          },
+          {
+            key: '/app-versions',
+            icon: <CloudDownloadOutlined />,
+            label: <Link to="/app-versions">App 更新策略</Link>,
+          },
           {
             key: '/settings',
             icon: <SettingOutlined />,

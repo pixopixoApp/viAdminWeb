@@ -247,20 +247,17 @@ export default function InteractionIntentCatalogCard() {
   return (
     <>
       {contextHolder}
-      <Typography.Title level={4} style={{ marginTop: 28 }}>
-        创作意图召回目录{' '}
-        {activeRevision !== null ? <Tag color="green">当前 v{activeRevision}</Tag> : null}
-      </Typography.Title>
-      <Typography.Paragraph type="secondary">
-        维护中文与英文常用说法到有效交互手势的映射。未召回或表达冲突时会自动使用原有完整手势流程，不会阻断作品生成。
-      </Typography.Paragraph>
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="版本在任务创建时快照：激活新版本只影响之后创建的分析任务，不改变正在运行或已经完成的任务。"
+        message="激活只影响之后创建的分析任务；未召回或表达冲突时会继续使用完整手势流程，不会阻断生成。"
       />
-      <Card className="page-card" loading={loading}>
+      <Card
+        className="page-card"
+        loading={loading}
+        title={activeRevision !== null ? <>版本管理 <Tag color="green">当前 v{activeRevision}</Tag></> : '版本管理'}
+      >
         <Space wrap style={{ marginBottom: 16 }}>
           <Select
             style={{ minWidth: 260 }}
@@ -284,8 +281,8 @@ export default function InteractionIntentCatalogCard() {
                 (item.note ? ' · ' + item.note : ''),
             }))}
           />
-          <Button onClick={() => void createDraft()} loading={busy}>
-            从当前生效版本新建草稿
+          <Button type="primary" onClick={() => void createDraft()} loading={busy}>
+            {activeRevision === null ? '创建第一版草稿' : '基于当前版本新建草稿'}
           </Button>
           <Button onClick={() => void reload(selectedRevision ?? undefined)} disabled={busy}>
             重新加载
@@ -354,7 +351,7 @@ export default function InteractionIntentCatalogCard() {
                 保存草稿
               </Button>
               <Button loading={busy} onClick={() => void onValidate()}>
-                校验
+                {detail.status === 'draft' ? '保存并校验' : '检查此版本'}
               </Button>
               <Button
                 type="primary"
@@ -363,7 +360,7 @@ export default function InteractionIntentCatalogCard() {
                 loading={busy}
                 onClick={() => void onActivate()}
               >
-                激活版本
+                保存并激活
               </Button>
               <Button loading={busy} onClick={() => void onRollback()}>
                 以此版本回滚
