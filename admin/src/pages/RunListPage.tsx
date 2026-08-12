@@ -1,5 +1,5 @@
 import { CloudUploadOutlined, EditOutlined, PlusOutlined, RobotOutlined } from '@ant-design/icons'
-import { Alert, Button, Form, Input, Modal, Radio, Segmented, Select, Space, Table, Tag, Typography, Upload, message } from 'antd'
+import { Alert, Button, Form, Input, InputNumber, Modal, Radio, Segmented, Select, Space, Table, Tag, Typography, Upload, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -27,18 +27,34 @@ type Run = {
   is_tutorial?: boolean
   created_by_name?: string | null
   created_at: string
+  updated_at?: string
+  source?: 'pgc' | 'ugc' | 'manual_upload'
+  content_type?: 'runtime' | 'html'
+  review_status?: 'pending' | 'approved' | 'rejected'
+  author_user_id?: string
+  author_nickname?: string
+  creation_status?: string
+  cover_url?: string
+  preview_url?: string
 }
 
 type ModelsResp = { default: string; items: { id: string }[] }
 
-type StatusFilter = 'all' | 'attention' | 'unpublished' | 'published' | 'processing'
+type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected'
+type SourceFilter = 'all' | 'pgc' | 'ugc' | 'manual_upload'
 
 const statusFilterOptions: { label: string; value: StatusFilter }[] = [
   { label: '全部', value: 'all' },
-  { label: '待处理', value: 'attention' },
-  { label: '待发布', value: 'unpublished' },
-  { label: '已发布', value: 'published' },
-  { label: '处理中', value: 'processing' },
+  { label: '待审核', value: 'pending' },
+  { label: '已发布', value: 'approved' },
+  { label: '已拒绝', value: 'rejected' },
+]
+
+const sourceOptions: { label: string; value: SourceFilter }[] = [
+  { label: '全部', value: 'all' },
+  { label: 'PGC', value: 'pgc' },
+  { label: 'UGC', value: 'ugc' },
+  { label: '手动上传', value: 'manual_upload' },
 ]
 
 const statusMeta: Record<string, { label: string; color: string }> = {
@@ -74,6 +90,7 @@ export default function RunListPage() {
   const [file, setFile] = useState<File | null>(null)
   const [engineReady, setEngineReady] = useState(true)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('pgc')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [form] = Form.useForm()
@@ -84,9 +101,7 @@ export default function RunListPage() {
     setLoading(true)
     try {
       const [data, settings] = await Promise.all([
-        api<{ items: Run[]; total: number }>(
-          `/api/v1/runs?status_filter=${statusFilter}&page=${page}&page_size=${pageSize}`,
-        ),
+        api<{ items: Run[]; total: number }>(`/api/v1/content-management?source=${sourceFilter}&status=${statusFilter}`),
         api<{ ready: boolean }>('/api/v1/settings/engine/ready'),
       ])
       setRows(data.items)
@@ -97,7 +112,7 @@ export default function RunListPage() {
     } finally {
       setLoading(false)
     }
-  }, [messageApi, statusFilter, page, pageSize])
+  }, [messageApi, statusFilter, sourceFilter, page, pageSize])
 
   useEffect(() => {
     void load()
@@ -122,19 +137,31 @@ export default function RunListPage() {
 
   const columns: ColumnsType<Run> = [
     {
+      title: '封面', key: 'cover', width: 88,
+      render: (_, row) => row.cover_url ? (
+        <img src={row.cover_url} alt="" style={{ width: 56, height: 76, objectFit: 'cover', borderRadius: 6 }} />
+      ) : row.preview_url && row.content_type !== 'html' ? (
+        <video src={row.preview_url} muted preload="metadata" style={{ width: 56, height: 76, objectFit: 'cover', borderRadius: 6, background: '#111' }} />
+      ) : <div style={{ width: 56, height: 76, borderRadius: 6, background: '#1f2937', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11 }}>{row.content_type === 'html' ? 'HTML' : '视频'}</div>,
+    },
+    {
       title: '标题',
       dataIndex: 'title',
       render: (_t, row) => (
         <Link
-          to={
+          to={row.source === 'manual_upload' ? '/html-imports' : (
             row.content_mode === 'story'
               ? `/stories/${row.id}/${row.analysis_version || '0.0.1'}`
               : `/runs/${row.id}`
-          }
+          )}
         >
           {row.title || row.source_filename}
         </Link>
       ),
+    },
+    {
+      title: '来源', key: 'source', width: 92,
+      render: (_, row) => <Tag color={row.source === 'ugc' ? 'purple' : row.source === 'manual_upload' ? 'cyan' : 'blue'}>{row.source === 'ugc' ? 'UGC' : row.source === 'manual_upload' ? '手动上传' : 'PGC'}</Tag>,
     },
     {
       title: '类型',
@@ -147,6 +174,9 @@ export default function RunListPage() {
       key: 'status',
       width: 150,
       render: (_, row) => {
+        if (row.review_status === 'pending') return <Tag color="orange">待审核</Tag>
+        if (row.review_status === 'rejected') return <Tag color="red">已拒绝</Tag>
+        if (row.review_status === 'approved') return <Tag color="green">已发布</Tag>
         if (row.processing_mode === 'manual' && row.status === 'no_playable_plan') {
           return <Tag color="purple">手动处理中</Tag>
         }
@@ -169,8 +199,8 @@ export default function RunListPage() {
       key: 'published_user',
       width: 160,
       render: (_, row) => {
-        if (!row.published_version && !row.published_user_id) return '-'
-        const name = row.published_user_nickname || row.published_user_id || '-'
+        if (!row.published_version && !row.published_user_id && !row.author_user_id) return '-'
+        const name = row.author_nickname || row.author_user_id || row.published_user_nickname || row.published_user_id || '-'
         if (row.published_user_enabled === false) {
           return (
             <Space size={4} wrap>
@@ -186,7 +216,26 @@ export default function RunListPage() {
       title: '权重',
       dataIndex: 'feed_weight',
       width: 72,
-      render: (v?: number) => (v == null ? 0 : v),
+      render: (v: number | undefined, row) => (
+        <InputNumber min={0} max={1_000_000} size="small" value={v ?? 0} style={{ width: 86 }}
+          onPressEnter={(event) => (event.currentTarget as HTMLInputElement).blur()}
+          onBlur={async (event) => {
+            const next = Number(event.target.value || 0)
+            if (next === (row.feed_weight ?? 0) || !row.review_status) return
+            try {
+              await api(`/api/v1/content-management/${row.id}/feed`, { method: 'PATCH', body: JSON.stringify({ feed_weight: next }) })
+              setRows((current) => current.map((item) => item.id === row.id ? { ...item, feed_weight: next } : item))
+              messageApi.success('权重已保存')
+            } catch (error) { messageApi.error(error instanceof Error ? error.message : '权重保存失败') }
+          }}
+        />
+      ),
+    },
+    {
+      title: '操作', key: 'actions', width: 160,
+      render: (_, row) => row.source === 'ugc' && row.review_status === 'pending' ? (
+        <Space><Button size="small" type="primary" onClick={async () => { try { await api(`/api/v1/content-management/${row.id}/review`, { method: 'POST', body: JSON.stringify({ status: 'approved' }) }); messageApi.success('已通过审核'); void load() } catch (e) { messageApi.error(e instanceof Error ? e.message : '审核失败') } }}>通过</Button><Button size="small" danger onClick={async () => { try { await api(`/api/v1/content-management/${row.id}/review`, { method: 'POST', body: JSON.stringify({ status: 'rejected' }) }); messageApi.success('已拒绝'); void load() } catch (e) { messageApi.error(e instanceof Error ? e.message : '审核失败') } }}>拒绝</Button></Space>
+      ) : <Space>{row.preview_url ? <Button size="small" href={row.preview_url} target="_blank">预览</Button> : null}<Button size="small" danger onClick={async () => { if (!window.confirm('确认下架并删除此发布内容？')) return; try { await api(`/api/v1/content-management/${row.id}`, { method: 'DELETE' }); messageApi.success('已下架'); void load() } catch (e) { messageApi.error(e instanceof Error ? e.message : '下架失败') } }}>下架</Button></Space>,
     },
     {
       title: '教学',
@@ -239,7 +288,7 @@ export default function RunListPage() {
       ) : null}
       <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between' }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          视频列表 <Typography.Text type="secondary">({total})</Typography.Text>
+          内容管理 <Typography.Text type="secondary">({total})</Typography.Text>
         </Typography.Title>
         <Space>
           <Button
@@ -274,6 +323,12 @@ export default function RunListPage() {
           setPage(1)
         }}
         style={{ marginBottom: 16 }}
+      />
+      <Segmented<SourceFilter>
+        value={sourceFilter}
+        options={sourceOptions}
+        onChange={(value) => { setSourceFilter(value); setPage(1) }}
+        style={{ margin: '0 0 16px 12px' }}
       />
       <Table
         rowKey="id"
