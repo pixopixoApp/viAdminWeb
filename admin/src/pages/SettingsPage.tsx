@@ -1,6 +1,8 @@
 import { Alert, Button, Card, Form, Input, Space, Tag, Typography, message } from 'antd'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import AppVersionPolicyCard from '../components/AppVersionPolicyCard'
+import InteractionIntentCatalogCard from '../components/InteractionIntentCatalogCard'
 
 type SecretField = {
   set: boolean
@@ -181,6 +183,8 @@ export default function SettingsPage() {
           </Space>
         </Form>
       </Card>
+      <InteractionIntentCatalogCard />
+      <AppVersionPolicyCard />
     </>
   )
 }

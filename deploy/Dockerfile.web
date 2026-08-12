@@ -9,7 +9,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY admin/package.json ./
 RUN npm config set registry https://registry.npmmirror.com \
-  && npm install
+  && npm ci
 COPY admin/ ./
 RUN npm run build
 

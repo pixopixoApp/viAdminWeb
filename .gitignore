@@ -2,9 +2,9 @@
 node_modules/
 admin/node_modules/
 admin/dist/
+admin/tsconfig.tsbuildinfo
 dist/
 *.log
 .DS_Store
 .idea/
 .vscode/
-

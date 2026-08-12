@@ -15,7 +15,7 @@ import {
   message,
 } from 'antd'
 import { QRCodeSVG } from 'qrcode.react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import FeedWeightInput from '../components/FeedWeightInput'
@@ -47,7 +47,6 @@ type Detail = {
     is_tutorial?: boolean
   }
   media: Record<string, unknown>
-  frames: { tier: string; pts_ms?: number; url?: string }[]
   analysis_refine: {
     model?: string
     interactions?: Record<string, unknown>[]
@@ -100,6 +99,7 @@ export default function RunDetailPage() {
   const [reanalyzing, setReanalyzing] = useState(false)
   const [switching, setSwitching] = useState(false)
   const [annotating, setAnnotating] = useState(false)
+  const annotateRequestId = useRef<string | null>(null)
   const [publishVersion, setPublishVersion] = useState<string | undefined>()
   const [publishUserId, setPublishUserId] = useState<string | undefined>()
   const [pickAccounts, setPickAccounts] = useState<PickAccount[]>([])
@@ -196,6 +196,28 @@ export default function RunDetailPage() {
   useEffect(() => {
     void loadPickAccounts()
   }, [loadPickAccounts])
+
+  useEffect(() => {
+    if (!id || !data || !['queued', 'running'].includes(data.run.status)) return
+    let polling = false
+    const timer = window.setInterval(async () => {
+      if (polling) return
+      polling = true
+      try {
+        const detail = await api<Detail>(`/api/v1/runs/${id}`)
+        if (['queued', 'running'].includes(detail.run.status)) {
+          setData(detail)
+        } else {
+          await load()
+        }
+      } catch {
+        // Keep the current state visible and retry; the normal load path owns errors.
+      } finally {
+        polling = false
+      }
+    }, 2_000)
+    return () => window.clearInterval(timer)
+  }, [data?.run.status, id, load])
 
   async function openReanalyze() {
     if (!data) return
@@ -403,16 +425,26 @@ export default function RunDetailPage() {
   async function onStartAnnotate() {
     if (!id || !data?.run.analysis_version) return
     setAnnotating(true)
+    const requestId = annotateRequestId.current || crypto.randomUUID()
+    annotateRequestId.current = requestId
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 30_000)
     try {
       const resp = await api<{ version: string }>(`/api/v1/runs/${id}/annotate/start`, {
         method: 'POST',
+        headers: { 'Idempotency-Key': requestId },
+        signal: controller.signal,
         body: JSON.stringify({ source_version: data.run.analysis_version }),
       })
+      annotateRequestId.current = null
       messageApi.success(`已创建 ${resp.version}-编辑中`)
       navigate(`/runs/${id}/annotate/${resp.version}`, { replace: true })
     } catch (err) {
-      messageApi.error(err instanceof Error ? err.message : '创建标注版本失败')
+      messageApi.error(err instanceof DOMException && err.name === 'AbortError'
+        ? '创建标注超时，可重试；系统会复用本次请求，不会重复创建版本'
+        : err instanceof Error ? err.message : '创建标注版本失败')
     } finally {
+      window.clearTimeout(timeout)
       setAnnotating(false)
     }
   }
@@ -436,6 +468,14 @@ export default function RunDetailPage() {
   const qrUrl = `${window.location.origin}${previewPath.startsWith('/') ? previewPath : `/${previewPath}`}`
   const businessStatus = published ? '已发布' : '待发布'
   const businessStatusColor = published ? 'green' : 'blue'
+  const generationStatus = {
+    queued: { label: '排队中', color: 'default' },
+    running: { label: '分析中', color: 'processing' },
+    ready: { label: '分析完成', color: 'green' },
+    failed: { label: '分析失败', color: 'red' },
+    no_interaction: { label: '未发现互动', color: 'orange' },
+    no_playable_plan: { label: '方案不可播放', color: 'orange' },
+  }[data.run.status] || { label: data.run.status, color: 'default' }
   return (
     <>
       {contextHolder}
@@ -458,6 +498,7 @@ export default function RunDetailPage() {
           </Typography.Text>
           <div style={{ marginTop: 10 }}>
             <Tag color={businessStatusColor}>{businessStatus}</Tag>
+            <Tag color={generationStatus.color}>{generationStatus.label}</Tag>
             {data.run.published_user_enabled === false ? (
               <Tag color="orange">发布账号已停用</Tag>
             ) : null}
@@ -531,7 +572,7 @@ export default function RunDetailPage() {
       <Card className="page-card" title="基本信息" size="small">
         <Descriptions column={2} size="small">
           <Descriptions.Item label="状态">
-            {businessStatus}
+            {generationStatus.label}
           </Descriptions.Item>
           <Descriptions.Item label="生成方式">{isManual ? '人工标注' : 'AI 生成'}</Descriptions.Item>
           <Descriptions.Item label="模型">{data.run.model_name}</Descriptions.Item>
@@ -597,29 +638,6 @@ export default function RunDetailPage() {
             gates={gates}
             durationMs={Number(data.media.duration_ms || 0) || undefined}
           />
-        </Card>
-      ) : null}
-
-      {!isManual ? (
-        <Card className="page-card" title={`抽帧 (${data.frames.length})`} size="small">
-          {data.frames.length === 0 ? (
-            <Empty description="暂无抽帧" />
-          ) : (
-            <div className="frame-grid">
-              {data.frames.map((frame, index) => (
-                <figure key={`${frame.tier}-${frame.pts_ms}-${index}`}>
-                  <div className="frame-thumb">
-                    {frame.url ? (
-                      <img src={frame.url} alt="" loading="lazy" />
-                    ) : null}
-                  </div>
-                  <figcaption>
-                    {frame.tier} · {frame.pts_ms != null ? `${(frame.pts_ms / 1000).toFixed(2)}s` : '-'}
-                  </figcaption>
-                </figure>
-              ))}
-            </div>
-          )}
         </Card>
       ) : null}
 

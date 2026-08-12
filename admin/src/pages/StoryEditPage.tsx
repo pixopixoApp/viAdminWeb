@@ -15,7 +15,7 @@ import {
 } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
-import { api, getToken } from '../api'
+import { api, sha256Hex, uploadToSignedOss } from '../api'
 import ClipOutcomesEditor, { type Outcomes } from '../components/ClipOutcomesEditor'
 import FeedWeightInput from '../components/FeedWeightInput'
 import PreviewPlayer, { GESTURE_LABEL } from '../components/PreviewPlayer'
@@ -444,22 +444,25 @@ export default function StoryEditPage() {
     if (!id) return false
     setUploading(true)
     try {
-      const body = new FormData()
-      body.append('video', file)
-      const headers = new Headers()
-      const token = getToken()
-      if (token) headers.set('Authorization', `Bearer ${token}`)
-      const response = await fetch(`/api/v1/stories/${id}/clips`, {
+      const checksum = await sha256Hex(file)
+      const session = await api<{
+        session_id: string
+        uploads: Array<{ url: string; fields: Record<string, string> }>
+      }>(`/api/v1/stories/${id}/clip-upload-sessions`, {
         method: 'POST',
-        headers,
-        body,
-        credentials: 'include',
+        body: JSON.stringify({
+          filename: file.name,
+          content_type: file.type || 'video/mp4',
+          size_bytes: file.size,
+          sha256: checksum,
+        }),
       })
-      if (!response.ok) {
-        const text = await response.text()
-        throw new Error(text || '上传失败')
-      }
-      const data = (await response.json()) as { story: StoryState; clip: ClipMeta }
+      if (session.uploads.length !== 1) throw new Error('服务端未返回有效上传策略')
+      await uploadToSignedOss(session.uploads[0], file)
+      const data = await api<{ story: StoryState; clip: ClipMeta }>(
+        `/api/v1/stories/${id}/clip-upload-sessions/${session.session_id}/finalize`,
+        { method: 'POST' },
+      )
       skipAutosave.current = true
       applyStory(data.story, data.clip.clip_id)
       messageApi.success('片段已添加')
@@ -876,7 +879,7 @@ export default function StoryEditPage() {
                       updateSelected({
                         gate_end_ms:
                           n == null
-                            ? null
+                            ? undefined
                             : Math.max(selected.gate_at_ms, Math.round(Number(n) * 1000)),
                       })
                     }

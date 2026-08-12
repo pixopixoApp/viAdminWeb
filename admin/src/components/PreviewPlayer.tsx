@@ -98,7 +98,8 @@ export default function PreviewPlayer({
     [gates],
   )
   const active = pausedAtGate ? sorted[index] : null
-  const totalMs = mediaDuration || durationMs || (sorted.at(-1)?.gate_at_ms ?? 1)
+  const totalMs =
+    mediaDuration || durationMs || (sorted.length ? sorted[sorted.length - 1].gate_at_ms : 1)
 
   // Remounted video (clip switch) must not keep play/gate state from the previous clip.
   useEffect(() => {

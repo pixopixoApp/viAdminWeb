@@ -457,7 +457,7 @@ export default function AnnotatePage() {
                   updateSelected({
                     gate_end_ms:
                       n == null
-                        ? null
+                        ? undefined
                         : Math.max(selected.gate_at_ms, Math.round(Number(n) * 1000)),
                   })
                 }

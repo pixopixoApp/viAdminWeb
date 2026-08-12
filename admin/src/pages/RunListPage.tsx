@@ -3,7 +3,7 @@ import { Alert, Button, Form, Input, Modal, Radio, Segmented, Select, Space, Tab
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, getToken } from '../api'
+import { api, sha256Hex, uploadToSignedOss } from '../api'
 import { formatServerTime } from '../time'
 
 type Run = {
@@ -306,36 +306,37 @@ export default function RunListPage() {
         onOk={async () => {
           const values = await form.validateFields()
           if (!file) return
-          const body = new FormData()
-          body.append('video', file)
-          body.append('processing_mode', values.processing_mode)
-          if (values.processing_mode === 'ai') {
-            body.append('model', values.model)
-            body.append('brief', values.brief || '')
-          }
-          body.append('title', (values.title || '').trim())
           setUploading(true)
           const manual = values.processing_mode === 'manual'
           const hide = messageApi.loading(
-            manual ? '正在创建手动标注任务…' : '分析中（可能需要 30–60 秒）…',
+            manual ? '正在创建手动标注任务…' : '正在上传并创建分析任务…',
             0,
           )
           try {
-            const headers = new Headers()
-            const token = getToken()
-            if (token) headers.set('Authorization', `Bearer ${token}`)
-            const response = await fetch('/api/v1/runs', {
+            const checksum = await sha256Hex(file)
+            const session = await api<{
+              session_id: string
+              uploads: Array<{ url: string; fields: Record<string, string> }>
+            }>('/api/v1/run-upload-sessions', {
               method: 'POST',
-              headers,
-              body,
-              credentials: 'include',
+              body: JSON.stringify({
+                filename: file.name,
+                content_type: file.type || 'video/mp4',
+                size_bytes: file.size,
+                sha256: checksum,
+                processing_mode: values.processing_mode,
+                model: values.processing_mode === 'ai' ? values.model : '',
+                brief: values.processing_mode === 'ai' ? values.brief || '' : '',
+                title: (values.title || '').trim(),
+              }),
             })
-            if (!response.ok) {
-              const data = await response.json().catch(() => ({}))
-              throw new Error(data.detail || response.statusText)
-            }
-            const run = (await response.json()) as Run
-            messageApi.success(manual ? '已创建，正在进入手动标注' : '分析完成，正在打开结果')
+            if (session.uploads.length !== 1) throw new Error('服务端未返回有效上传策略')
+            await uploadToSignedOss(session.uploads[0], file)
+            const run = await api<Run>(
+              `/api/v1/run-upload-sessions/${session.session_id}/finalize`,
+              { method: 'POST' },
+            )
+            messageApi.success(manual ? '已创建，正在进入手动标注' : '分析任务已创建')
             setOpen(false)
             navigate(
               manual && run.analysis_version

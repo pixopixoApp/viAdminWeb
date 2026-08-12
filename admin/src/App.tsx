@@ -12,6 +12,9 @@ import SettingsPage from './pages/SettingsPage'
 import AccountsPage from './pages/AccountsPage'
 import StaffPage from './pages/StaffPage'
 import StoryEditPage, { StoryRedirect } from './pages/StoryEditPage'
+import CreatorInvitesPage from './pages/CreatorInvitesPage'
+import ModerationPage from './pages/ModerationPage'
+import HtmlImportsPage from './pages/HtmlImportsPage'
 
 function Private({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth()
@@ -40,6 +43,13 @@ function StaffGate() {
   return <StaffPage />
 }
 
+function OperationsGate({ page }: { page: React.ReactNode }) {
+  const { me, loading } = useAuth()
+  if (loading) return null
+  if (me?.role !== 'admin' && me?.role !== 'manager') return <Navigate to="/" replace />
+  return <>{page}</>
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -66,6 +76,9 @@ function AppRoutes() {
         <Route path="stories/:id" element={<StoryRedirect />} />
         <Route path="stories/:id/:version" element={<StoryEditPage />} />
         <Route path="accounts" element={<AccountsPage />} />
+        <Route path="creator-invites" element={<OperationsGate page={<CreatorInvitesPage />} />} />
+        <Route path="moderation" element={<OperationsGate page={<ModerationPage />} />} />
+        <Route path="html-imports" element={<OperationsGate page={<HtmlImportsPage />} />} />
         <Route path="staff" element={<StaffGate />} />
         <Route path="settings" element={<SettingsGate />} />
       </Route>
