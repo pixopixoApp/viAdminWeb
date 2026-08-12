@@ -8,7 +8,6 @@ import {
   SettingOutlined,
   TeamOutlined,
   SafetyCertificateOutlined,
-  Html5Outlined,
   VideoCameraOutlined,
 } from '@ant-design/icons'
 import { Button, Layout, Menu, Typography, theme } from 'antd'
@@ -53,11 +52,6 @@ export default function AppLayout() {
             key: '/moderation',
             icon: <SafetyCertificateOutlined />,
             label: <Link to="/moderation">内容安全</Link>,
-          },
-          {
-            key: '/html-imports',
-            icon: <Html5Outlined />,
-            label: <Link to="/html-imports">HTML 内容</Link>,
           },
           {
             key: '/staff',

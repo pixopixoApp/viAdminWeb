@@ -26,6 +26,7 @@ type Props = {
 
 const FRAME_MS = 33
 const SECOND_MS = 1000
+const SLOW_MEDIA_LOAD_MS = 8_000
 
 export const GESTURE_LABEL: Record<string, string> = {
   tap: '点击',
@@ -90,6 +91,9 @@ export default function PreviewPlayer({
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const [mediaDuration, setMediaDuration] = useState(durationMs || 0)
+  const [mediaLoading, setMediaLoading] = useState(true)
+  const [mediaSlow, setMediaSlow] = useState(false)
+  const [mediaError, setMediaError] = useState<string | null>(null)
   const onSelectGateRef = useRef(onSelectGate)
   onSelectGateRef.current = onSelectGate
 
@@ -110,8 +114,66 @@ export default function PreviewPlayer({
     setPlaying(false)
     setProgress(0)
     setMediaDuration(durationMs || 0)
+    setMediaLoading(true)
+    setMediaSlow(false)
+    setMediaError(null)
     // Only reset when the media identity changes; durationMs is seed for the new clip.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: clip/run identity
+  }, [clipId, runId])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    let slowTimer: number | null = null
+    const clearSlowTimer = () => {
+      if (slowTimer != null) {
+        window.clearTimeout(slowTimer)
+        slowTimer = null
+      }
+    }
+    const beginLoading = () => {
+      clearSlowTimer()
+      setMediaLoading(true)
+      setMediaSlow(false)
+      setMediaError(null)
+      slowTimer = window.setTimeout(() => setMediaSlow(true), SLOW_MEDIA_LOAD_MS)
+    }
+    const mediaReady = () => {
+      clearSlowTimer()
+      setMediaLoading(false)
+      setMediaSlow(false)
+    }
+    const mediaFailed = () => {
+      clearSlowTimer()
+      setMediaLoading(false)
+      setMediaSlow(false)
+      const code = video.error?.code
+      const description = {
+        1: '视频加载已取消，请重试。',
+        2: '视频资源网络请求失败，请检查网络后重试。',
+        3: '视频文件无法解码，请重新上传或转码。',
+        4: '当前浏览器无法播放此视频格式。',
+      }[code || 0] || '视频资源暂时不可用，请稍后重试。'
+      setMediaError(description)
+    }
+    const markStalled = () => setMediaSlow(true)
+
+    video.addEventListener('loadstart', beginLoading)
+    video.addEventListener('waiting', beginLoading)
+    video.addEventListener('stalled', markStalled)
+    video.addEventListener('canplay', mediaReady)
+    video.addEventListener('playing', mediaReady)
+    video.addEventListener('error', mediaFailed)
+    beginLoading()
+    return () => {
+      clearSlowTimer()
+      video.removeEventListener('loadstart', beginLoading)
+      video.removeEventListener('waiting', beginLoading)
+      video.removeEventListener('stalled', markStalled)
+      video.removeEventListener('canplay', mediaReady)
+      video.removeEventListener('playing', mediaReady)
+      video.removeEventListener('error', mediaFailed)
+    }
   }, [clipId, runId])
 
   useEffect(() => {
@@ -164,6 +226,20 @@ export default function PreviewPlayer({
     }
   }, [annotate, index, pausedAtGate, ended, started, sorted, totalMs, onPlayheadChange])
 
+  async function requestPlay(video: HTMLVideoElement) {
+    setMediaError(null)
+    try {
+      await video.play()
+    } catch (error) {
+      setPlaying(false)
+      setMediaLoading(false)
+      const detail = error instanceof DOMException && error.name === 'NotAllowedError'
+        ? '浏览器阻止了自动播放，请再次点击播放。'
+        : '视频暂时无法开始播放，请重试。'
+      setMediaError(detail)
+    }
+  }
+
   function start() {
     const video = videoRef.current
     if (!video) return
@@ -173,7 +249,7 @@ export default function PreviewPlayer({
     setIndex(0)
     setProgress(0)
     video.currentTime = 0
-    void video.play()
+    void requestPlay(video)
   }
 
   function advance() {
@@ -186,7 +262,7 @@ export default function PreviewPlayer({
     if (!pausedAtGate) return
     setPausedAtGate(false)
     setIndex((value) => value + 1)
-    void video.play()
+    void requestPlay(video)
   }
 
   function resumePlay() {
@@ -200,12 +276,12 @@ export default function PreviewPlayer({
       setPausedAtGate(false)
       setIndex((value) => value + 1)
       setStarted(true)
-      void video.play()
+      void requestPlay(video)
       return
     }
     setStarted(true)
     setEnded(false)
-    void video.play()
+    void requestPlay(video)
   }
 
   function pausePlay() {
@@ -231,7 +307,7 @@ export default function PreviewPlayer({
     video.currentTime = clamped / 1000
     setProgress(clamped)
     onPlayheadChange?.(Math.round(clamped))
-    if (play && clamped < totalMs - 40) void video.play()
+    if (play && clamped < totalMs - 40) void requestPlay(video)
     else video.pause()
   }
 
@@ -318,6 +394,24 @@ export default function PreviewPlayer({
             draggable={false}
             onDragStart={(e) => e.preventDefault()}
           />
+          {mediaError ? (
+            <div className="preview-media-status is-error" role="alert" onClick={(e) => e.stopPropagation()}>
+              <strong>视频无法播放</strong>
+              <span>{mediaError}</span>
+              <Button size="small" onClick={() => {
+                setMediaError(null)
+                videoRef.current?.load()
+              }}>
+                重新加载
+              </Button>
+            </div>
+          ) : null}
+          {mediaLoading && !mediaError ? (
+            <div className="preview-media-status" role="status" aria-live="polite">
+              <span className="preview-media-spinner" aria-hidden="true" />
+              <span>{mediaSlow ? '视频资源响应较慢，仍在加载…' : '正在加载视频…'}</span>
+            </div>
+          ) : null}
           <div
             className={`preview-overlay${playing ? ' preview-overlay-playing' : ''}`}
             onClick={(e) => {

@@ -14,7 +14,6 @@ import StaffPage from './pages/StaffPage'
 import StoryEditPage, { StoryRedirect } from './pages/StoryEditPage'
 import CreatorInvitesPage from './pages/CreatorInvitesPage'
 import ModerationPage from './pages/ModerationPage'
-import HtmlImportsPage from './pages/HtmlImportsPage'
 import AppVersionPolicyPage from './pages/AppVersionPolicyPage'
 import InteractionIntentCatalogPage from './pages/InteractionIntentCatalogPage'
 
@@ -80,7 +79,7 @@ function AppRoutes() {
         <Route path="accounts" element={<AccountsPage />} />
         <Route path="creator-invites" element={<OperationsGate page={<CreatorInvitesPage />} />} />
         <Route path="moderation" element={<OperationsGate page={<ModerationPage />} />} />
-        <Route path="html-imports" element={<OperationsGate page={<HtmlImportsPage />} />} />
+        <Route path="html-imports" element={<OperationsGate page={<Navigate to="/?source=manual_upload" replace />} />} />
         <Route path="staff" element={<StaffGate />} />
         <Route path="interaction-intents" element={<AdminGate page={<InteractionIntentCatalogPage />} />} />
         <Route path="app-versions" element={<AdminGate page={<AppVersionPolicyPage />} />} />

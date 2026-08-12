@@ -2,8 +2,9 @@ import { CloudUploadOutlined, EditOutlined, PlusOutlined, RobotOutlined } from '
 import { Alert, Button, Form, Input, InputNumber, Modal, Radio, Segmented, Select, Space, Table, Tag, Typography, Upload, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, sha256Hex, uploadToSignedOss } from '../api'
+import HtmlImportsPage from './HtmlImportsPage'
 import { formatServerTime } from '../time'
 
 type Run = {
@@ -80,6 +81,7 @@ function formatDuration(ms?: number) {
 
 export default function RunListPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [rows, setRows] = useState<Run[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -90,14 +92,30 @@ export default function RunListPage() {
   const [file, setFile] = useState<File | null>(null)
   const [engineReady, setEngineReady] = useState(true)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('pgc')
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() => {
+    const source = searchParams.get('source')
+    return sourceOptions.some((option) => option.value === source)
+      ? source as SourceFilter
+      : 'pgc'
+  })
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [form] = Form.useForm()
   const processingMode = Form.useWatch<'ai' | 'manual'>('processing_mode', form) || 'ai'
   const [messageApi, contextHolder] = message.useMessage()
 
+  function selectSource(value: SourceFilter) {
+    setSourceFilter(value)
+    setPage(1)
+    setSearchParams(value === 'pgc' ? {} : { source: value })
+  }
+
   const load = useCallback(async () => {
+    if (sourceFilter === 'manual_upload') {
+      setRows([])
+      setTotal(0)
+      return
+    }
     setLoading(true)
     try {
       const [data, settings] = await Promise.all([
@@ -271,7 +289,7 @@ export default function RunListPage() {
   return (
     <>
       {contextHolder}
-      {!engineReady ? (
+      {!engineReady && sourceFilter !== 'manual_upload' ? (
         <Alert
           type="warning"
           showIcon
@@ -288,9 +306,9 @@ export default function RunListPage() {
       ) : null}
       <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between' }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
-          内容管理 <Typography.Text type="secondary">({total})</Typography.Text>
+          {sourceFilter === 'manual_upload' ? '内容管理' : <>内容管理 <Typography.Text type="secondary">({total})</Typography.Text></>}
         </Typography.Title>
-        <Space>
+        {sourceFilter !== 'manual_upload' ? <Space>
           <Button
             onClick={async () => {
               try {
@@ -313,23 +331,24 @@ export default function RunListPage() {
           <Button type="primary" icon={<PlusOutlined />} onClick={() => void openUpload()}>
             上传视频
           </Button>
-        </Space>
+        </Space> : null}
       </Space>
-      <Segmented<StatusFilter>
-        value={statusFilter}
-        options={statusFilterOptions}
-        onChange={(value) => {
-          setStatusFilter(value)
-          setPage(1)
-        }}
-        style={{ marginBottom: 16 }}
-      />
       <Segmented<SourceFilter>
         value={sourceFilter}
         options={sourceOptions}
-        onChange={(value) => { setSourceFilter(value); setPage(1) }}
-        style={{ margin: '0 0 16px 12px' }}
+        onChange={selectSource}
+        style={{ marginBottom: 16 }}
       />
+      {sourceFilter !== 'manual_upload' ? <>
+        <Segmented<StatusFilter>
+          value={statusFilter}
+          options={statusFilterOptions}
+          onChange={(value) => {
+            setStatusFilter(value)
+            setPage(1)
+          }}
+          style={{ margin: '0 0 16px 12px' }}
+        />
       <Table
         rowKey="id"
         loading={loading}
@@ -348,6 +367,7 @@ export default function RunListPage() {
           },
         }}
       />
+      </> : <HtmlImportsPage embedded />}
 
       <Modal
         title="上传视频"

@@ -280,6 +280,58 @@ body {
   -webkit-user-drag: none;
 }
 
+.preview-media-status {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 32px);
+  padding: 8px 12px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(15, 23, 42, 0.78);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.preview-media-spinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(255, 255, 255, 0.38);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: preview-media-spin 0.8s linear infinite;
+}
+
+.preview-media-status.is-error {
+  inset: 0;
+  transform: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 32px;
+  border-radius: 0;
+  text-align: center;
+  background: rgba(15, 23, 42, 0.88);
+  pointer-events: auto;
+}
+
+.preview-media-status.is-error span {
+  max-width: 260px;
+  color: rgba(255, 255, 255, 0.78);
+  line-height: 1.5;
+}
+
+@keyframes preview-media-spin {
+  to { transform: rotate(360deg); }
+}
+
 .preview-overlay {
   position: absolute;
   inset: 0;

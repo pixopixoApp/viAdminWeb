@@ -9,10 +9,15 @@ RUN apt-get update \
 WORKDIR /app
 COPY admin/package.json admin/package-lock.json ./
 # npm can omit Rollup's Linux optional binary when this lockfile was created on macOS.
-# Install the pinned binary in the Linux build image without changing the source lockfile.
+# Install the matching pinned binary in the Linux build image without changing the source lockfile.
 RUN npm config set registry https://registry.npmmirror.com \
   && npm ci \
-  && npm install --no-save --no-package-lock @rollup/rollup-linux-x64-gnu@4.62.4
+  && case "$(uname -m)" in \
+    x86_64) rollup_package='@rollup/rollup-linux-x64-gnu@4.62.4' ;; \
+    aarch64|arm64) rollup_package='@rollup/rollup-linux-arm64-gnu@4.62.4' ;; \
+    *) echo "Unsupported Linux CPU: $(uname -m)" >&2; exit 1 ;; \
+  esac \
+  && npm install --no-save --no-package-lock "$rollup_package"
 COPY admin/ ./
 RUN npm run build
 

@@ -43,6 +43,7 @@ type Detail = {
     published_user_id?: string | null
     published_user_nickname?: string | null
     published_user_enabled?: boolean | null
+    content_mode?: 'single' | 'story'
     feed_weight?: number
     is_tutorial?: boolean
   }
@@ -79,12 +80,13 @@ function versionOptionLabel(label: string, version: string, published?: string |
   return published && version === published ? `${label} - 已发布` : label
 }
 
-type AnalyticsLogItem = {
-  id: number
+type PlaybackMetrics = {
   video_id: string
-  token: string
-  data: string
-  created_at: string
+  unique_view_count: number
+  first_viewed_at?: string | null
+  last_viewed_at?: string | null
+  telemetry_event_count: number
+  last_telemetry_at?: string | null
 }
 
 export default function RunDetailPage() {
@@ -112,27 +114,24 @@ export default function RunDetailPage() {
   const [modelOptions, setModelOptions] = useState<string[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [engineReady, setEngineReady] = useState(true)
-  const [logs, setLogs] = useState<AnalyticsLogItem[]>([])
-  const [logsLoading, setLogsLoading] = useState(false)
-  const [logsError, setLogsError] = useState<string | null>(null)
+  const [playbackMetrics, setPlaybackMetrics] = useState<PlaybackMetrics | null>(null)
+  const [metricsLoading, setMetricsLoading] = useState(false)
   const [weightSaving, setWeightSaving] = useState(false)
   const [tutorialSaving, setTutorialSaving] = useState(false)
   const [messageApi, contextHolder] = message.useMessage()
 
-  const loadLogs = useCallback(async () => {
+  const loadPlaybackMetrics = useCallback(async () => {
     if (!id) return
-    setLogsLoading(true)
-    setLogsError(null)
+    setMetricsLoading(true)
     try {
-      const resp = await api<{ items: AnalyticsLogItem[] }>(
-        `/api/v1/runs/${id}/analytics-logs?limit=500`,
-      )
-      setLogs(resp.items || [])
-    } catch (e) {
-      setLogs([])
-      setLogsError(e instanceof Error ? e.message : String(e))
+      const metrics = await api<PlaybackMetrics>(`/api/v1/runs/${id}/metrics`)
+      setPlaybackMetrics(metrics)
+    } catch {
+      // Metrics are supplementary. A publication can have been removed between
+      // loading the Run and this request, so keep management actions available.
+      setPlaybackMetrics(null)
     } finally {
-      setLogsLoading(false)
+      setMetricsLoading(false)
     }
   }, [id])
 
@@ -144,6 +143,12 @@ export default function RunDetailPage() {
         api<Detail>(`/api/v1/runs/${id}`),
         api<{ ready: boolean }>('/api/v1/settings/engine/ready'),
       ])
+      if (detail.run.content_mode === 'story') {
+        navigate(`/stories/${id}/${detail.run.analysis_version || detail.versions?.[detail.versions.length - 1] || '0.0.1'}`, {
+          replace: true,
+        })
+        return
+      }
       const ver = detail.run.analysis_version
       if (detail.current_meta?.editing && ver) {
         navigate(`/runs/${id}/annotate/${ver}`, { replace: true })
@@ -162,14 +167,18 @@ export default function RunDetailPage() {
       setReanalyzeModel(detail.run.model_name)
       setReanalyzeBrief(String(detail.media.brief || ''))
       setReanalyzeNote('')
-      void loadLogs()
+      if (detail.run.published_version) {
+        void loadPlaybackMetrics()
+      } else {
+        setPlaybackMetrics(null)
+      }
       setLoading(false)
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '加载失败')
       setData(null)
       setLoading(false)
     }
-  }, [id, loadLogs, messageApi, navigate])
+  }, [id, loadPlaybackMetrics, messageApi, navigate])
 
   const loadPickAccounts = useCallback(async () => {
     setPickLoading(true)
@@ -505,8 +514,13 @@ export default function RunDetailPage() {
           </div>
         </div>
         <Space wrap>
-          <Button disabled={busy || !engineReady} onClick={() => void openReanalyze()}>
-            重新分析
+          {publishOptions.length > 0 ? (
+            <Button type="primary" disabled={busy} onClick={() => setPublishOpen(true)}>
+              {published ? '更新发布' : '发布'}
+            </Button>
+          ) : null}
+          <Button disabled={!canPlay || !qrUrl} onClick={() => setQrOpen(true)}>
+            扫码预览
           </Button>
           <Button
             disabled={busy || !data.run.analysis_version}
@@ -515,14 +529,9 @@ export default function RunDetailPage() {
           >
             手动标注
           </Button>
-          <Button disabled={!canPlay || !qrUrl} onClick={() => setQrOpen(true)}>
-            扫码预览
+          <Button disabled={busy || !engineReady} onClick={() => void openReanalyze()}>
+            重新分析
           </Button>
-          {publishOptions.length > 0 ? (
-            <Button type="primary" disabled={busy} onClick={() => setPublishOpen(true)}>
-              {published ? '更新发布' : '发布'}
-            </Button>
-          ) : null}
           {published ? (
             <Button danger loading={unpublishing} onClick={() => void onUnpublish()}>
               下架
@@ -531,57 +540,19 @@ export default function RunDetailPage() {
         </Space>
       </Space>
 
-      {versionInfos.length > 0 ? (
-        <div
-          style={{
-            marginBottom: 16,
-            padding: '10px 14px',
-            background: '#fff',
-            border: '1px solid #f0f0f0',
-            borderRadius: 8,
-          }}
-        >
-          <Space size="middle" wrap>
-            <Typography.Text strong>查看结果</Typography.Text>
-            <Typography.Text type="secondary">版本</Typography.Text>
-            <Select
-              style={{ width: 180 }}
-              value={data.run.analysis_version || undefined}
-              loading={switching}
-              options={versionInfos.map((v) => ({
-                value: v.version,
-                label: versionOptionLabel(v.label, v.version, published),
-              }))}
-              onChange={(v) => void onSwitchVersion(v)}
-              disabled={busy}
-            />
-            <Typography.Text type="secondary">
-              {isManual ? '人工标注' : 'AI 生成'}
-              {currentNote ? ` · ${currentNote}` : ''}
-            </Typography.Text>
-          </Space>
-        </div>
-      ) : null}
-
       {data.run.error_message ? (
         <Card className="page-card" title="错误" size="small">
           <Typography.Text type="danger">{data.run.error_message}</Typography.Text>
         </Card>
       ) : null}
 
-      <Card className="page-card" title="基本信息" size="small">
+      <Card className="page-card" title="发布与推荐" size="small">
         <Descriptions column={2} size="small">
-          <Descriptions.Item label="状态">
-            {generationStatus.label}
+          <Descriptions.Item label="上架状态">
+            <Tag color={businessStatusColor}>{businessStatus}</Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="生成方式">{isManual ? '人工标注' : 'AI 生成'}</Descriptions.Item>
-          <Descriptions.Item label="模型">{data.run.model_name}</Descriptions.Item>
-          <Descriptions.Item label="当前版本">
-            {versionInfos.find((v) => v.version === data.run.analysis_version)?.label ||
-              data.run.analysis_version ||
-              '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="已发布版本">{data.run.published_version || '-'}</Descriptions.Item>
+          <Descriptions.Item label="生成状态"><Tag color={generationStatus.color}>{generationStatus.label}</Tag></Descriptions.Item>
+          <Descriptions.Item label="已发布版本">{published || '-'}</Descriptions.Item>
           <Descriptions.Item label="发布账号">
             {data.run.published_user_nickname || data.run.published_user_id || '-'}
             {data.run.published_user_enabled === false ? (
@@ -609,6 +580,63 @@ export default function RunDetailPage() {
                 全站至多一条；未看时 Feed 置顶
               </Typography.Text>
             </Space>
+          </Descriptions.Item>
+        </Descriptions>
+      </Card>
+
+      {published ? (
+        <Card
+          className="page-card"
+          title="播放与分发数据"
+          size="small"
+          extra={<Button size="small" loading={metricsLoading} onClick={() => void loadPlaybackMetrics()}>刷新数据</Button>}
+        >
+          <Descriptions column={2} size="small">
+            <Descriptions.Item label="有效播放人数">
+              {metricsLoading && !playbackMetrics ? '加载中…' : playbackMetrics?.unique_view_count ?? '—'}
+            </Descriptions.Item>
+            <Descriptions.Item label="最近有效播放">
+              {playbackMetrics?.last_viewed_at ? formatServerTime(playbackMetrics.last_viewed_at) : '—'}
+            </Descriptions.Item>
+            <Descriptions.Item label="首次有效播放">
+              {playbackMetrics?.first_viewed_at ? formatServerTime(playbackMetrics.first_viewed_at) : '—'}
+            </Descriptions.Item>
+            <Descriptions.Item label="运行事件数">
+              {metricsLoading && !playbackMetrics ? '加载中…' : playbackMetrics?.telemetry_event_count ?? '—'}
+            </Descriptions.Item>
+          </Descriptions>
+          <Typography.Paragraph type="secondary" style={{ margin: '12px 0 0' }}>
+            有效播放人数只统计已登录用户在媒体实际开始播放后上报的去重记录；它用于 Feed 去重和播放计数。运行事件用于后续分析与技术排障，不作为播放量或推荐权重，也不会在此页下载逐条原始日志。
+          </Typography.Paragraph>
+        </Card>
+      ) : null}
+
+      <Card className="page-card" title="版本与素材" size="small">
+        {versionInfos.length > 0 ? (
+          <Space size="middle" wrap style={{ marginBottom: 16 }}>
+            <Typography.Text type="secondary">查看版本</Typography.Text>
+            <Select
+              style={{ width: 200 }}
+              value={data.run.analysis_version || undefined}
+              loading={switching}
+              options={versionInfos.map((v) => ({
+                value: v.version,
+                label: versionOptionLabel(v.label, v.version, published),
+              }))}
+              onChange={(v) => void onSwitchVersion(v)}
+              disabled={busy}
+            />
+            <Typography.Text type="secondary">
+              {isManual ? '人工标注' : 'AI 生成'}
+              {currentNote ? ` · ${currentNote}` : ''}
+            </Typography.Text>
+          </Space>
+        ) : null}
+        <Descriptions column={2} size="small">
+          <Descriptions.Item label="处理方式">{isManual ? '人工标注' : 'AI 生成'}</Descriptions.Item>
+          <Descriptions.Item label="模型">{data.run.model_name}</Descriptions.Item>
+          <Descriptions.Item label="当前版本">
+            {versionInfos.find((v) => v.version === data.run.analysis_version)?.label || data.run.analysis_version || '-'}
           </Descriptions.Item>
           <Descriptions.Item label="备注">{currentNote || '-'}</Descriptions.Item>
           <Descriptions.Item label="时长">
@@ -707,36 +735,6 @@ export default function RunDetailPage() {
       </Card>
       ) : null}
 
-      <Card
-        className="page-card"
-        title={`埋点日志 (${logs.length})`}
-        size="small"
-        extra={
-          <Button size="small" loading={logsLoading} onClick={() => void loadLogs()}>
-            刷新
-          </Button>
-        }
-      >
-        {logsError ? (
-          <Typography.Text type="danger">{logsError}</Typography.Text>
-        ) : (
-          <Table
-            size="small"
-            rowKey="id"
-            loading={logsLoading}
-            pagination={false}
-            dataSource={logs}
-            locale={{ emptyText: <Empty description="暂无埋点" /> }}
-            columns={[
-              { title: 'ID', dataIndex: 'id', width: 80 },
-              { title: 'token', dataIndex: 'token', width: 140, ellipsis: true },
-              { title: 'data', dataIndex: 'data', ellipsis: true },
-              { title: '时间', dataIndex: 'created_at', width: 200, render: (v: string) => formatServerTime(v) },
-            ]}
-          />
-        )}
-      </Card>
-
       <Modal
         title={published ? '更新发布' : '发布视频'}
         open={publishOpen}
@@ -783,7 +781,7 @@ export default function RunDetailPage() {
           >
             将《{displayTitle}》{publishVersion || '所选版本'}发布到所选 App 账号。
             Feed 权重：{data.run.feed_weight ?? 0}；教学视频：
-            {data.run.is_tutorial ? '是' : '否'}（可在基本信息中修改）
+            {data.run.is_tutorial ? '是' : '否'}（可在“发布与推荐”中修改）
           </Typography.Paragraph>
         </Space>
       </Modal>

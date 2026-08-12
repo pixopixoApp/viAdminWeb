@@ -13,7 +13,7 @@ type HtmlImport = {
 type UploadSession = { session_id: string; uploads: Array<{ client_ref: string; url: string; fields: Record<string, string> }> }
 const capabilities = ['motion', 'microphoneLevel', 'cameraStream', 'haptics', 'mediaControl']
 
-export default function HtmlImportsPage() {
+export default function HtmlImportsPage({ embedded = false }: { embedded?: boolean }) {
   const [rows, setRows] = useState<HtmlImport[]>([])
   const [loading, setLoading] = useState(false)
   const [selected, setSelected] = useState<HtmlImport | null>(null)
@@ -89,8 +89,16 @@ export default function HtmlImportsPage() {
 
   return <Space direction="vertical" size="middle" style={{ width: '100%' }}>
     {contextHolder}
-    <Card title="HTML 互动内容" extra={<Space><Button icon={<ReloadOutlined />} onClick={() => void load()}>刷新</Button><Upload {...uploadProps}><Button type="primary" icon={<CloudUploadOutlined />}>上传 ZIP</Button></Upload></Space>}>
-      <Alert type="info" showIcon message="源 ZIP 直传私有 OSS；平台会阻止外部脚本、iframe、HTTP 和越界路径。准备完成的包是不可变版本，发布前仍需 Android 真机验收。" />
+    <Card
+      title={embedded ? '手动上传 · HTML 互动内容' : 'HTML 互动内容'}
+      extra={<Space><Button icon={<ReloadOutlined />} onClick={() => void load()}>刷新</Button><Upload {...uploadProps}><Button type="primary" icon={<CloudUploadOutlined />}>上传 ZIP</Button></Upload></Space>}
+    >
+      <Alert
+        type="info"
+        showIcon
+        message="源 ZIP 直传私有 OSS；平台会阻止外部脚本、iframe、HTTP 和越界路径。准备完成的包是不可变版本，发布前仍需 Android 真机验收。"
+        description={embedded ? '操作顺序：上传 ZIP → 补全元数据 → 准备预览包 → Android 真机验收 → 确认发布。' : undefined}
+      />
     </Card>
     <Table rowKey="id" loading={loading} dataSource={rows} pagination={false} onRow={(row) => ({ onClick: () => { setSelected(row); form.setFieldsValue(row) } })} columns={[
       { title: '源包', dataIndex: 'source_filename' }, { title: '状态', dataIndex: 'status', render: (value) => <Tag>{value}</Tag> },
