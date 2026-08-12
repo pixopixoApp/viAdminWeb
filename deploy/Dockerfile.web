@@ -8,8 +8,11 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY admin/package.json admin/package-lock.json ./
+# npm can omit Rollup's Linux optional binary when this lockfile was created on macOS.
+# Install the pinned binary in the Linux build image without changing the source lockfile.
 RUN npm config set registry https://registry.npmmirror.com \
-  && npm ci
+  && npm ci \
+  && npm install --no-save --no-package-lock @rollup/rollup-linux-x64-gnu@4.62.4
 COPY admin/ ./
 RUN npm run build
 
