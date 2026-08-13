@@ -18,6 +18,10 @@ import type {
   Staff,
   StoryState,
   VersionInfo,
+  SeedanceSettings,
+  SeedanceSettingsPatch,
+  SeedanceGenerateParams,
+  SeedanceTask,
 } from '../types'
 
 export type {
@@ -39,6 +43,68 @@ export type {
   Staff,
   StoryState,
   VersionInfo,
+  SeedanceSettings,
+  SeedanceSettingsPatch,
+  SeedanceGenerateParams,
+  SeedanceTask,
+}
+
+// ── Seedance（AI 生成视频）────────────────────────
+
+const SEEDANCE_BASE = '/api/v1/seedance'
+
+export function getSeedanceSettings() {
+  return api<SeedanceSettings>(`${SEEDANCE_BASE}/api/settings`)
+}
+
+export function saveSeedanceSettings(body: SeedanceSettingsPatch) {
+  return api<SeedanceSettings>(`${SEEDANCE_BASE}/api/settings`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function uploadSeedanceVideo(file: File) {
+  const form = new FormData()
+  form.append('file', file, file.name)
+  return api<{ file: string }>(`${SEEDANCE_BASE}/api/upload`, {
+    method: 'POST',
+    body: form,
+  })
+}
+
+export function createSeedanceTask(body: SeedanceGenerateParams) {
+  return api<{ task: SeedanceTask }>(`${SEEDANCE_BASE}/api/generate`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function listSeedanceTasks(limit = 100) {
+  return api<{ tasks: SeedanceTask[] }>(`${SEEDANCE_BASE}/api/tasks?limit=${limit}`)
+}
+
+export function getSeedanceTask(taskId: string) {
+  return api<{ task: SeedanceTask }>(`${SEEDANCE_BASE}/api/tasks/${taskId}`)
+}
+
+export function cancelSeedanceTask(taskId: string) {
+  return api<{ task: SeedanceTask }>(`${SEEDANCE_BASE}/api/tasks/${taskId}/cancel`, {
+    method: 'POST',
+  })
+}
+
+export function deleteSeedanceTask(taskId: string) {
+  return api<{ ok: boolean }>(`${SEEDANCE_BASE}/api/tasks/${taskId}`, { method: 'DELETE' })
+}
+
+export function seedanceFileUrl(path: string): string {
+  return `${SEEDANCE_BASE}/${path.replace(/^\/+/, '')}`
+}
+
+export function seedanceVideoUrl(task: Pick<SeedanceTask, 'id' | 'video_file' | 'video_url'>): string {
+  if (task.video_file) return seedanceFileUrl(`videos/${task.id}.mp4`)
+  return task.video_url || ''
 }
 
 // ── Auth ──────────────────────────────────────────

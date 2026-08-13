@@ -8,6 +8,7 @@ import {
   SafetyCertificateOutlined,
   Html5Outlined,
   VideoCameraOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons'
 import type { ReactElement } from 'react'
 
@@ -55,6 +56,13 @@ export const menuConfig: MenuItemConfig[] = [
     path: '/html-imports',
     label: 'HTML 内容',
     icon: <Html5Outlined />,
+    permission: 'operator',
+  },
+  {
+    key: '/seedance',
+    path: '/seedance',
+    label: 'AI生成视频',
+    icon: <ThunderboltOutlined />,
     permission: 'operator',
   },
   {

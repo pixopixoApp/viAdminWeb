@@ -6,6 +6,7 @@ import App from './App'
 import { BRAND } from './brand'
 import { ThemeProvider, useTheme, type ThemeMode } from './theme'
 import './styles.css'
+import './styles/seedance.css'
 
 function brandTheme(mode: ThemeMode) {
   const dark = mode === 'dark'

@@ -3,7 +3,7 @@ import { Form, Input, Modal, Radio, Select, Tag, Typography, Upload } from 'antd
 import { useWatch } from 'antd/es/form/Form'
 import { sha256Hex, uploadToSignedOss } from '../../api'
 import { runsApi } from '../../services/api'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 type MessageApi = {
   success: (msg: string) => void
@@ -17,6 +17,8 @@ interface UploadRunModalProps {
   models: string[]
   defaultModel: string
   engineReady: boolean
+  initialVideo?: File | null
+  initialTitle?: string
   onClose: () => void
   onSuccess: (runId: string, analysisVersion: string | null | undefined, manual: boolean) => void
   messageApi: MessageApi
@@ -27,6 +29,8 @@ export default function UploadRunModal({
   models,
   defaultModel,
   engineReady,
+  initialVideo,
+  initialTitle,
   onClose,
   onSuccess,
   messageApi,
@@ -35,6 +39,15 @@ export default function UploadRunModal({
   const processingMode = useWatch<'ai' | 'manual'>('processing_mode', form) || 'ai'
   const [uploading, setUploading] = useState(false)
   const [file, setFile] = useState<File | null>(null)
+
+  useEffect(() => {
+    if (open && initialVideo) {
+      setFile(initialVideo)
+      form.setFieldsValue({
+        title: (initialTitle || initialVideo.name.replace(/\.mp4$/i, '') || initialVideo.name).trim(),
+      })
+    }
+  }, [open, initialVideo, initialTitle, form])
 
   const handleOk = async () => {
     const values = await form.validateFields()
