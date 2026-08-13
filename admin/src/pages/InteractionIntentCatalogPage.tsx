@@ -4,7 +4,7 @@ import InteractionIntentCatalogCard from '../components/InteractionIntentCatalog
 export default function InteractionIntentCatalogPage() {
   return (
     <>
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
+      <Typography.Title level={4} style={{ marginTop: 0 }} className="page-title">
         创作意图召回目录 <Tag color="blue">新任务生效</Tag>
       </Typography.Title>
       <Typography.Paragraph type="secondary">

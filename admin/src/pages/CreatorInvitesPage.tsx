@@ -206,7 +206,7 @@ export default function CreatorInvitesPage() {
       <Space direction="vertical" size={16} style={{ width: '100%' }}>
         <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
           <div>
-            <Typography.Title level={4} style={{ margin: 0 }}>创作兑换码</Typography.Title>
+            <Typography.Title level={4} style={{ margin: 0 }} className="page-title">创作兑换码</Typography.Title>
             <Typography.Text type="secondary">创建资格采用单次兑换；完整码仅在创建后展示一次。</Typography.Text>
           </div>
           <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>刷新</Button>

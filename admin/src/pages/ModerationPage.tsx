@@ -180,7 +180,7 @@ export default function ModerationPage() {
       <Space direction="vertical" size={16} style={{ width: '100%' }}>
         <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
           <div>
-            <Typography.Title level={4} style={{ margin: 0 }}>内容安全审核</Typography.Title>
+            <Typography.Title level={4} style={{ margin: 0 }} className="page-title">内容安全审核</Typography.Title>
             <Typography.Text type="secondary">共 {total} 条符合条件的举报</Typography.Text>
           </div>
           <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>刷新</Button>

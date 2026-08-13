@@ -331,6 +331,7 @@ export default function AnnotatePage() {
           <Typography.Title
             level={4}
             style={{ margin: 0 }}
+            className="page-title"
             editable={{
               tooltip: '点击修改标题',
               onChange: (v) => void onSaveTitle(v),

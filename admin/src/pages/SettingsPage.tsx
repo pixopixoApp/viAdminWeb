@@ -89,7 +89,7 @@ export default function SettingsPage() {
   return (
     <>
       {contextHolder}
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
+      <Typography.Title level={4} style={{ marginTop: 0 }} className="page-title">
         模型网关配置{' '}
         <Tag color={ready ? 'green' : 'orange'}>{ready ? '已就绪' : '未就绪'}</Tag>
       </Typography.Title>

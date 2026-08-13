@@ -305,7 +305,7 @@ export default function RunListPage() {
         />
       ) : null}
       <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between' }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
+        <Typography.Title level={4} style={{ margin: 0 }} className="page-title">
           {sourceFilter === 'manual_upload' ? '内容管理' : <>内容管理 <Typography.Text type="secondary">({total})</Typography.Text></>}
         </Typography.Title>
         {sourceFilter !== 'manual_upload' ? <Space>

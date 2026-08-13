@@ -200,7 +200,7 @@ export default function AccountsPage() {
     <>
       {contextHolder}
       <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between' }} wrap>
-        <Typography.Title level={4} style={{ margin: 0 }}>
+        <Typography.Title level={4} style={{ margin: 0 }} className="page-title">
           账号管理
         </Typography.Title>
         <Space wrap>

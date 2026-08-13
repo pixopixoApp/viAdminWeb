@@ -119,7 +119,7 @@ export default function StaffPage() {
     <>
       {contextHolder}
       <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between' }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
+        <Typography.Title level={4} style={{ margin: 0 }} className="page-title">
           人员管理
         </Typography.Title>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>

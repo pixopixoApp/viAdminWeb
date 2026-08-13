@@ -658,6 +658,7 @@ export default function StoryEditPage() {
           <Typography.Title
             level={4}
             style={{ margin: 0 }}
+            className="page-title"
             editable={
               editing
                 ? {

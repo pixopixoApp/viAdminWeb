@@ -3,7 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ivadmin</title>
+    <script>
+      try {
+        document.documentElement.dataset.theme =
+          localStorage.getItem('pixo-theme') === 'light' ? 'light' : 'dark'
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark'
+      }
+    </script>
+    <link rel="icon" type="image/svg+xml" href="/pixopixo-v4-app-icon.svg" />
+    <title>pixopixo 管理后台</title>
   </head>
   <body>
     <div id="root"></div>

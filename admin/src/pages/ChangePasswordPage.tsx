@@ -2,6 +2,7 @@ import { Button, Card, Form, Input, Typography, message } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth, type Me } from '../auth'
+import { BrandMark } from '../components/Brand'
 
 export default function ChangePasswordPage() {
   const navigate = useNavigate()
@@ -9,16 +10,16 @@ export default function ChangePasswordPage() {
   const [messageApi, contextHolder] = message.useMessage()
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'grid',
-        placeItems: 'center',
-        background: 'linear-gradient(160deg, #f0f5ff 0%, #f5f5f5 45%, #e6f4ff 100%)',
-      }}
-    >
+    <div className="auth-page">
       {contextHolder}
-      <Card style={{ width: 420 }} title="修改密码">
+      <Card className="auth-card auth-card-wide">
+        <div className="auth-brand auth-brand-compact">
+          <BrandMark size={34} animated />
+          <div className="auth-brand-text">
+            <span className="auth-wordmark auth-wordmark-compact">修改密码</span>
+            <span className="auth-kicker">PIXOPIXO · INTERNAL ADMIN</span>
+          </div>
+        </div>
         <Typography.Paragraph type="secondary">
           首次登录或管理员重置后，需要设置新密码才能继续使用。
         </Typography.Paragraph>
@@ -65,7 +66,7 @@ export default function ChangePasswordPage() {
           <Form.Item name="confirm_password" label="确认新密码" rules={[{ required: true }]}>
             <Input.Password />
           </Form.Item>
-          <Button type="primary" htmlType="submit" block>
+          <Button type="primary" htmlType="submit" block size="large">
             保存并进入系统
           </Button>
         </Form>
