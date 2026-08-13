@@ -34,11 +34,10 @@ export default function UploadRunModal({
   const [form] = Form.useForm()
   const processingMode = useWatch<'ai' | 'manual'>('processing_mode', form) || 'ai'
   const [uploading, setUploading] = useState(false)
-  const fileRef = { current: null as File | null }
+  const [file, setFile] = useState<File | null>(null)
 
   const handleOk = async () => {
     const values = await form.validateFields()
-    const file = fileRef.current
     if (!file) return
     setUploading(true)
     const manual = values.processing_mode === 'manual'
@@ -74,7 +73,7 @@ export default function UploadRunModal({
   const handleCancel = () => {
     if (uploading) return
     form.resetFields()
-    fileRef.current = null
+    setFile(null)
     onClose()
   }
 
@@ -87,7 +86,7 @@ export default function UploadRunModal({
       onCancel={handleCancel}
       okText={processingMode === 'manual' ? '进入手动标注' : '开始分析'}
       confirmLoading={uploading}
-      okButtonProps={{ disabled: !fileRef.current || (processingMode === 'ai' && !engineReady) }}
+      okButtonProps={{ disabled: !file || (processingMode === 'ai' && !engineReady) }}
       onOk={handleOk}
     >
       <Form
@@ -102,19 +101,19 @@ export default function UploadRunModal({
             maxCount={1}
             showUploadList={false}
             beforeUpload={(f) => {
-              fileRef.current = f
+              setFile(f)
               if (!form.getFieldValue('title')) {
                 form.setFieldsValue({ title: f.name.replace(/\.mp4$/i, '') || f.name })
               }
               return false
             }}
-            onRemove={() => { fileRef.current = null }}
+            onRemove={() => setFile(null)}
           >
             <CloudUploadOutlined className="upload-video-icon" />
             <div className="upload-video-copy">
-              <Typography.Text strong>{fileRef.current?.name || '点击或拖入 MP4 视频'}</Typography.Text>
+              <Typography.Text strong>{file?.name || '点击或拖入 MP4 视频'}</Typography.Text>
               <Typography.Text type="secondary">
-                {fileRef.current ? `${formatBytes(fileRef.current.size)} · 点击可重新选择` : '单个文件，最大 100 MB'}
+                {file ? `${formatBytes(file.size)} · 点击可重新选择` : '单个文件，最大 100 MB'}
               </Typography.Text>
             </div>
           </Upload.Dragger>
