@@ -2,27 +2,11 @@ import { PlusOutlined } from '@ant-design/icons'
 import { Button, Form, Input, Modal, Select, Space, Table, Tag, Typography, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useState } from 'react'
-import { api } from '../api'
+import { staffApi } from '../services/api'
 import { useAuth } from '../auth'
 import { formatServerTime } from '../time'
-
-type Staff = {
-  id: number
-  username: string
-  display_name: string
-  role: string
-  status: string
-  must_change_password: boolean
-  run_count: number
-  last_login_at?: string | null
-  created_at?: string | null
-}
-
-const roleLabel: Record<string, string> = {
-  admin: '超级管理员',
-  manager: '管理员',
-  operator: '运营',
-}
+import type { Staff } from '../types/account'
+import { roleLabel } from '../types/account'
 
 export default function StaffPage() {
   const { me } = useAuth()
@@ -37,7 +21,7 @@ export default function StaffPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await api<{ items: Staff[]; total: number }>('/api/v1/staff?page=1&page_size=200')
+      const data = await staffApi.list()
       setRows(data.items)
       setTotal(data.total)
     } catch (err) {
@@ -104,10 +88,7 @@ export default function StaffPage() {
 
   async function setStatus(row: Staff, status: string) {
     try {
-      await api(`/api/v1/staff/${row.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status }),
-      })
+      await staffApi.updateStatus(row.id, status)
       messageApi.success('已更新')
       await load()
     } catch (err) {
@@ -140,10 +121,7 @@ export default function StaffPage() {
           layout="vertical"
           onFinish={async (values) => {
             try {
-              await api('/api/v1/staff', {
-                method: 'POST',
-                body: JSON.stringify(values),
-              })
+              await staffApi.create(values)
               messageApi.success('已创建，对方首次登录须改密')
               setCreateOpen(false)
               await load()
@@ -203,10 +181,7 @@ export default function StaffPage() {
           onFinish={async (values) => {
             if (!resetOpen) return
             try {
-              await api(`/api/v1/staff/${resetOpen.id}/reset-password`, {
-                method: 'POST',
-                body: JSON.stringify(values),
-              })
+              await staffApi.resetPassword(resetOpen.id, values.password)
               messageApi.success('已重置，对方下次登录须改密')
               setResetOpen(null)
               await load()

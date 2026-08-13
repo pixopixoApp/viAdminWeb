@@ -13,47 +13,13 @@ import {
 } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api } from '../api'
-import PreviewPlayer, { GESTURE_LABEL } from '../components/PreviewPlayer'
+import { annotateApi, runsApi } from '../services/api'
+import type { Interaction, SaveStatus } from '../types/interaction'
+import { versionOptionLabel, GESTURE_LABEL } from '../types/interaction'
+import type { AnnotateState, VersionInfo } from '../types/run'
+import PreviewPlayer from '../components/PreviewPlayer'
 
 const GESTURES = Object.entries(GESTURE_LABEL).map(([value, label]) => ({ value, label }))
-
-type Interaction = {
-  gate_at_ms: number
-  gate_end_ms?: number
-  gesture: string
-  hint?: string
-  custom_action?: boolean
-  action_description?: string
-  gameplay_description?: string
-  reaction_start_ms?: number
-  reaction_end_ms?: number
-}
-
-type VersionInfo = {
-  version: string
-  label: string
-  editing: boolean
-  kind?: string
-  note?: string
-}
-
-type AnnotateState = {
-  version: string
-  label: string
-  editing: boolean
-  note: string
-  timeline: {
-    interactions?: Interaction[]
-    media?: { duration_ms?: number; width?: number; height?: number }
-  }
-}
-
-type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
-
-function versionOptionLabel(label: string, ver: string, published?: string | null) {
-  return published && ver === published ? `${label} - 已发布` : label
-}
 
 export default function AnnotatePage() {
   const { id, version } = useParams()
@@ -80,12 +46,8 @@ export default function AnnotatePage() {
     setLoading(true)
     try {
       const [data, detail] = await Promise.all([
-        api<AnnotateState>(`/api/v1/runs/${id}/annotate/${version}`),
-        api<{
-          media?: { filename?: string; title?: string }
-          version_infos?: VersionInfo[]
-          run?: { analysis_version?: string; title?: string; published_version?: string | null }
-        }>(`/api/v1/runs/${id}`).catch(() => null),
+        annotateApi.getState(id!, version!),
+        runsApi.get(id!).catch(() => null),
       ])
       if (!data.editing) {
         messageApi.info('该版本已定稿')
@@ -147,10 +109,7 @@ export default function AnnotatePage() {
     const gen = ++saveGen.current
     setSaveStatus('saving')
     try {
-      const data = await api<AnnotateState>(`/api/v1/runs/${id}/annotate/${version}`, {
-        method: 'PUT',
-        body: JSON.stringify({ timeline: timelinePayload, note }),
-      })
+      const data = await annotateApi.saveState(id!, version!, timelinePayload, note)
       if (gen !== saveGen.current) return
       skipAutosave.current = true
       setState(data)
@@ -188,10 +147,7 @@ export default function AnnotatePage() {
     const target = versionInfos.find((v) => v.version === nextVersion)
     setSwitching(true)
     try {
-      await api(`/api/v1/runs/${id}/versions/current`, {
-        method: 'POST',
-        body: JSON.stringify({ version: nextVersion }),
-      })
+      await runsApi.switchRunVersion(id!, nextVersion)
       if (target?.editing) {
         navigate(`/runs/${id}/annotate/${nextVersion}`, { replace: true })
       } else {
@@ -209,10 +165,7 @@ export default function AnnotatePage() {
     const text = next.trim()
     if (!text || text === displayTitle) return
     try {
-      const updated = await api<{ title: string }>(`/api/v1/runs/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ title: text }),
-      })
+      const updated = await runsApi.updateRunTitle(id!, text)
       setDisplayTitle(updated.title || text)
       messageApi.success('标题已更新')
     } catch (err) {
@@ -228,10 +181,7 @@ export default function AnnotatePage() {
     }
     setFinalizing(true)
     try {
-      await api(`/api/v1/runs/${id}/annotate/${version}/finalize`, {
-        method: 'POST',
-        body: JSON.stringify({ timeline: timelinePayload, note }),
-      })
+      await annotateApi.finalize(id!, version!, timelinePayload, note)
       messageApi.success(`已定稿 ${version}`)
       navigate(`/runs/${id}`, { replace: true })
     } catch (err) {

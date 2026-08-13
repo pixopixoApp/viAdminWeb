@@ -15,26 +15,11 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useState } from 'react'
-import { api } from '../api'
-
-type InviteStatus = 'unused' | 'redeemed' | 'revoked'
-type Invite = {
-  id: number
-  code_hint: string
-  enabled: boolean
-  status: InviteStatus
-  redeemed_by_user_id?: string | null
-  redeemed_by_label: string
-  redeemed_at?: string | null
-  created_at: string
-}
+import { invitesApi } from '../services/api'
+import type { Invite, InviteStatus } from '../types/report'
+import { inviteStatusMeta } from '../types/report'
 
 const PAGE_SIZE = 50
-const statusMeta: Record<InviteStatus, { label: string; color: string }> = {
-  unused: { label: '未兑换', color: 'green' },
-  redeemed: { label: '已兑换', color: 'blue' },
-  revoked: { label: '已销毁', color: 'default' },
-}
 
 export default function CreatorInvitesPage() {
   const [rows, setRows] = useState<Invite[]>([])
@@ -52,15 +37,12 @@ export default function CreatorInvitesPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({
-        limit: String(PAGE_SIZE),
-        offset: String((page - 1) * PAGE_SIZE),
+      const data = await invitesApi.listInvites({
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+        ...(status ? { status } : {}),
+        ...(query.trim() ? { q: query.trim() } : {}),
       })
-      if (status) params.set('status', status)
-      if (query.trim()) params.set('q', query.trim())
-      const data = await api<{ items: Invite[]; total: number }>(
-        `/api/v1/creator-invites?${params.toString()}`,
-      )
       setRows(data.items)
       setTotal(data.total)
       setSelectedKeys([])
@@ -78,10 +60,7 @@ export default function CreatorInvitesPage() {
   async function createCodes() {
     setCreating(true)
     try {
-      const data = await api<{ codes: string[] }>('/api/v1/creator-invites', {
-        method: 'POST',
-        body: JSON.stringify({ count }),
-      })
+      const data = await invitesApi.createInvites(count)
       setGeneratedCodes(data.codes)
       messageApi.success(`已创建 ${data.codes.length} 个兑换码`)
       if (page === 1) {
@@ -106,14 +85,7 @@ export default function CreatorInvitesPage() {
       cancelText: '取消',
       async onOk() {
         try {
-          const data = await api<{
-            revoked_ids: number[]
-            skipped_redeemed_ids: number[]
-            missing_ids: number[]
-          }>('/api/v1/creator-invites/revoke', {
-            method: 'POST',
-            body: JSON.stringify({ invite_ids: ids }),
-          })
+          const data = await invitesApi.revokeInvites(ids)
           messageApi.success(`已销毁 ${data.revoked_ids.length} 个兑换码`)
           if (data.skipped_redeemed_ids.length) {
             messageApi.warning(`${data.skipped_redeemed_ids.length} 个已兑换码未销毁`)
@@ -137,9 +109,7 @@ export default function CreatorInvitesPage() {
       cancelText: '取消',
       async onOk() {
         try {
-          await api(`/api/v1/creator-access/${row.redeemed_by_user_id}/revoke`, {
-            method: 'POST',
-          })
+          await invitesApi.revokeCreatorAccess(row.redeemed_by_user_id!)
           messageApi.success('创作权限已撤销')
           await load()
         } catch (error) {
@@ -162,7 +132,7 @@ export default function CreatorInvitesPage() {
       dataIndex: 'status',
       width: 100,
       render: (value: InviteStatus) => (
-        <Tag color={statusMeta[value].color}>{statusMeta[value].label}</Tag>
+        <Tag color={inviteStatusMeta[value].color}>{inviteStatusMeta[value].label}</Tag>
       ),
     },
     {
@@ -230,7 +200,7 @@ export default function CreatorInvitesPage() {
                 style={{ width: 140 }}
                 value={status}
                 onChange={(value) => { setPage(1); setStatus(value) }}
-                options={Object.entries(statusMeta).map(([value, meta]) => ({ value, label: meta.label }))}
+                options={Object.entries(inviteStatusMeta).map(([value, meta]) => ({ value, label: meta.label }))}
               />
               <Input.Search
                 allowClear

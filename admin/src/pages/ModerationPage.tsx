@@ -2,34 +2,9 @@ import { CheckOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons'
 import { Button, Card, Modal, Select, Space, Table, Tag, Typography, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useState } from 'react'
-import { api } from '../api'
-
-type ReportStatus = 'pending' | 'actioned' | 'dismissed'
-type Report = {
-  id: string
-  reporter_user_id: string
-  reporter_label: string
-  target_type: 'video' | 'user'
-  target_id: string
-  target_user_id?: string | null
-  target_label: string
-  reason: string
-  details: string
-  status: ReportStatus
-  resolution: string
-  reviewed_by: string
-  created_at: string
-}
-
-const reasonLabels: Record<string, string> = {
-  spam: '垃圾或误导内容',
-  harassment: '骚扰或欺凌',
-  hate_or_violence: '仇恨或暴力',
-  dangerous_acts: '危险行为',
-  sexual_content: '裸露或色情内容',
-  intellectual_property: '知识产权问题',
-  other: '其他',
-}
+import { moderationApi } from '../services/api'
+import type { Report, ReportStatus } from '../types/report'
+import { reasonLabels } from '../types/report'
 const PAGE_SIZE = 50
 
 export default function ModerationPage() {
@@ -45,15 +20,12 @@ export default function ModerationPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({
-        limit: String(PAGE_SIZE),
-        offset: String((page - 1) * PAGE_SIZE),
+      const data = await moderationApi.listReports({
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+        ...(status ? { status } : {}),
+        ...(targetType ? { target_type: targetType } : {}),
       })
-      if (status) params.set('status', status)
-      if (targetType) params.set('target_type', targetType)
-      const data = await api<{ items: Report[]; total: number }>(
-        `/api/v1/moderation/reports?${params.toString()}`,
-      )
       setRows(data.items)
       setTotal(data.total)
     } catch (error) {
@@ -84,10 +56,7 @@ export default function ModerationPage() {
       async onOk() {
         setActingId(row.id)
         try {
-          await api(`/api/v1/moderation/reports/${row.id}/decision`, {
-            method: 'POST',
-            body: JSON.stringify({ ...decision, resolution: actionLabel }),
-          })
+          await moderationApi.decideReport(row.id, { ...decision, resolution: actionLabel })
           messageApi.success(`${actionLabel}成功`)
           await load()
         } catch (error) {

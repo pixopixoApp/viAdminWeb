@@ -1,22 +1,6 @@
 import { Alert, Button, Card, Form, Input, Space, Tag, Typography, message } from 'antd'
 import { useEffect, useState } from 'react'
-import { api } from '../api'
-
-type SecretField = {
-  set: boolean
-  source: string
-  value: string
-  hint: string
-}
-
-type EngineSettings = {
-  ready: boolean
-  dify_base_url: string
-  model_base_url: string
-  model_name_default: string
-  dify_api_key: SecretField
-  model_api_key: SecretField
-}
+import { engineApi } from '../services/api'
 
 type FormValues = {
   model_base_url: string
@@ -36,7 +20,7 @@ export default function SettingsPage() {
   async function load() {
     setLoading(true)
     try {
-      const data = await api<EngineSettings>('/api/v1/settings/engine')
+      const data = await engineApi.getSettings()
       form.setFieldsValue({
         model_base_url: data.model_base_url,
         model_name_default: data.model_name_default,
@@ -59,17 +43,14 @@ export default function SettingsPage() {
   async function onSave(values: FormValues) {
     setSaving(true)
     try {
-      const body: Record<string, string> = {
+      const body: { model_base_url: string; model_name_default: string; model_api_key?: string } = {
         model_base_url: values.model_base_url,
         model_name_default: values.model_name_default,
       }
       if (values.model_api_key && values.model_api_key.trim()) {
         body.model_api_key = values.model_api_key.trim()
       }
-      const data = await api<EngineSettings>('/api/v1/settings/engine', {
-        method: 'PUT',
-        body: JSON.stringify(body),
-      })
+      const data = await engineApi.saveSettings(body)
       form.setFieldsValue({
         model_base_url: data.model_base_url,
         model_name_default: data.model_name_default,
