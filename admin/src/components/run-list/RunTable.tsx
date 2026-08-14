@@ -53,7 +53,7 @@ export default function RunTable({
       dataIndex: 'title',
       render: (_t, row) => (
         <Link
-          to={row.source === 'manual_upload' ? '/html-imports' : (
+          to={row.source === 'manual_upload' ? '/html-imports' : row.has_run === false ? `/content/${row.id}` : (
             row.content_mode === 'story'
               ? `/stories/${row.id}/${row.analysis_version || '0.0.1'}`
               : `/runs/${row.id}`
@@ -134,6 +134,9 @@ export default function RunTable({
         </Space>
       ) : (
         <Space>
+          <Link to={row.has_run === false ? `/content/${row.id}` : `/runs/${row.id}`}>
+            <Button size="small">详情</Button>
+          </Link>
           {row.preview_url ? <Button size="small" href={row.preview_url} target="_blank">预览</Button> : null}
           <Button size="small" danger onClick={() => onDelete(row)}>下架</Button>
         </Space>

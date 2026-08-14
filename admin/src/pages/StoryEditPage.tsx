@@ -1,97 +1,29 @@
 import {
-  Button,
   Card,
   Empty,
-  Input,
-  InputNumber,
   Modal,
-  Select,
-  Space,
-  Switch,
-  Tag,
-  Typography,
-  Upload,
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
-import { api, sha256Hex, uploadToSignedOss } from '../api'
-import ClipOutcomesEditor, { type Outcomes } from '../components/ClipOutcomesEditor'
-import FeedWeightInput from '../components/FeedWeightInput'
-import PreviewPlayer, { GESTURE_LABEL } from '../components/PreviewPlayer'
-import VisionInteractionFields, {
-  normalizeVisionConfig,
-  type VisionConfig,
-} from '../components/VisionInteractionFields'
-
-const GESTURES = Object.entries(GESTURE_LABEL).map(([value, label]) => ({ value, label }))
-
-type Interaction = {
-  gate_at_ms: number
-  gate_end_ms?: number
-  gesture: string
-  hint?: string
-  custom_action?: boolean
-  action_description?: string
-  gameplay_description?: string
-  outcomes?: Outcomes
-  pause_video?: boolean
-  vision?: VisionConfig
-}
-
-type ClipOnEnd = { action: 'goto'; clip_id: string }
-
-type ClipBody = {
-  timeline?: { interactions?: Interaction[]; media?: { duration_ms?: number } }
-  on_end?: ClipOnEnd
-}
-
-function parseClipOnEnd(raw: unknown): ClipOnEnd | undefined {
-  if (!raw || typeof raw !== 'object') return undefined
-  const edge = raw as { action?: string; clip_id?: string }
-  if (edge.action !== 'goto') return undefined
-  const clipId = typeof edge.clip_id === 'string' ? edge.clip_id.trim() : ''
-  if (!clipId) return undefined
-  return { action: 'goto', clip_id: clipId }
-}
-
-type ClipMeta = {
-  clip_id: string
-  source_filename: string
-  duration_ms?: number | null
-  width?: number | null
-  height?: number | null
-}
-
-type VersionInfo = {
-  version: string
-  label: string
-  editing: boolean
-  kind?: string
-  note?: string
-}
-
-type PickAccount = {
-  user_id: string
-  nickname?: string
-  enabled: boolean
-}
-
-type StoryState = {
-  entry_clip_id: string
-  clips: Record<string, ClipBody>
-  clip_meta: ClipMeta[]
-  version: string
-  editing: boolean
-  note: string
-  label?: string
-}
-
-type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
-
-function versionOptionLabel(label: string, ver: string, published?: string | null) {
-  return published && ver === published ? `${label} - 已发布` : label
-}
+import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { sha256Hex, uploadToSignedOss } from '../api'
+import { storiesApi, runsApi, accountsApi } from '../services/api'
+import type { Interaction, SaveStatus } from '../types/interaction'
+import type {
+  StoryState,
+  VersionInfo,
+  ClipOnEnd,
+  PickAccount,
+} from '../types/run'
+import { parseClipOnEnd } from '../types/run'
+import {
+  StoryHeader,
+  VersionManager,
+  ClipList,
+  ClipEditor,
+  PublishPanel,
+} from '../components/story-edit'
+import { normalizeVisionConfig } from '../components/VisionInteractionFields'
 
 /** Redirect /stories/:id → /stories/:id/{analysis_version} */
 export function StoryRedirect() {
@@ -104,7 +36,7 @@ export function StoryRedirect() {
     let cancelled = false
     void (async () => {
       try {
-        const resp = await api<{ run: { analysis_version?: string | null } }>(`/api/v1/stories/${id}`)
+        const resp = await storiesApi.getRedirectVersion(id)
         if (cancelled) return
         setTarget(resp.run.analysis_version || '0.0.1')
       } catch {
@@ -176,18 +108,7 @@ export default function StoryEditPage() {
     if (!id || !version) return
     setLoading(true)
     try {
-      const resp = await api<{
-        run: {
-          title: string
-          published_version?: string | null
-          published_user_id?: string | null
-          analysis_version?: string | null
-          feed_weight?: number
-          is_tutorial?: boolean
-        }
-        story: StoryState
-        version_infos?: VersionInfo[]
-      }>(`/api/v1/stories/${id}?version=${encodeURIComponent(version)}`)
+      const resp = await storiesApi.get(id, version)
       skipAutosave.current = true
       setTitle(resp.run.title || '故事')
       setFeedWeight(resp.run.feed_weight ?? 0)
@@ -231,8 +152,6 @@ export default function StoryEditPage() {
             ...(typeof r.gate_end_ms === 'number' ? { gate_end_ms: Math.round(r.gate_end_ms) } : {}),
             ...(r.hint ? { hint: r.hint } : {}),
             ...(r.pause_video === false ? { pause_video: false } : { pause_video: true }),
-            // Persist an explicit semantic visual target for every camera cue, including
-            // legacy drafts that were created before the target selector existed.
             ...(r.gesture === 'camera_motion' ? { vision: normalizeVisionConfig(r.vision) } : {}),
             ...(r.custom_action ? { custom_action: true } : {}),
             ...(r.action_description ? { action_description: r.action_description } : {}),
@@ -262,14 +181,11 @@ export default function StoryEditPage() {
     const gen = ++saveGen.current
     setSaveStatus('saving')
     try {
-      const resp = await api<{ story: StoryState }>(`/api/v1/stories/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          entry_clip_id: entryClipId,
-          clips: clipsPayload,
-          note,
-          version,
-        }),
+      const resp = await storiesApi.save(id, {
+        entry_clip_id: entryClipId,
+        clips: clipsPayload,
+        note,
+        version,
       })
       if (gen !== saveGen.current) return
       skipAutosave.current = true
@@ -317,14 +233,11 @@ export default function StoryEditPage() {
       const gen = ++saveGen.current
       setSaveStatus('saving')
       try {
-        const resp = await api<{ story: StoryState }>(`/api/v1/stories/${id}`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            entry_clip_id: entryClipId,
-            clips: nextClips,
-            note,
-            version,
-          }),
+        const resp = await storiesApi.save(id, {
+          entry_clip_id: entryClipId,
+          clips: nextClips,
+          note,
+          version,
         })
         if (gen !== saveGen.current) return
         skipAutosave.current = true
@@ -342,10 +255,7 @@ export default function StoryEditPage() {
     if (!id || !version || nextVersion === version) return
     setSwitching(true)
     try {
-      await api(`/api/v1/runs/${id}/versions/current`, {
-        method: 'POST',
-        body: JSON.stringify({ version: nextVersion }),
-      })
+      await runsApi.switchRunVersion(id, nextVersion)
       navigate(`/stories/${id}/${nextVersion}`, { replace: true })
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '切换失败')
@@ -358,10 +268,7 @@ export default function StoryEditPage() {
     if (!id || !version) return
     setForking(true)
     try {
-      const resp = await api<{ version: string }>(`/api/v1/stories/${id}/versions`, {
-        method: 'POST',
-        body: JSON.stringify({ source_version: version }),
-      })
+      const resp = await storiesApi.createAnnotateVersion(id, version)
       messageApi.success(`已创建 ${resp.version}-编辑中`)
       navigate(`/stories/${id}/${resp.version}`, { replace: true })
     } catch (err) {
@@ -374,7 +281,7 @@ export default function StoryEditPage() {
   async function loadPickAccounts() {
     setPickLoading(true)
     try {
-      const resp = await api<{ items: PickAccount[] }>('/api/v1/accounts/pick?limit=100')
+      const resp = await accountsApi.getPick(100)
       const items = (resp.items || []).filter((a) => a.enabled)
       setPickAccounts(items)
       setPublishUserId((prev) => {
@@ -406,13 +313,7 @@ export default function StoryEditPage() {
     }
     setPublishing(true)
     try {
-      const result = await api<{ id: string; version: string; ivapp: { updated?: boolean } }>(
-        `/api/v1/runs/${id}/publish`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ version: publishVersion, user_id: publishUserId }),
-        },
-      )
+      const result = await runsApi.publish(id, publishVersion, publishUserId)
       const updated = result.ivapp?.updated
       messageApi.success(updated ? `已更新发布 ${result.version}` : `已发布 ${result.version}`)
       setPublishOpen(false)
@@ -436,7 +337,7 @@ export default function StoryEditPage() {
       onOk: async () => {
         setUnpublishing(true)
         try {
-          await api(`/api/v1/runs/${id}/unpublish`, { method: 'POST' })
+          await runsApi.unpublish(id)
           messageApi.success('已下架')
           setPublishedVersion(null)
           await load()
@@ -455,24 +356,15 @@ export default function StoryEditPage() {
     setUploading(true)
     try {
       const checksum = await sha256Hex(file)
-      const session = await api<{
-        session_id: string
-        uploads: Array<{ url: string; fields: Record<string, string> }>
-      }>(`/api/v1/stories/${id}/clip-upload-sessions`, {
-        method: 'POST',
-        body: JSON.stringify({
-          filename: file.name,
-          content_type: file.type || 'video/mp4',
-          size_bytes: file.size,
-          sha256: checksum,
-        }),
+      const session = await storiesApi.createClipUploadSession(id, {
+        filename: file.name,
+        content_type: file.type || 'video/mp4',
+        size_bytes: file.size,
+        sha256: checksum,
       })
       if (session.uploads.length !== 1) throw new Error('服务端未返回有效上传策略')
       await uploadToSignedOss(session.uploads[0], file)
-      const data = await api<{ story: StoryState; clip: ClipMeta }>(
-        `/api/v1/stories/${id}/clip-upload-sessions/${session.session_id}/finalize`,
-        { method: 'POST' },
-      )
+      const data = await storiesApi.finalizeClipUpload(id, session.session_id)
       skipAutosave.current = true
       applyStory(data.story, data.clip.clip_id)
       messageApi.success('片段已添加')
@@ -494,10 +386,7 @@ export default function StoryEditPage() {
     setFinalizing(true)
     try {
       await persist()
-      const resp = await api<{ story: StoryState; version_infos?: VersionInfo[] }>(
-        `/api/v1/stories/${id}/finalize?version=${encodeURIComponent(version)}`,
-        { method: 'POST' },
-      )
+      const resp = await storiesApi.finalize(id, version)
       messageApi.success(`已定稿 ${version}`)
       skipAutosave.current = true
       if (resp.version_infos) setVersionInfos(resp.version_infos)
@@ -515,10 +404,7 @@ export default function StoryEditPage() {
     const text = next.trim()
     if (!text || text === title) return
     try {
-      const updated = await api<{ title: string }>(`/api/v1/runs/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ title: text }),
-      })
+      const updated = await runsApi.updateRunTitle(id, text)
       setTitle(updated.title || text)
       messageApi.success('标题已更新')
     } catch (err) {
@@ -531,10 +417,7 @@ export default function StoryEditPage() {
     if (next === feedWeight) return
     setWeightSaving(true)
     try {
-      const updated = await api<{ feed_weight?: number }>(`/api/v1/runs/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ feed_weight: next }),
-      })
+      const updated = await runsApi.updateRunFeedWeightById(id, next)
       setFeedWeight(updated.feed_weight ?? next)
       messageApi.success(publishedVersion ? '权重已保存并同步到 App' : '权重已保存')
     } catch (err) {
@@ -549,10 +432,7 @@ export default function StoryEditPage() {
     if (next === isTutorial) return
     setTutorialSaving(true)
     try {
-      const updated = await api<{ is_tutorial?: boolean }>(`/api/v1/runs/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ is_tutorial: next }),
-      })
+      const updated = await runsApi.updateRunTutorial(id, next)
       setIsTutorial(updated.is_tutorial ?? next)
       messageApi.success(
         publishedVersion
@@ -635,7 +515,6 @@ export default function StoryEditPage() {
   if (loading && !story) return <Card loading />
   if (!story || !id || !version) return <Empty />
 
-  const selected = selectedIndex != null ? rows[selectedIndex] : null
   const clipMeta = story.clip_meta || []
   const activeMeta = clipMeta.find((c) => c.clip_id === activeClipId)
   const durationMs =
@@ -660,386 +539,93 @@ export default function StoryEditPage() {
   return (
     <>
       {contextHolder}
-      <Space
-        style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between', alignItems: 'flex-start' }}
-        wrap
-      >
-        <div>
-          <Typography.Title
-            level={4}
-            style={{ margin: 0 }}
-            editable={
-              editing
-                ? {
-                    tooltip: '点击修改标题',
-                    onChange: (v) => void onSaveTitle(v),
-                    triggerType: ['text', 'icon'],
-                  }
-                : false
-            }
-          >
-            {title}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            <Link to="/">返回列表</Link>
-            {saveLabel ? ` · ${saveLabel}` : ''}
-          </Typography.Text>
-          <div style={{ marginTop: 10 }}>
-            <Tag color={published ? 'green' : 'blue'}>{published ? '已发布' : '待发布'}</Tag>
-            <Tag>{editing ? '编辑中' : '已定稿'}</Tag>
-            <Tag color="purple">故事</Tag>
-          </div>
-          <div style={{ marginTop: 10 }}>
-            <FeedWeightInput
-              value={feedWeight}
-              saving={weightSaving}
-              onChange={(n) => void onSaveFeedWeight(n)}
-            />
-          </div>
-          <div style={{ marginTop: 10 }}>
-            <Space size={8} wrap>
-              <Typography.Text type="secondary">教学视频</Typography.Text>
-              <Switch
-                checked={isTutorial}
-                loading={tutorialSaving}
-                onChange={(checked) => void onSaveTutorial(checked)}
-              />
-              <Typography.Text type="secondary">全站至多一条</Typography.Text>
-            </Space>
-          </div>
-        </div>
-        <Space wrap>
-          {saveStatus === 'error' ? (
-            <Button size="small" onClick={() => void persist()}>
-              重试保存
-            </Button>
-          ) : null}
-          {editing ? (
-            <Button type="primary" loading={finalizing} onClick={() => void onFinalize()}>
-              定稿
-            </Button>
-          ) : (
-            <>
-              <Button loading={forking} onClick={() => void onStartAnnotate()}>
-                手动标注
-              </Button>
-              {publishOptions.length > 0 ? (
-                <Button type="primary" onClick={() => void openPublish()}>
-                  {published ? '更新发布' : '发布'}
-                </Button>
-              ) : null}
-              {published ? (
-                <Button danger loading={unpublishing} onClick={() => void onUnpublish()}>
-                  下架
-                </Button>
-              ) : null}
-            </>
-          )}
-        </Space>
-      </Space>
+      <StoryHeader
+        title={title}
+        editing={editing}
+        published={published}
+        saveLabel={saveLabel}
+        saveStatus={saveStatus}
+        feedWeight={feedWeight}
+        weightSaving={weightSaving}
+        isTutorial={isTutorial}
+        tutorialSaving={tutorialSaving}
+        onSaveTitle={onSaveTitle}
+        onSaveFeedWeight={onSaveFeedWeight}
+        onSaveTutorial={onSaveTutorial}
+        onRetrySave={() => void persist()}
+        onFinalize={onFinalize}
+        finalizing={finalizing}
+        onStartAnnotate={onStartAnnotate}
+        forking={forking}
+        publishOptionsLength={publishOptions.length}
+        onOpenPublish={() => void openPublish()}
+        unpublishing={unpublishing}
+        onUnpublish={onUnpublish}
+      />
 
-      {versionInfos.length > 0 ? (
-        <div
-          className="version-result-bar"
-          style={{
-            marginBottom: 16,
-            padding: '10px 14px',
-            borderRadius: 8,
-          }}
-        >
-          <Space size="middle" wrap>
-            <Typography.Text strong>版本</Typography.Text>
-            <Select
-              style={{ width: 200 }}
-              value={version}
-              loading={switching}
-              options={versionInfos.map((v) => ({
-                value: v.version,
-                label: versionOptionLabel(v.label, v.version, publishedVersion),
-              }))}
-              onChange={(v) => void onSwitchVersion(v)}
-            />
-            <Typography.Text type="secondary">
-              {editing ? '编辑中' : '已定稿'}
-              {barNote ? ` · ${barNote}` : ''}
-            </Typography.Text>
-          </Space>
-        </div>
-      ) : null}
+      <VersionManager
+        version={version}
+        versionInfos={versionInfos}
+        publishedVersion={publishedVersion}
+        editing={editing}
+        switching={switching}
+        onSwitchVersion={onSwitchVersion}
+        barNote={barNote}
+      />
 
-      <Card className="page-card" title="片段" size="small" style={{ marginBottom: 16 }}>
-        <Space wrap>
-          {clipMeta.map((c) => (
-            <Button
-              key={c.clip_id}
-              type={c.clip_id === activeClipId ? 'primary' : 'default'}
-              onClick={() => switchClip(c.clip_id)}
-            >
-              {c.source_filename || c.clip_id.slice(0, 8)}
-              {c.clip_id === entryClipId ? ' · 入口' : ''}
-            </Button>
-          ))}
-          {editing ? (
-            <Upload
-              accept="video/mp4,video/*"
-              showUploadList={false}
-              beforeUpload={(file) => {
-                void onUploadClip(file)
-                return false
-              }}
-              disabled={uploading}
-            >
-              <Button loading={uploading}>添加片段</Button>
-            </Upload>
-          ) : null}
-        </Space>
-        {activeClipId ? (
-          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {editing ? (
-              <div>
-                <Button
-                  type="primary"
-                  disabled={entryClipId === activeClipId}
-                  onClick={() => {
-                    setEntryClipId(activeClipId)
-                    setStory((prev) =>
-                      prev ? { ...prev, entry_clip_id: activeClipId } : prev,
-                    )
-                    messageApi.success('已设为入口')
-                  }}
-                >
-                  {entryClipId === activeClipId ? '当前为入口' : '设为入口'}
-                </Button>
-              </div>
-            ) : null}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <Typography.Text type="secondary">播完后跳到</Typography.Text>
-              <Select
-                style={{ minWidth: 200 }}
-                disabled={!editing}
-                allowClear
-                placeholder="无"
-                value={clipOnEnd?.clip_id}
-                options={clipMeta.map((c) => ({
-                  value: c.clip_id,
-                  label: c.source_filename || c.clip_id.slice(0, 8),
-                }))}
-                onChange={(clipId) => {
-                  setClipOnEnd(clipId ? { action: 'goto', clip_id: clipId } : undefined)
-                }}
-              />
-            </div>
-          </div>
-        ) : null}
-        {!clipMeta.length ? (
-          <Typography.Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>
-            先上传至少一个片段，再标注互动与跳转。
-          </Typography.Paragraph>
-        ) : null}
-      </Card>
+      <ClipList
+        clipMeta={clipMeta}
+        activeClipId={activeClipId}
+        entryClipId={entryClipId}
+        editing={editing}
+        uploading={uploading}
+        onUploadClip={onUploadClip}
+        onSwitchClip={switchClip}
+        onSetEntryClip={() => {
+          setEntryClipId(activeClipId)
+          setStory((prev) =>
+            prev ? { ...prev, entry_clip_id: activeClipId } : prev,
+          )
+        }}
+        clipOnEnd={clipOnEnd}
+        onClipOnEndChange={setClipOnEnd}
+      />
 
-      {!activeClipId ? (
-        <Empty description="请添加片段" />
-      ) : (
-        <>
-          <Card className="page-card" title="标注预览" size="small">
-            <PreviewPlayer
-              runId={id}
-              clipId={activeClipId}
-              gates={rows}
-              durationMs={durationMs}
-              mode={editing ? 'annotate' : 'preview'}
-              selectedIndex={selectedIndex}
-              onSelectGate={setSelectedIndex}
-              onPlayheadChange={setPlayheadMs}
-              onAddAtPlayhead={editing ? addAtPlayhead : undefined}
-            />
-          </Card>
+      <ClipEditor
+        runId={id}
+        activeClipId={activeClipId}
+        rows={rows}
+        durationMs={durationMs}
+        editing={editing}
+        selectedIndex={selectedIndex}
+        onSelectIndex={setSelectedIndex}
+        onPlayheadChange={setPlayheadMs}
+        onAddAtPlayhead={addAtPlayhead}
+        onUpdateSelected={updateSelected}
+        onRemoveSelected={removeSelected}
+        clipMeta={clipMeta}
+        note={note}
+        onNoteChange={setNote}
+      />
 
-          <Card className="page-card" title="选中互动" size="small">
-            {!selected ? (
-              <Empty description="先在进度条加点或选中一个互动点" />
-            ) : (
-              <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                <Space wrap>
-                  <Typography.Text type="secondary">时刻 (s)</Typography.Text>
-                  <InputNumber
-                    min={0}
-                    step={0.033}
-                    precision={3}
-                    disabled={!editing}
-                    value={Number((selected.gate_at_ms / 1000).toFixed(3))}
-                    onChange={(n) =>
-                      updateSelected({ gate_at_ms: Math.max(0, Math.round(Number(n || 0) * 1000)) })
-                    }
-                  />
-                  <Typography.Text type="secondary">结束 (s)</Typography.Text>
-                  <InputNumber
-                    min={Number((selected.gate_at_ms / 1000).toFixed(3))}
-                    step={0.033}
-                    precision={3}
-                    disabled={!editing}
-                    value={
-                      typeof selected.gate_end_ms === 'number'
-                        ? Number((selected.gate_end_ms / 1000).toFixed(3))
-                        : null
-                    }
-                    onChange={(n) =>
-                      updateSelected({
-                        gate_end_ms:
-                          n == null
-                            ? undefined
-                            : Math.max(selected.gate_at_ms, Math.round(Number(n) * 1000)),
-                      })
-                    }
-                  />
-                  {editing ? (
-                    <Button size="small" danger onClick={removeSelected}>
-                      删除此点
-                    </Button>
-                  ) : null}
-                </Space>
-
-                <div>
-                  <Typography.Text type="secondary">互动动作</Typography.Text>
-                  <div className="gesture-grid" style={{ marginTop: 8 }}>
-                    {GESTURES.map((g) => (
-                      <button
-                        key={g.value}
-                        type="button"
-                        disabled={!editing}
-                        className={
-                          !selected.custom_action && selected.gesture === g.value ? 'on' : undefined
-                        }
-                        onClick={() =>
-                          updateSelected({
-                          gesture: g.value,
-                          custom_action: false,
-                          action_description: undefined,
-                          ...(g.value === 'camera_motion' && !selected.vision
-                            ? { vision: { target: 'hand_victory', min_confidence: 0.82, stable_for_ms: 400, camera_facing: 'front', show_preview: true } }
-                            : {}),
-                          })
-                        }
-                      >
-                        {g.label} <span className="gesture-code">{g.value}</span>
-                      </button>
-                    ))}
-                    <button
-                      type="button"
-                      disabled={!editing}
-                      className={selected.custom_action ? 'on custom-action' : 'custom-action'}
-                      onClick={() => updateSelected({ gesture: 'tap', custom_action: true })}
-                    >
-                      自定义动作 <span className="gesture-code">按点击处理</span>
-                    </button>
-                  </div>
-                  {selected.custom_action ? (
-                    <Input
-                      style={{ marginTop: 10 }}
-                      disabled={!editing}
-                      value={selected.action_description || ''}
-                      maxLength={80}
-                      showCount
-                      onChange={(e) => updateSelected({ action_description: e.target.value })}
-                      placeholder="描述用户需要执行的动作"
-                    />
-                  ) : null}
-                  {!selected.custom_action && selected.gesture === 'camera_motion' ? (
-                    <VisionInteractionFields
-                      value={selected.vision}
-                      disabled={!editing}
-                      onChange={(vision) => updateSelected({ vision })}
-                    />
-                  ) : null}
-                </div>
-
-                <div>
-                  <Typography.Text type="secondary">Hint</Typography.Text>
-                  <Input
-                    style={{ marginTop: 8 }}
-                    disabled={!editing}
-                    value={selected.hint || ''}
-                    maxLength={40}
-                    showCount
-                    onChange={(e) => updateSelected({ hint: e.target.value })}
-                  />
-                </div>
-
-                <ClipOutcomesEditor
-                  value={selected.outcomes}
-                  clips={clipMeta}
-                  currentClipId={activeClipId}
-                  disabled={!editing}
-                  onChange={(outcomes) => updateSelected({ outcomes })}
-                />
-              </Space>
-            )}
-          </Card>
-
-          <Card className="page-card" title="版本备注" size="small">
-            <Input.TextArea
-              rows={2}
-              disabled={!editing}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              maxLength={500}
-              showCount
-              placeholder="可选"
-            />
-          </Card>
-        </>
-      )}
-
-      <Modal
-        title={published ? '更新发布' : '发布故事'}
-        open={publishOpen}
-        onCancel={() => setPublishOpen(false)}
-        onOk={() => void onPublish()}
-        confirmLoading={publishing}
-        okButtonProps={{ disabled: !publishVersion || !publishUserId }}
-        okText={published ? '确认更新' : '确认发布'}
-        cancelText="取消"
-      >
-        <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          <div>
-            <Typography.Text type="secondary">发布版本</Typography.Text>
-            <Select
-              style={{ width: '100%', marginTop: 4 }}
-              placeholder="选择版本"
-              value={publishVersion}
-              options={publishOptions.map((v) => ({
-                value: v.version,
-                label: versionOptionLabel(v.label, v.version, publishedVersion),
-              }))}
-              onChange={setPublishVersion}
-            />
-          </div>
-          <div>
-            <Typography.Text type="secondary">发布到</Typography.Text>
-            <Select
-              style={{ width: '100%', marginTop: 4 }}
-              placeholder="选择 App 账号"
-              loading={pickLoading}
-              value={publishUserId}
-              options={pickAccounts.map((a) => ({
-                value: a.user_id,
-                label: a.nickname || a.user_id,
-              }))}
-              onChange={setPublishUserId}
-              showSearch
-              optionFilterProp="label"
-            />
-          </div>
-          <Typography.Paragraph
-            type="secondary"
-            style={{ marginBottom: 0, padding: 12, background: '#f5f5f5', borderRadius: 6 }}
-          >
-            将《{title}》{publishVersion || '所选版本'}发布到所选 App 账号。
-            Feed 权重：{feedWeight}；教学视频：{isTutorial ? '是' : '否'}（可在页头修改）
-          </Typography.Paragraph>
-        </Space>
-      </Modal>
+      <PublishPanel
+        publishOpen={publishOpen}
+        onClose={() => setPublishOpen(false)}
+        onPublish={() => void onPublish()}
+        publishing={publishing}
+        publishVersion={publishVersion}
+        publishOptions={publishOptions}
+        publishedVersion={publishedVersion}
+        onPublishVersionChange={setPublishVersion}
+        publishUserId={publishUserId}
+        pickAccounts={pickAccounts}
+        pickLoading={pickLoading}
+        onPublishUserIdChange={setPublishUserId}
+        title={title}
+        feedWeight={feedWeight}
+        isTutorial={isTutorial}
+        published={published}
+      />
     </>
   )
 }

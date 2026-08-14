@@ -1,15 +1,9 @@
 import { PauseCircleFilled, PlayCircleFilled } from '@ant-design/icons'
 import { Button } from 'antd'
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-
-type Gate = {
-  gate_at_ms: number
-  gesture?: string
-  hint?: string
-  cue?: string
-  custom_action?: boolean
-  action_description?: string
-}
+import type { Gate } from '../types/interaction'
+import { GESTURE_LABEL } from '../types/interaction'
+export { GESTURE_LABEL }
 
 type Props = {
   runId: string
@@ -29,39 +23,6 @@ type Props = {
 const FRAME_MS = 33
 const SECOND_MS = 1000
 const SLOW_MEDIA_LOAD_MS = 8_000
-
-export const GESTURE_LABEL: Record<string, string> = {
-  tap: '点击',
-  double_tap: '双击',
-  hold: '长按',
-  swipe_left: '左滑',
-  swipe_right: '右滑',
-  swipe_up: '上滑',
-  swipe_down: '下滑',
-  drag_left: '左拖',
-  drag_right: '右拖',
-  drag_up: '上拖',
-  drag_down: '下拖',
-  camera_motion: '镜头动作',
-  tilt_left: '左倾',
-  tilt_right: '右倾',
-  shake: '摇一摇',
-  mic_level: '出声',
-  mic_blow: '吹气',
-  mic_clap: '拍手',
-  mic_quiet: '安静',
-  rapid_tap: '连点',
-  erase: '擦除',
-  hold_charge: '蓄力',
-  pinch: '捏合',
-  draw_circle: '画圈',
-  hold_still: '静止',
-  rotate: '转动',
-  scrub_left: '左推进',
-  scrub_right: '右推进',
-  scrub_up: '上推进',
-  scrub_down: '下推进',
-}
 
 function actionLabel(gate: Gate) {
   if (gate.custom_action && gate.action_description) return gate.action_description

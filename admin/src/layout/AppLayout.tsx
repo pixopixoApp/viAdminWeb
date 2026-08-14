@@ -25,7 +25,8 @@ export default function AppLayout() {
   const selected =
     location.pathname === '/' ||
     location.pathname.startsWith('/runs/') ||
-    location.pathname.startsWith('/stories')
+    location.pathname.startsWith('/stories') ||
+    location.pathname.startsWith('/content/')
       ? '/'
       : location.pathname
 

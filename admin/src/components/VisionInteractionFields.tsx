@@ -1,13 +1,7 @@
 import { Select, Space, Switch, Typography } from 'antd'
+import type { VisionConfig } from '../types/interaction'
 
-export type VisionConfig = {
-  registry_version?: 'v1'
-  target?: string
-  camera_facing?: 'front' | 'back'
-  show_preview?: boolean
-  min_confidence?: number
-  stable_for_ms?: number
-}
+export type { VisionConfig } from '../types/interaction'
 
 const HAND_TARGETS = [
   ['hand_victory', '比耶'],

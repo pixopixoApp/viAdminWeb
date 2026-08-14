@@ -1,5 +1,14 @@
 import type { Outcomes } from './outcome'
 
+export type VisionConfig = {
+  registry_version?: 'v1'
+  target?: string
+  camera_facing?: 'front' | 'back'
+  show_preview?: boolean
+  min_confidence?: number
+  stable_for_ms?: number
+}
+
 export type Interaction = {
   gate_at_ms: number
   gate_end_ms?: number
@@ -12,6 +21,8 @@ export type Interaction = {
   reaction_end_ms?: number
   cue?: string
   outcomes?: Outcomes
+  pause_video?: boolean
+  vision?: VisionConfig
 }
 
 export const GESTURE_LABEL: Record<string, string> = {

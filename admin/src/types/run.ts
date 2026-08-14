@@ -22,12 +22,14 @@ export type Run = {
   updated_at?: string
   source?: 'pgc' | 'ugc' | 'manual_upload'
   content_type?: 'runtime' | 'html'
-  review_status?: 'pending' | 'approved' | 'rejected'
+  review_status?: 'draft' | 'pending' | 'approved' | 'rejected'
   author_user_id?: string
   author_nickname?: string
   creation_status?: string
   cover_url?: string
   preview_url?: string
+  distribution_enabled?: boolean
+  has_run?: boolean
 }
 
 export type RunDetail = {

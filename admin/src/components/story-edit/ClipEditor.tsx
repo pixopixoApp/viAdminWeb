@@ -4,6 +4,7 @@ import { GESTURE_LABEL } from '../../types/interaction'
 import type { ClipMeta } from '../../types/run'
 import ClipOutcomesEditor from '../ClipOutcomesEditor'
 import PreviewPlayer from '../PreviewPlayer'
+import VisionInteractionFields from '../VisionInteractionFields'
 
 const GESTURES = Object.entries(GESTURE_LABEL).map(([value, label]) => ({ value, label }))
 
@@ -122,6 +123,17 @@ export default function ClipEditor({
                         gesture: g.value,
                         custom_action: false,
                         action_description: undefined,
+                        ...(g.value === 'camera_motion' && !selected.vision
+                          ? {
+                              vision: {
+                                target: 'hand_victory',
+                                min_confidence: 0.82,
+                                stable_for_ms: 400,
+                                camera_facing: 'front',
+                                show_preview: true,
+                              },
+                            }
+                          : {}),
                       })
                     }
                   >
@@ -146,6 +158,13 @@ export default function ClipEditor({
                   showCount
                   onChange={(e) => onUpdateSelected({ action_description: e.target.value })}
                   placeholder="描述用户需要执行的动作"
+                />
+              ) : null}
+              {!selected.custom_action && selected.gesture === 'camera_motion' ? (
+                <VisionInteractionFields
+                  value={selected.vision}
+                  disabled={!editing}
+                  onChange={(vision) => onUpdateSelected({ vision })}
                 />
               ) : null}
             </div>
