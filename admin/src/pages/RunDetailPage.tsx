@@ -1,98 +1,17 @@
-import {
-  Button,
-  Card,
-  Collapse,
-  Descriptions,
-  Empty,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from 'antd'
-import { QRCodeSVG } from 'qrcode.react'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api } from '../api'
-import FeedWeightInput from '../components/FeedWeightInput'
-import PreviewPlayer from '../components/PreviewPlayer'
-import { formatServerTime } from '../time'
-
-type VersionInfo = {
-  version: string
-  label: string
-  kind: string
-  note: string
-  editing: boolean
-  source_version?: string
-}
-
-type Detail = {
-  run: {
-    id: string
-    status: string
-    title?: string
-    model_name: string
-    error_message?: string
-    analysis_version?: string | null
-    published_version?: string | null
-    published_user_id?: string | null
-    published_user_nickname?: string | null
-    published_user_enabled?: boolean | null
-    content_mode?: 'single' | 'story'
-    feed_weight?: number
-    is_tutorial?: boolean
-  }
-  media: Record<string, unknown>
-  analysis_refine: {
-    model?: string
-    interactions?: Record<string, unknown>[]
-  }
-  gameplay: {
-    dropped?: Record<string, unknown>[]
-  }
-  timeline?: {
-    interactions?: {
-      gate_at_ms: number
-      gesture?: string
-      cue?: string
-      hint?: string
-    }[]
-  } | null
-  next_version?: string | null
-  versions?: string[]
-  version_infos?: VersionInfo[]
-  current_meta?: { kind?: string; note?: string; editing?: boolean }
-  preview_qr_url?: string | null
-}
-
-type PickAccount = {
-  user_id: string
-  nickname: string
-  enabled: boolean
-}
-
-function versionOptionLabel(label: string, version: string, published?: string | null) {
-  return published && version === published ? `${label} - 已发布` : label
-}
-
-type PlaybackMetrics = {
-  video_id: string
-  unique_view_count: number
-  first_viewed_at?: string | null
-  last_viewed_at?: string | null
-  telemetry_event_count: number
-  last_telemetry_at?: string | null
-}
+import { Card, Empty, Modal, message } from 'antd'
+import { useCallback, useEffect, useState } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { runsApi, engineApi, accountsApi } from '../services/api'
+import type { RunDetail, PlaybackMetrics, PickAccount } from '../types/run'
+import RunDetailHeader from '../components/run-detail/RunDetailHeader'
+import RunDetailPreview from '../components/run-detail/RunDetailPreview'
+import RunDetailInteraction from '../components/run-detail/RunDetailInteraction'
+import RunDetailPublish from '../components/run-detail/RunDetailPublish'
 
 export default function RunDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [data, setData] = useState<Detail | null>(null)
+  const [data, setData] = useState<RunDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [publishing, setPublishing] = useState(false)
   const [publishOpen, setPublishOpen] = useState(false)
@@ -101,7 +20,6 @@ export default function RunDetailPage() {
   const [reanalyzing, setReanalyzing] = useState(false)
   const [switching, setSwitching] = useState(false)
   const [annotating, setAnnotating] = useState(false)
-  const annotateRequestId = useRef<string | null>(null)
   const [publishVersion, setPublishVersion] = useState<string | undefined>()
   const [publishUserId, setPublishUserId] = useState<string | undefined>()
   const [pickAccounts, setPickAccounts] = useState<PickAccount[]>([])
@@ -124,11 +42,9 @@ export default function RunDetailPage() {
     if (!id) return
     setMetricsLoading(true)
     try {
-      const metrics = await api<PlaybackMetrics>(`/api/v1/runs/${id}/metrics`)
+      const metrics = await runsApi.getMetrics(id)
       setPlaybackMetrics(metrics)
     } catch {
-      // Metrics are supplementary. A publication can have been removed between
-      // loading the Run and this request, so keep management actions available.
       setPlaybackMetrics(null)
     } finally {
       setMetricsLoading(false)
@@ -140,8 +56,8 @@ export default function RunDetailPage() {
     setLoading(true)
     try {
       const [detail, settings] = await Promise.all([
-        api<Detail>(`/api/v1/runs/${id}`),
-        api<{ ready: boolean }>('/api/v1/settings/engine/ready'),
+        runsApi.get(id),
+        engineApi.getReady(),
       ])
       if (detail.run.content_mode === 'story') {
         navigate(`/stories/${id}/${detail.run.analysis_version || detail.versions?.[detail.versions.length - 1] || '0.0.1'}`, {
@@ -183,7 +99,7 @@ export default function RunDetailPage() {
   const loadPickAccounts = useCallback(async () => {
     setPickLoading(true)
     try {
-      const resp = await api<{ items: PickAccount[] }>('/api/v1/accounts/pick?limit=100')
+      const resp = await accountsApi.getPick(100)
       const items = (resp.items || []).filter((a) => a.enabled)
       setPickAccounts(items)
       setPublishUserId((prev) => {
@@ -213,7 +129,7 @@ export default function RunDetailPage() {
       if (polling) return
       polling = true
       try {
-        const detail = await api<Detail>(`/api/v1/runs/${id}`)
+        const detail = await runsApi.get(id)
         if (['queued', 'running'].includes(detail.run.status)) {
           setData(detail)
         } else {
@@ -241,7 +157,7 @@ export default function RunDetailPage() {
     setReanalyzeOpen(true)
     setModelsLoading(true)
     try {
-      const resp = await api<{ default: string; items: { id: string }[] }>('/api/v1/models')
+      const resp = await engineApi.getModels()
       const ids = resp.items.map((i) => i.id)
       if (data.run.model_name && !ids.includes(data.run.model_name)) {
         ids.unshift(data.run.model_name)
@@ -260,10 +176,7 @@ export default function RunDetailPage() {
     const target = data.version_infos?.find((v) => v.version === version)
     setSwitching(true)
     try {
-      await api(`/api/v1/runs/${id}/versions/current`, {
-        method: 'POST',
-        body: JSON.stringify({ version }),
-      })
+      await runsApi.switchRunVersion(id, version)
       messageApi.success(`已切换到 ${version}`)
       if (target?.editing) {
         navigate(`/runs/${id}/annotate/${version}`, { replace: true })
@@ -282,10 +195,7 @@ export default function RunDetailPage() {
     if (next === (data.run.feed_weight ?? 0)) return
     setWeightSaving(true)
     try {
-      const updated = await api<Detail['run']>(`/api/v1/runs/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ feed_weight: next }),
-      })
+      const updated = await runsApi.updateRunFeedWeightById(id, next)
       setData((prev) =>
         prev
           ? { ...prev, run: { ...prev.run, feed_weight: updated.feed_weight ?? next } }
@@ -306,10 +216,7 @@ export default function RunDetailPage() {
     if (next === Boolean(data.run.is_tutorial)) return
     setTutorialSaving(true)
     try {
-      const updated = await api<Detail['run']>(`/api/v1/runs/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ is_tutorial: next }),
-      })
+      const updated = await runsApi.updateRunTutorial(id, next)
       setData((prev) =>
         prev
           ? { ...prev, run: { ...prev.run, is_tutorial: updated.is_tutorial ?? next } }
@@ -339,13 +246,7 @@ export default function RunDetailPage() {
     }
     setPublishing(true)
     try {
-      const result = await api<{ id: string; version: string; ivapp: { updated?: boolean } }>(
-        `/api/v1/runs/${id}/publish`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ version: publishVersion, user_id: publishUserId }),
-        },
-      )
+      const result = await runsApi.publish(id, publishVersion, publishUserId)
       const updated = result.ivapp?.updated
       messageApi.success(
         updated ? `已更新发布 ${result.version}` : `已发布 ${result.version}`,
@@ -370,7 +271,7 @@ export default function RunDetailPage() {
       onOk: async () => {
         setUnpublishing(true)
         try {
-          await api(`/api/v1/runs/${id}/unpublish`, { method: 'POST' })
+          await runsApi.unpublish(id)
           messageApi.success('已下架')
           await load()
         } catch (err) {
@@ -389,10 +290,7 @@ export default function RunDetailPage() {
     const current = String(data.run.title || data.media.title || data.media.filename || '')
     if (text === current) return
     try {
-      const updated = await api<{ title: string }>(`/api/v1/runs/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ title: text }),
-      })
+      const updated = await runsApi.updateRunTitle(id, text)
       setData((prev) =>
         prev
           ? {
@@ -412,14 +310,11 @@ export default function RunDetailPage() {
     if (!id) return
     setReanalyzing(true)
     try {
-      await api(`/api/v1/runs/${id}/reanalyze`, {
-        method: 'POST',
-        body: JSON.stringify({
-          version: reanalyzeVersion || undefined,
-          model: reanalyzeModel || undefined,
-          brief: reanalyzeBrief,
-          note: reanalyzeNote || undefined,
-        }),
+      await runsApi.reanalyze(id, {
+        version: reanalyzeVersion || undefined,
+        model: reanalyzeModel || undefined,
+        brief: reanalyzeBrief,
+        note: reanalyzeNote || undefined,
       })
       messageApi.success(`重新分析完成（${reanalyzeVersion} / ${reanalyzeModel}）`)
       setReanalyzeOpen(false)
@@ -434,26 +329,13 @@ export default function RunDetailPage() {
   async function onStartAnnotate() {
     if (!id || !data?.run.analysis_version) return
     setAnnotating(true)
-    const requestId = annotateRequestId.current || crypto.randomUUID()
-    annotateRequestId.current = requestId
-    const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), 30_000)
     try {
-      const resp = await api<{ version: string }>(`/api/v1/runs/${id}/annotate/start`, {
-        method: 'POST',
-        headers: { 'Idempotency-Key': requestId },
-        signal: controller.signal,
-        body: JSON.stringify({ source_version: data.run.analysis_version }),
-      })
-      annotateRequestId.current = null
+      const resp = await runsApi.startAnnotate(id, data.run.analysis_version)
       messageApi.success(`已创建 ${resp.version}-编辑中`)
       navigate(`/runs/${id}/annotate/${resp.version}`, { replace: true })
     } catch (err) {
-      messageApi.error(err instanceof DOMException && err.name === 'AbortError'
-        ? '创建标注超时，可重试；系统会复用本次请求，不会重复创建版本'
-        : err instanceof Error ? err.message : '创建标注版本失败')
+      messageApi.error(err instanceof Error ? err.message : '创建标注版本失败')
     } finally {
-      window.clearTimeout(timeout)
       setAnnotating(false)
     }
   }
@@ -485,379 +367,98 @@ export default function RunDetailPage() {
     no_interaction: { label: '未发现互动', color: 'orange' },
     no_playable_plan: { label: '方案不可播放', color: 'orange' },
   }[data.run.status] || { label: data.run.status, color: 'default' }
+
   return (
     <>
       {contextHolder}
-      <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between', alignItems: 'flex-start' }} wrap>
-        <div>
-          <Typography.Title
-            level={4}
-            style={{ margin: 0 }}
-            editable={{
-              tooltip: '点击修改标题',
-              onChange: (v) => void onSaveTitle(v),
-              triggerType: ['text', 'icon'],
-            }}
-          >
-            {displayTitle}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            <Link to="/">返回列表</Link>
-            {data.media.filename ? ` · 文件 ${String(data.media.filename)}` : ''}
-          </Typography.Text>
-          <div style={{ marginTop: 10 }}>
-            <Tag color={businessStatusColor}>{businessStatus}</Tag>
-            <Tag color={generationStatus.color}>{generationStatus.label}</Tag>
-            {data.run.published_user_enabled === false ? (
-              <Tag color="orange">发布账号已停用</Tag>
-            ) : null}
-          </div>
-        </div>
-        <Space wrap>
-          {publishOptions.length > 0 ? (
-            <Button type="primary" disabled={busy} onClick={() => setPublishOpen(true)}>
-              {published ? '更新发布' : '发布'}
-            </Button>
-          ) : null}
-          <Button disabled={!canPlay || !qrUrl} onClick={() => setQrOpen(true)}>
-            扫码预览
-          </Button>
-          <Button
-            disabled={busy || !data.run.analysis_version}
-            loading={annotating}
-            onClick={() => void onStartAnnotate()}
-          >
-            手动标注
-          </Button>
-          <Button disabled={busy || !engineReady} onClick={() => void openReanalyze()}>
-            重新分析
-          </Button>
-          {published ? (
-            <Button danger loading={unpublishing} onClick={() => void onUnpublish()}>
-              下架
-            </Button>
-          ) : null}
-        </Space>
-      </Space>
+      <RunDetailHeader
+        displayTitle={displayTitle}
+        filename={String(data.media.filename || '')}
+        errorMessage={data.run.error_message}
+        businessStatus={businessStatus}
+        businessStatusColor={businessStatusColor}
+        generationStatus={generationStatus}
+        publishedAccountDisabled={data.run.published_user_enabled === false}
+        publishVisible={publishOptions.length > 0}
+        actionDisabled={busy}
+        canPlay={canPlay}
+        qrUrl={qrUrl}
+        annotating={annotating}
+        annotateDisabled={busy || !data.run.analysis_version}
+        engineReady={engineReady}
+        reanalyzeDisabled={busy}
+        unpublishing={unpublishing}
+        published={Boolean(published)}
+        onSaveTitle={(v) => void onSaveTitle(v)}
+        onPublish={() => setPublishOpen(true)}
+        onQrOpen={() => setQrOpen(true)}
+        onStartAnnotate={() => void onStartAnnotate()}
+        onReanalyze={() => void openReanalyze()}
+        onUnpublish={() => void onUnpublish()}
+      />
 
-      {data.run.error_message ? (
-        <Card className="page-card" title="错误" size="small">
-          <Typography.Text type="danger">{data.run.error_message}</Typography.Text>
-        </Card>
-      ) : null}
+      <RunDetailPreview
+        runId={data.run.id}
+        gates={gates}
+        durationMs={Number(data.media.duration_ms || 0) || undefined}
+        visible={canPlay}
+      />
 
-      <Card className="page-card" title="发布与推荐" size="small">
-        <Descriptions column={2} size="small">
-          <Descriptions.Item label="上架状态">
-            <Tag color={businessStatusColor}>{businessStatus}</Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="生成状态"><Tag color={generationStatus.color}>{generationStatus.label}</Tag></Descriptions.Item>
-          <Descriptions.Item label="已发布版本">{published || '-'}</Descriptions.Item>
-          <Descriptions.Item label="发布账号">
-            {data.run.published_user_nickname || data.run.published_user_id || '-'}
-            {data.run.published_user_enabled === false ? (
-              <Tag color="orange" style={{ marginLeft: 8 }}>
-                已停用
-              </Tag>
-            ) : null}
-          </Descriptions.Item>
-          <Descriptions.Item label="Feed 权重" span={2}>
-            <FeedWeightInput
-              value={data.run.feed_weight ?? 0}
-              saving={weightSaving}
-              showLabel={false}
-              onChange={(n) => void onSaveFeedWeight(n)}
-            />
-          </Descriptions.Item>
-          <Descriptions.Item label="教学视频" span={2}>
-            <Space size={8} wrap>
-              <Switch
-                checked={Boolean(data.run.is_tutorial)}
-                loading={tutorialSaving}
-                onChange={(checked) => void onSaveTutorial(checked)}
-              />
-              <Typography.Text type="secondary">
-                全站至多一条；未看时 Feed 置顶
-              </Typography.Text>
-            </Space>
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
+      <RunDetailInteraction
+        data={data}
+        visible={!isManual}
+      />
 
-      {published ? (
-        <Card
-          className="page-card"
-          title="播放与分发数据"
-          size="small"
-          extra={<Button size="small" loading={metricsLoading} onClick={() => void loadPlaybackMetrics()}>刷新数据</Button>}
-        >
-          <Descriptions column={2} size="small">
-            <Descriptions.Item label="有效播放人数">
-              {metricsLoading && !playbackMetrics ? '加载中…' : playbackMetrics?.unique_view_count ?? '—'}
-            </Descriptions.Item>
-            <Descriptions.Item label="最近有效播放">
-              {playbackMetrics?.last_viewed_at ? formatServerTime(playbackMetrics.last_viewed_at) : '—'}
-            </Descriptions.Item>
-            <Descriptions.Item label="首次有效播放">
-              {playbackMetrics?.first_viewed_at ? formatServerTime(playbackMetrics.first_viewed_at) : '—'}
-            </Descriptions.Item>
-            <Descriptions.Item label="运行事件数">
-              {metricsLoading && !playbackMetrics ? '加载中…' : playbackMetrics?.telemetry_event_count ?? '—'}
-            </Descriptions.Item>
-          </Descriptions>
-          <Typography.Paragraph type="secondary" style={{ margin: '12px 0 0' }}>
-            有效播放人数只统计已登录用户在媒体实际开始播放后上报的去重记录；它用于 Feed 去重和播放计数。运行事件用于后续分析与技术排障，不作为播放量或推荐权重，也不会在此页下载逐条原始日志。
-          </Typography.Paragraph>
-        </Card>
-      ) : null}
-
-      <Card className="page-card" title="版本与素材" size="small">
-        {versionInfos.length > 0 ? (
-          <Space size="middle" wrap style={{ marginBottom: 16 }}>
-            <Typography.Text type="secondary">查看版本</Typography.Text>
-            <Select
-              style={{ width: 200 }}
-              value={data.run.analysis_version || undefined}
-              loading={switching}
-              options={versionInfos.map((v) => ({
-                value: v.version,
-                label: versionOptionLabel(v.label, v.version, published),
-              }))}
-              onChange={(v) => void onSwitchVersion(v)}
-              disabled={busy}
-            />
-            <Typography.Text type="secondary">
-              {isManual ? '人工标注' : 'AI 生成'}
-              {currentNote ? ` · ${currentNote}` : ''}
-            </Typography.Text>
-          </Space>
-        ) : null}
-        <Descriptions column={2} size="small">
-          <Descriptions.Item label="处理方式">{isManual ? '人工标注' : 'AI 生成'}</Descriptions.Item>
-          <Descriptions.Item label="模型">{data.run.model_name}</Descriptions.Item>
-          <Descriptions.Item label="当前版本">
-            {versionInfos.find((v) => v.version === data.run.analysis_version)?.label || data.run.analysis_version || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="备注">{currentNote || '-'}</Descriptions.Item>
-          <Descriptions.Item label="时长">
-            {data.media.duration_ms != null ? `${(Number(data.media.duration_ms) / 1000).toFixed(2)}s` : '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="分辨率">
-            {data.media.width && data.media.height ? `${data.media.width}×${data.media.height}` : '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="大小">
-            {data.media.bytes != null ? `${(Number(data.media.bytes) / 1024 / 1024).toFixed(2)} MB` : '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="SHA256">
-            <Typography.Text code copyable={{ text: String(data.media.sha256 || '') }}>
-              {data.media.sha256 ? `${String(data.media.sha256).slice(0, 16)}…` : '-'}
-            </Typography.Text>
-          </Descriptions.Item>
-          <Descriptions.Item label="创作要求" span={2}>
-            {String(data.media.brief || '-')}
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
-
-      {canPlay ? (
-        <Card className="page-card" title="效果预览" size="small">
-          <PreviewPlayer
-            runId={data.run.id}
-            gates={gates}
-            durationMs={Number(data.media.duration_ms || 0) || undefined}
-          />
-        </Card>
-      ) : null}
-
-      {!isManual ? (
-      <Card className="page-card" title="分析明细" size="small">
-        <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
-          模型：{data.analysis_refine.model || data.run.model_name}
-        </Typography.Paragraph>
-        <Collapse
-          items={[
-            {
-              key: 'model',
-              label: '模型分析结构',
-              children: (
-                <Table
-                  size="small"
-                  pagination={false}
-                  rowKey={(_, i) => `a-${i}`}
-                  dataSource={data.analysis_refine.interactions || []}
-                  columns={[
-                    { title: '手势', dataIndex: 'gesture' },
-                    {
-                      title: '模型时刻',
-                      dataIndex: 'model_reaction_at_ms',
-                      render: (ms?: number) => (ms != null ? `${(ms / 1000).toFixed(2)}s` : '-'),
-                    },
-                    {
-                      title: '精修后',
-                      dataIndex: 'first_changed_ms',
-                      render: (ms?: number) => (ms != null ? `${(ms / 1000).toFixed(2)}s` : '-'),
-                    },
-                    { title: '精修方式', dataIndex: 'refined_by', ellipsis: true },
-                    { title: 'Hint', dataIndex: 'hint', ellipsis: true },
-                  ]}
-                />
-              ),
-            },
-            {
-              key: 'dropped',
-              label: `丢弃候选（${(data.gameplay.dropped || []).length}）`,
-              children: (
-                <Table
-                  size="small"
-                  pagination={false}
-                  rowKey={(_, i) => `d-${i}`}
-                  dataSource={data.gameplay.dropped || []}
-                  locale={{ emptyText: '无丢弃候选' }}
-                  columns={[
-                    { title: '手势', dataIndex: 'gesture' },
-                    {
-                      title: '时刻',
-                      dataIndex: 'first_changed_ms',
-                      render: (ms?: number) => (ms != null ? `${ms}ms` : '-'),
-                    },
-                    {
-                      title: '原因',
-                      dataIndex: 'reason_codes',
-                      render: (codes?: string[]) => (codes || []).join(', ') || '-',
-                    },
-                    { title: 'Hint', dataIndex: 'hint', ellipsis: true },
-                  ]}
-                />
-              ),
-            },
-          ]}
-        />
-      </Card>
-      ) : null}
-
-      <Modal
-        title={published ? '更新发布' : '发布视频'}
-        open={publishOpen}
-        onCancel={() => setPublishOpen(false)}
-        onOk={() => void onPublish()}
-        confirmLoading={publishing}
-        okButtonProps={{ disabled: !publishVersion || !publishUserId }}
-        okText={published ? '确认更新' : '确认发布'}
-        cancelText="取消"
-      >
-        <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          <div>
-            <Typography.Text type="secondary">发布版本</Typography.Text>
-            <Select
-              style={{ width: '100%', marginTop: 4 }}
-              placeholder="选择版本"
-              value={publishVersion}
-              options={publishOptions.map((v) => ({
-                value: v.version,
-                label: versionOptionLabel(v.label, v.version, published),
-              }))}
-              onChange={setPublishVersion}
-            />
-          </div>
-          <div>
-            <Typography.Text type="secondary">发布到</Typography.Text>
-            <Select
-              style={{ width: '100%', marginTop: 4 }}
-              placeholder="选择 App 账号"
-              loading={pickLoading}
-              value={publishUserId}
-              options={pickAccounts.map((a) => ({
-                value: a.user_id,
-                label: a.nickname || a.user_id,
-              }))}
-              onChange={setPublishUserId}
-              showSearch
-              optionFilterProp="label"
-            />
-          </div>
-          <Typography.Paragraph
-            type="secondary"
-            style={{ marginBottom: 0, padding: 12, background: '#f5f5f5', borderRadius: 6 }}
-          >
-            将《{displayTitle}》{publishVersion || '所选版本'}发布到所选 App 账号。
-            Feed 权重：{data.run.feed_weight ?? 0}；教学视频：
-            {data.run.is_tutorial ? '是' : '否'}（可在“发布与推荐”中修改）
-          </Typography.Paragraph>
-        </Space>
-      </Modal>
-
-      <Modal
-        title="重新分析"
-        open={reanalyzeOpen}
-        onCancel={() => setReanalyzeOpen(false)}
-        onOk={() => void onReanalyze()}
-        confirmLoading={reanalyzing}
-        okText="开始"
-      >
-        <Typography.Paragraph type="secondary">
-          保留旧版本目录，在新版本目录中重跑。默认下一版由服务端建议。
-        </Typography.Paragraph>
-        <Space direction="vertical" style={{ width: '100%' }} size="middle">
-          <div>
-            <Typography.Text type="secondary">模型</Typography.Text>
-            <Select
-              style={{ width: '100%', marginTop: 4 }}
-              showSearch
-              loading={modelsLoading}
-              value={reanalyzeModel || undefined}
-              options={modelOptions.map((mid) => ({ value: mid, label: mid }))}
-              onChange={setReanalyzeModel}
-              placeholder="选择模型"
-            />
-          </div>
-          <div>
-            <Typography.Text type="secondary">Brief（创作者要求）</Typography.Text>
-            <Input.TextArea
-              style={{ marginTop: 4 }}
-              rows={3}
-              maxLength={500}
-              showCount
-              value={reanalyzeBrief}
-              onChange={(e) => setReanalyzeBrief(e.target.value)}
-              placeholder="可选，会发给分析模型"
-            />
-          </div>
-          <div>
-            <Typography.Text type="secondary">版本备注</Typography.Text>
-            <Input
-              style={{ marginTop: 4 }}
-              maxLength={200}
-              value={reanalyzeNote}
-              onChange={(e) => setReanalyzeNote(e.target.value)}
-              placeholder="可选，仅展示在版本信息里"
-            />
-          </div>
-          <Input
-            addonBefore="版本"
-            value={reanalyzeVersion}
-            onChange={(e) => setReanalyzeVersion(e.target.value)}
-            placeholder="0.0.2"
-          />
-        </Space>
-      </Modal>
-
-      <Modal
-        title="扫码预览"
-        open={qrOpen}
-        onCancel={() => setQrOpen(false)}
-        footer={null}
-        destroyOnClose
-      >
-        <Space direction="vertical" align="center" style={{ width: '100%' }} size="middle">
-          {qrUrl ? <QRCodeSVG value={qrUrl} size={220} includeMargin /> : null}
-          <Typography.Paragraph copyable style={{ marginBottom: 0, wordBreak: 'break-all' }}>
-            {qrUrl}
-          </Typography.Paragraph>
-          <Typography.Text type="secondary">
-            App 扫码后拉取详情并播放；微信等普通扫码只会打开链接看到 JSON。请用手机可访问的后台地址打开本页再扫。
-          </Typography.Text>
-        </Space>
-      </Modal>
+      <RunDetailPublish
+        data={data}
+        published={published || undefined}
+        businessStatus={businessStatus}
+        businessStatusColor={businessStatusColor}
+        generationStatus={generationStatus}
+        displayTitle={displayTitle}
+        publishOptions={publishOptions}
+        publishVersion={publishVersion}
+        publishUserId={publishUserId}
+        pickAccounts={pickAccounts}
+        pickLoading={pickLoading}
+        publishing={publishing}
+        publishOpen={publishOpen}
+        onPublish={() => void onPublish()}
+        onPublishCancel={() => setPublishOpen(false)}
+        onPublishVersionChange={setPublishVersion}
+        onPublishUserIdChange={setPublishUserId}
+        qrOpen={qrOpen}
+        qrUrl={qrUrl}
+        onQrClose={() => setQrOpen(false)}
+        metricsLoading={metricsLoading}
+        playbackMetrics={playbackMetrics}
+        onRefreshMetrics={() => void loadPlaybackMetrics()}
+        versionInfos={versionInfos}
+        currentVersion={data.run.analysis_version || ''}
+        currentNote={currentNote}
+        isManual={isManual}
+        busy={busy}
+        switching={switching}
+        onSwitchVersion={(v) => void onSwitchVersion(v)}
+        weightSaving={weightSaving}
+        onSaveFeedWeight={(n) => void onSaveFeedWeight(n)}
+        tutorialSaving={tutorialSaving}
+        onSaveTutorial={(b) => void onSaveTutorial(b)}
+        reanalyzeOpen={reanalyzeOpen}
+        reanalyzeVersion={reanalyzeVersion}
+        reanalyzeModel={reanalyzeModel}
+        reanalyzeBrief={reanalyzeBrief}
+        reanalyzeNote={reanalyzeNote}
+        reanalyzing={reanalyzing}
+        modelOptions={modelOptions}
+        modelsLoading={modelsLoading}
+        onReanalyze={() => void onReanalyze()}
+        onReanalyzeCancel={() => setReanalyzeOpen(false)}
+        onReanalyzeVersionChange={setReanalyzeVersion}
+        onReanalyzeModelChange={setReanalyzeModel}
+        onReanalyzeBriefChange={setReanalyzeBrief}
+        onReanalyzeNoteChange={setReanalyzeNote}
+      />
     </>
   )
 }

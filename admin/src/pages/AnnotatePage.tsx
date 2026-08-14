@@ -15,6 +15,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import PreviewPlayer, { GESTURE_LABEL } from '../components/PreviewPlayer'
+import VisionInteractionFields, {
+  normalizeVisionConfig,
+  type VisionConfig,
+} from '../components/VisionInteractionFields'
 
 const GESTURES = Object.entries(GESTURE_LABEL).map(([value, label]) => ({ value, label }))
 
@@ -28,6 +32,8 @@ type Interaction = {
   gameplay_description?: string
   reaction_start_ms?: number
   reaction_end_ms?: number
+  pause_video?: boolean
+  vision?: VisionConfig
 }
 
 type VersionInfo = {
@@ -132,6 +138,10 @@ export default function AnnotatePage() {
         gate_at_ms: Math.round(r.gate_at_ms),
         ...(typeof r.gate_end_ms === 'number' ? { gate_end_ms: Math.round(r.gate_end_ms) } : {}),
         ...(r.hint ? { hint: r.hint } : {}),
+        ...(r.pause_video === false ? { pause_video: false } : { pause_video: true }),
+        // Always send an explicit semantic target. Old drafts may not have one yet;
+        // serialising it here prevents a subsequent save from becoming generic “比耶”.
+        ...(r.gesture === 'camera_motion' ? { vision: normalizeVisionConfig(r.vision) } : {}),
         ...(r.custom_action ? { custom_action: true } : {}),
         ...(r.action_description ? { action_description: r.action_description } : {}),
         ...(r.gameplay_description ? { gameplay_description: r.gameplay_description } : {}),
@@ -364,11 +374,10 @@ export default function AnnotatePage() {
 
       {versionInfos.length > 0 ? (
         <div
+          className="version-result-bar"
           style={{
             marginBottom: 16,
             padding: '10px 14px',
-            background: '#fff',
-            border: '1px solid #f0f0f0',
             borderRadius: 8,
           }}
         >
@@ -483,6 +492,9 @@ export default function AnnotatePage() {
                         gesture: g.value,
                         custom_action: false,
                         action_description: undefined,
+                        ...(g.value === 'camera_motion' && !selected.vision
+                          ? { vision: { target: 'hand_victory', min_confidence: 0.82, stable_for_ms: 400, camera_facing: 'front', show_preview: true } }
+                          : {}),
                       })
                     }
                   >
@@ -507,6 +519,12 @@ export default function AnnotatePage() {
                   showCount
                   onChange={(e) => updateSelected({ action_description: e.target.value })}
                   placeholder="描述用户需要执行的动作，例如：摸一摸小猫"
+                />
+              ) : null}
+              {!selected.custom_action && selected.gesture === 'camera_motion' ? (
+                <VisionInteractionFields
+                  value={selected.vision}
+                  onChange={(vision) => updateSelected({ vision })}
                 />
               ) : null}
             </div>

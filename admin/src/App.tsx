@@ -16,6 +16,7 @@ import CreatorInvitesPage from './pages/CreatorInvitesPage'
 import ModerationPage from './pages/ModerationPage'
 import AppVersionPolicyPage from './pages/AppVersionPolicyPage'
 import InteractionIntentCatalogPage from './pages/InteractionIntentCatalogPage'
+import PublishedContentDetailPage from './pages/PublishedContentDetailPage'
 
 function Private({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth()
@@ -73,6 +74,7 @@ function AppRoutes() {
       >
         <Route index element={<RunListPage />} />
         <Route path="runs/:id" element={<RunDetailPage />} />
+        <Route path="content/:id" element={<PublishedContentDetailPage />} />
         <Route path="runs/:id/annotate/:version" element={<AnnotatePage />} />
         <Route path="stories/:id" element={<StoryRedirect />} />
         <Route path="stories/:id/:version" element={<StoryEditPage />} />

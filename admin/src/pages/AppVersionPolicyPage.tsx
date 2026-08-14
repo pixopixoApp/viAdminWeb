@@ -4,7 +4,7 @@ import AppVersionPolicyCard from '../components/AppVersionPolicyCard'
 export default function AppVersionPolicyPage() {
   return (
     <>
-      <Typography.Title level={4} style={{ marginTop: 0 }}>
+      <Typography.Title level={4} style={{ marginTop: 0 }} className="page-title">
         App 更新策略
       </Typography.Title>
       <Typography.Paragraph type="secondary">

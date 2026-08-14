@@ -31,21 +31,24 @@ type Run = {
   updated_at?: string
   source?: 'pgc' | 'ugc' | 'manual_upload'
   content_type?: 'runtime' | 'html'
-  review_status?: 'pending' | 'approved' | 'rejected'
+  review_status?: 'draft' | 'pending' | 'approved' | 'rejected'
   author_user_id?: string
   author_nickname?: string
   creation_status?: string
   cover_url?: string
   preview_url?: string
+  distribution_enabled?: boolean
+  has_run?: boolean
 }
 
 type ModelsResp = { default: string; items: { id: string }[] }
 
-type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected'
+type StatusFilter = 'all' | 'draft' | 'pending' | 'approved' | 'rejected'
 type SourceFilter = 'all' | 'pgc' | 'ugc' | 'manual_upload'
 
 const statusFilterOptions: { label: string; value: StatusFilter }[] = [
   { label: '全部', value: 'all' },
+  { label: '草稿', value: 'draft' },
   { label: '待审核', value: 'pending' },
   { label: '已发布', value: 'approved' },
   { label: '已拒绝', value: 'rejected' },
@@ -167,7 +170,7 @@ export default function RunListPage() {
       dataIndex: 'title',
       render: (_t, row) => (
         <Link
-          to={row.source === 'manual_upload' ? '/html-imports' : (
+          to={row.source === 'manual_upload' ? '/html-imports' : row.has_run === false ? `/content/${row.id}` : (
             row.content_mode === 'story'
               ? `/stories/${row.id}/${row.analysis_version || '0.0.1'}`
               : `/runs/${row.id}`
@@ -192,9 +195,10 @@ export default function RunListPage() {
       key: 'status',
       width: 150,
       render: (_, row) => {
+        if (row.review_status === 'draft') return <Tag color="gold">草稿（不公开）</Tag>
         if (row.review_status === 'pending') return <Tag color="orange">待审核</Tag>
         if (row.review_status === 'rejected') return <Tag color="red">已拒绝</Tag>
-        if (row.review_status === 'approved') return <Tag color="green">已发布</Tag>
+        if (row.review_status === 'approved') return <Tag color={row.distribution_enabled === false ? 'default' : 'green'}>{row.distribution_enabled === false ? '暂停 App 分发' : '已发布'}</Tag>
         if (row.processing_mode === 'manual' && row.status === 'no_playable_plan') {
           return <Tag color="purple">手动处理中</Tag>
         }
@@ -253,7 +257,7 @@ export default function RunListPage() {
       title: '操作', key: 'actions', width: 160,
       render: (_, row) => row.source === 'ugc' && row.review_status === 'pending' ? (
         <Space><Button size="small" type="primary" onClick={async () => { try { await api(`/api/v1/content-management/${row.id}/review`, { method: 'POST', body: JSON.stringify({ status: 'approved' }) }); messageApi.success('已通过审核'); void load() } catch (e) { messageApi.error(e instanceof Error ? e.message : '审核失败') } }}>通过</Button><Button size="small" danger onClick={async () => { try { await api(`/api/v1/content-management/${row.id}/review`, { method: 'POST', body: JSON.stringify({ status: 'rejected' }) }); messageApi.success('已拒绝'); void load() } catch (e) { messageApi.error(e instanceof Error ? e.message : '审核失败') } }}>拒绝</Button></Space>
-      ) : <Space>{row.preview_url ? <Button size="small" href={row.preview_url} target="_blank">预览</Button> : null}<Button size="small" danger onClick={async () => { if (!window.confirm('确认下架并删除此发布内容？')) return; try { await api(`/api/v1/content-management/${row.id}`, { method: 'DELETE' }); messageApi.success('已下架'); void load() } catch (e) { messageApi.error(e instanceof Error ? e.message : '下架失败') } }}>下架</Button></Space>,
+      ) : <Space><Link to={row.has_run ? `/runs/${row.id}` : `/content/${row.id}`}><Button size="small">详情</Button></Link>{row.preview_url ? <Button size="small" href={row.preview_url} target="_blank">预览</Button> : null}<Button size="small" danger onClick={async () => { if (!window.confirm('确认下架并删除此发布内容？')) return; try { await api(`/api/v1/content-management/${row.id}`, { method: 'DELETE' }); messageApi.success('已下架'); void load() } catch (e) { messageApi.error(e instanceof Error ? e.message : '下架失败') } }}>下架</Button></Space>,
     },
     {
       title: '教学',
@@ -287,7 +291,7 @@ export default function RunListPage() {
   ]
 
   return (
-    <>
+    <div className="content-list-page">
       {contextHolder}
       {!engineReady && sourceFilter !== 'manual_upload' ? (
         <Alert
@@ -304,11 +308,16 @@ export default function RunListPage() {
           }
         />
       ) : null}
-      <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between' }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
+      <div className="content-list-toolbar">
+        <div>
+          <Typography.Title level={3} className="page-title">
           {sourceFilter === 'manual_upload' ? '内容管理' : <>内容管理 <Typography.Text type="secondary">({total})</Typography.Text></>}
-        </Typography.Title>
-        {sourceFilter !== 'manual_upload' ? <Space>
+          </Typography.Title>
+          <Typography.Text type="secondary" className="content-list-subtitle">
+            管理内容来源、发布状态与 Feed 分发权重
+          </Typography.Text>
+        </div>
+        {sourceFilter !== 'manual_upload' ? <Space className="content-list-toolbar-actions" wrap>
           <Button
             onClick={async () => {
               try {
@@ -332,28 +341,37 @@ export default function RunListPage() {
             上传视频
           </Button>
         </Space> : null}
-      </Space>
-      <Segmented<SourceFilter>
-        value={sourceFilter}
-        options={sourceOptions}
-        onChange={selectSource}
-        style={{ marginBottom: 16 }}
-      />
-      {sourceFilter !== 'manual_upload' ? <>
-        <Segmented<StatusFilter>
-          value={statusFilter}
-          options={statusFilterOptions}
-          onChange={(value) => {
-            setStatusFilter(value)
-            setPage(1)
-          }}
-          style={{ margin: '0 0 16px 12px' }}
-        />
+      </div>
+      <div className="content-list-filters" aria-label="内容筛选">
+        <div className="content-list-filter-group">
+          <Typography.Text type="secondary">内容来源</Typography.Text>
+          <Segmented<SourceFilter>
+            value={sourceFilter}
+            options={sourceOptions}
+            onChange={selectSource}
+          />
+        </div>
+        {sourceFilter !== 'manual_upload' ? (
+          <div className="content-list-filter-group">
+            <Typography.Text type="secondary">发布状态</Typography.Text>
+            <Segmented<StatusFilter>
+              value={statusFilter}
+              options={statusFilterOptions}
+              onChange={(value) => {
+                setStatusFilter(value)
+                setPage(1)
+              }}
+            />
+          </div>
+        ) : null}
+      </div>
+      {sourceFilter !== 'manual_upload' ? <div className="content-list-table">
       <Table
         rowKey="id"
         loading={loading}
         columns={columns}
         dataSource={rows}
+        scroll={{ x: 1320 }}
         pagination={{
           current: page,
           pageSize,
@@ -367,7 +385,7 @@ export default function RunListPage() {
           },
         }}
       />
-      </> : <HtmlImportsPage embedded />}
+      </div> : <HtmlImportsPage embedded />}
 
       <Modal
         title="上传视频"
@@ -504,6 +522,6 @@ export default function RunListPage() {
           ) : null}
         </Form>
       </Modal>
-    </>
+    </div>
   )
 }

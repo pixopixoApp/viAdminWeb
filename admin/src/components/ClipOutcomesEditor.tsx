@@ -1,16 +1,7 @@
 import { Select, Space, Typography } from 'antd'
+import type { OutcomeAction, OutcomeEdge, Outcomes } from '../types/outcome'
 
-export type OutcomeAction = 'continue' | 'goto' | 'replay'
-
-export type OutcomeEdge = {
-  action: OutcomeAction
-  clip_id?: string
-}
-
-export type Outcomes = {
-  success?: OutcomeEdge
-  fail?: OutcomeEdge
-}
+export type { OutcomeAction, OutcomeEdge, Outcomes }
 
 type ClipOption = { clip_id: string; source_filename: string }
 

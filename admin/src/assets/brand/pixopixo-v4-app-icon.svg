@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">pixopixo joystick app icon</title>
+  <desc id="desc">A white joystick P with cobalt player and lime play triangle on a black app tile.</desc>
+  <rect x="32" y="32" width="960" height="960" rx="224" fill="#000000"/>
+  <circle cx="498" cy="388" r="260" fill="#FFFFFF"/>
+  <rect x="238" y="360" width="150" height="430" rx="75" fill="#FFFFFF"/>
+  <circle cx="530" cy="388" r="150" fill="#0047AB"/>
+  <path d="M477 292L635 388L477 484Z" fill="#C8FF3D"/>
+  <path d="M278 804Q498 716 718 804" fill="none" stroke="#0047AB" stroke-width="62" stroke-linecap="round"/>
+</svg>

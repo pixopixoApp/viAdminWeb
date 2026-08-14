@@ -13,6 +13,8 @@ type Gate = {
 
 type Props = {
   runId: string
+  /** Browser-loadable media for a published item that has no Run workspace. */
+  videoUrl?: string
   /** When set, play this clip instead of the run's default source.mp4 */
   clipId?: string
   gates: Gate[]
@@ -73,6 +75,7 @@ function hintLabel(gate: Gate) {
 
 export default function PreviewPlayer({
   runId,
+  videoUrl,
   clipId,
   gates,
   durationMs,
@@ -381,9 +384,9 @@ export default function PreviewPlayer({
             ref={videoRef}
             className="preview-video"
             src={
-              clipId
+              videoUrl || (clipId
                 ? `/api/v1/stories/${runId}/clips/${clipId}/video`
-                : `/api/v1/runs/${runId}/media/video`
+                : `/api/v1/runs/${runId}/media/video`)
             }
             key={clipId || 'default'}
             playsInline

@@ -15,22 +15,9 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useCallback, useEffect, useState } from 'react'
-import { api } from '../api'
+import { accountsApi, staffApi } from '../services/api'
 import { useAuth } from '../auth'
-
-type Account = {
-  user_id: string
-  nickname: string
-  avatar_url: string
-  avatar_absolute_url: string
-  enabled: boolean
-  source: string
-  owner_staff_id?: number | null
-  owner_staff_name?: string | null
-  created_at?: string | null
-}
-
-type Staff = { id: number; display_name: string; username: string; role: string }
+import type { Account, Staff } from '../types/account'
 
 export default function AccountsPage() {
   const { me } = useAuth()
@@ -48,15 +35,12 @@ export default function AccountsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams({
+      const data = await accountsApi.list({
         scope: canAll ? scope : 'mine',
-        limit: '50',
-        offset: '0',
+        limit: 50,
+        offset: 0,
+        ...(q.trim() ? { q: q.trim() } : {}),
       })
-      if (q.trim()) params.set('q', q.trim())
-      const data = await api<{ items: Account[]; total: number }>(
-        `/api/v1/accounts?${params.toString()}`,
-      )
       setRows(data.items)
       setTotal(data.total)
     } catch (err) {
@@ -73,7 +57,7 @@ export default function AccountsPage() {
   async function loadOperators() {
     if (!canAll) return
     try {
-      const data = await api<{ items: Staff[] }>('/api/v1/staff?page=1&page_size=200')
+      const data = await staffApi.list(1, 200)
       setOperators(data.items.filter((s) => s.role === 'operator'))
     } catch {
       setOperators([])
@@ -130,10 +114,7 @@ export default function AccountsPage() {
                 const fd = new FormData()
                 fd.append('file', file)
                 try {
-                  await api(`/api/v1/accounts/${row.user_id}/avatar`, {
-                    method: 'POST',
-                    body: fd,
-                  })
+                  await accountsApi.uploadAvatar(row.user_id, fd)
                   messageApi.success('头像已更新')
                   await load()
                 } catch (err) {
@@ -150,7 +131,7 @@ export default function AccountsPage() {
                 danger
                 onClick={async () => {
                   try {
-                    await api(`/api/v1/accounts/${row.user_id}/deactivate`, { method: 'POST' })
+                    await accountsApi.deactivate(row.user_id)
                     messageApi.success('已停用')
                     await load()
                   } catch (err) {
@@ -165,10 +146,7 @@ export default function AccountsPage() {
                 size="small"
                 onClick={async () => {
                   try {
-                    await api(`/api/v1/accounts/${row.user_id}`, {
-                      method: 'PATCH',
-                      body: JSON.stringify({ enabled: true }),
-                    })
+                    await accountsApi.enable(row.user_id)
                     messageApi.success('已启用')
                     await load()
                   } catch (err) {
@@ -200,7 +178,7 @@ export default function AccountsPage() {
     <>
       {contextHolder}
       <Space style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between' }} wrap>
-        <Typography.Title level={4} style={{ margin: 0 }}>
+        <Typography.Title level={4} style={{ margin: 0 }} className="page-title">
           账号管理
         </Typography.Title>
         <Space wrap>
@@ -238,10 +216,7 @@ export default function AccountsPage() {
           layout="vertical"
           onFinish={async (values) => {
             try {
-              await api('/api/v1/accounts', {
-                method: 'POST',
-                body: JSON.stringify(values),
-              })
+              await accountsApi.create(values)
               messageApi.success('已创建')
               setCreateOpen(false)
               await load()
@@ -286,10 +261,7 @@ export default function AccountsPage() {
           onFinish={async (values) => {
             if (!reassignTarget) return
             try {
-              await api(`/api/v1/accounts/${reassignTarget.user_id}/reassign`, {
-                method: 'POST',
-                body: JSON.stringify(values),
-              })
+              await accountsApi.reassign(reassignTarget.user_id, values.owner_staff_id)
               messageApi.success('已变更归属')
               setReassignTarget(null)
               await load()

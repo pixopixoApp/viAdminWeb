@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 420" role="img" aria-labelledby="title desc">
+  <title id="title">pixopixo joystick P mark</title>
+  <desc id="desc">An abstract joystick shaped as the letter p with a lime video play triangle.</desc>
+  <circle cx="154" cy="160" r="110" fill="#000000"/>
+  <rect x="44" y="148" width="66" height="210" rx="33" fill="#000000"/>
+  <circle cx="167" cy="160" r="64" fill="#0047AB"/>
+  <path d="M145 120L211 160L145 200Z" fill="#C8FF3D"/>
+  <path d="M63 354Q154 314 245 354" fill="none" stroke="#0047AB" stroke-width="24" stroke-linecap="round"/>
+</svg>

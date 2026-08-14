@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 420" role="img" aria-labelledby="title desc">
+  <title id="title">pixopixo joystick P wordmark</title>
+  <desc id="desc">A custom lowercase wordmark whose p letters are abstract joysticks with lime video play buttons.</desc>
+  <g id="joystick-p-1">
+    <circle cx="154" cy="160" r="110" fill="#000000"/>
+    <rect x="44" y="148" width="66" height="210" rx="33" fill="#000000"/>
+    <circle cx="167" cy="160" r="64" fill="#0047AB"/>
+    <path d="M145 120L211 160L145 200Z" fill="#C8FF3D"/>
+    <path d="M63 354Q154 314 245 354" fill="none" stroke="#0047AB" stroke-width="24" stroke-linecap="round"/>
+  </g>
+  <g fill="#000000">
+    <rect x="314" y="121" width="58" height="178" rx="29"/><rect x="321" y="52" width="44" height="44" rx="12" fill="#C8FF3D"/>
+    <path d="M425 132L548 290M548 132L425 290" fill="none" stroke="#000000" stroke-width="58" stroke-linecap="round"/>
+    <circle cx="664" cy="211" r="88" fill="none" stroke="#000000" stroke-width="58"/>
+  </g>
+  <g id="joystick-p-2" transform="translate(756 0)">
+    <circle cx="154" cy="160" r="110" fill="#000000"/>
+    <rect x="44" y="148" width="66" height="210" rx="33" fill="#000000"/>
+    <circle cx="167" cy="160" r="64" fill="#0047AB"/>
+    <path d="M145 120L211 160L145 200Z" fill="#C8FF3D"/>
+    <path d="M63 354Q154 314 245 354" fill="none" stroke="#0047AB" stroke-width="24" stroke-linecap="round"/>
+  </g>
+  <g fill="#000000" transform="translate(756 0)">
+    <rect x="314" y="121" width="58" height="178" rx="29"/><rect x="321" y="52" width="44" height="44" rx="12" fill="#0047AB"/>
+    <path d="M425 132L548 290M548 132L425 290" fill="none" stroke="#000000" stroke-width="58" stroke-linecap="round"/>
+    <circle cx="664" cy="211" r="88" fill="none" stroke="#000000" stroke-width="58"/>
+  </g>
+</svg>
