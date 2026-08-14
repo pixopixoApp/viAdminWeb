@@ -7,6 +7,7 @@ type Props = {
   entryClipId: string
   editing: boolean
   uploading: boolean
+  uploadStatusText: string
   onUploadClip: (file: File) => Promise<boolean>
   onSwitchClip: (clipId: string) => void
   onSetEntryClip: () => void
@@ -20,6 +21,7 @@ export default function ClipList({
   entryClipId,
   editing,
   uploading,
+  uploadStatusText,
   onUploadClip,
   onSwitchClip,
   onSetEntryClip,
@@ -51,6 +53,9 @@ export default function ClipList({
           >
             <Button loading={uploading}>添加片段</Button>
           </Upload>
+        ) : null}
+        {uploadStatusText ? (
+          <Typography.Text type="secondary">{uploadStatusText}</Typography.Text>
         ) : null}
       </Space>
       {activeClipId ? (

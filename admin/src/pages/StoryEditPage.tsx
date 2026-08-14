@@ -25,6 +25,8 @@ import {
 } from '../components/story-edit'
 import { normalizeVisionConfig } from '../components/VisionInteractionFields'
 
+type UploadStage = 'preparing' | 'uploading' | 'processing'
+
 /** Redirect /stories/:id → /stories/:id/{analysis_version} */
 export function StoryRedirect() {
   const { id } = useParams()
@@ -67,7 +69,8 @@ export default function StoryEditPage() {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [playheadMs, setPlayheadMs] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
+  const [uploadStage, setUploadStage] = useState<UploadStage | null>(null)
+  const [uploadElapsedSeconds, setUploadElapsedSeconds] = useState(0)
   const [finalizing, setFinalizing] = useState(false)
   const [forking, setForking] = useState(false)
   const [switching, setSwitching] = useState(false)
@@ -86,6 +89,22 @@ export default function StoryEditPage() {
   const [messageApi, contextHolder] = message.useMessage()
   const skipAutosave = useRef(true)
   const saveGen = useRef(0)
+  const uploadStartedAt = useRef<number | null>(null)
+
+  const uploading = uploadStage !== null
+
+  useEffect(() => {
+    if (!uploadStage || uploadStartedAt.current == null) return
+    const updateElapsed = () => {
+      const startedAt = uploadStartedAt.current
+      if (startedAt != null) {
+        setUploadElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)))
+      }
+    }
+    updateElapsed()
+    const timer = window.setInterval(updateElapsed, 1000)
+    return () => window.clearInterval(timer)
+  }, [uploadStage])
 
   const applyStory = useCallback((data: StoryState, preferClip?: string) => {
     setStory(data)
@@ -353,7 +372,9 @@ export default function StoryEditPage() {
 
   async function onUploadClip(file: File) {
     if (!id) return false
-    setUploading(true)
+    uploadStartedAt.current = Date.now()
+    setUploadElapsedSeconds(0)
+    setUploadStage('preparing')
     try {
       const checksum = await sha256Hex(file)
       const session = await storiesApi.createClipUploadSession(id, {
@@ -363,7 +384,9 @@ export default function StoryEditPage() {
         sha256: checksum,
       })
       if (session.uploads.length !== 1) throw new Error('服务端未返回有效上传策略')
+      setUploadStage('uploading')
       await uploadToSignedOss(session.uploads[0], file)
+      setUploadStage('processing')
       const data = await storiesApi.finalizeClipUpload(id, session.session_id)
       skipAutosave.current = true
       applyStory(data.story, data.clip.clip_id)
@@ -372,7 +395,9 @@ export default function StoryEditPage() {
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '上传失败')
     } finally {
-      setUploading(false)
+      setUploadStage(null)
+      uploadStartedAt.current = null
+      setUploadElapsedSeconds(0)
     }
     return false
   }
@@ -579,6 +604,15 @@ export default function StoryEditPage() {
         entryClipId={entryClipId}
         editing={editing}
         uploading={uploading}
+        uploadStatusText={
+          uploadStage === 'preparing'
+            ? `正在校验文件… ${uploadElapsedSeconds}s`
+            : uploadStage === 'uploading'
+              ? `正在上传到 OSS… ${uploadElapsedSeconds}s`
+              : uploadStage === 'processing'
+                ? `服务器正在检查视频，跨境 OSS 可能稍慢，请勿刷新或重复上传 · ${uploadElapsedSeconds}s`
+                : ''
+        }
         onUploadClip={onUploadClip}
         onSwitchClip={switchClip}
         onSetEntryClip={() => {
