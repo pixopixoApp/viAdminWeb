@@ -24,6 +24,25 @@ const FACE_TARGETS = [
   ['face_cheek_puff', '鼓腮'],
 ]
 
+export const VISION_TARGET_HINTS: Record<string, string> = {
+  hand_victory: '对镜头比耶',
+  hand_thumb_up: '对镜头竖起大拇指',
+  hand_thumb_down: '对镜头拇指向下',
+  hand_open_palm: '对镜头张开手掌',
+  hand_closed_fist: '对镜头握拳',
+  hand_pointing_up: '对镜头竖起食指',
+  hand_i_love_you: '伸出拇指、食指和小指',
+  face_smile: '对镜头微笑',
+  face_wink_left: '对镜头眨你的左眼',
+  face_wink_right: '对镜头眨你的右眼',
+  face_blink: '对镜头同时眨眼',
+  face_mouth_open: '对镜头张嘴',
+  face_mouth_pucker: '对镜头嘟嘴',
+  face_brow_raise: '对镜头抬起眉毛',
+  face_brow_furrow: '对镜头皱起眉头',
+  face_cheek_puff: '对镜头鼓起双腮',
+}
+
 const TARGET_DEFAULTS: Record<string, Pick<Required<VisionConfig>, 'min_confidence' | 'stable_for_ms'>> = {
   hand_victory: { min_confidence: 0.82, stable_for_ms: 400 },
   hand_thumb_up: { min_confidence: 0.6, stable_for_ms: 250 },
@@ -54,11 +73,14 @@ const DEFAULT_VISION: Required<VisionConfig> = {
 
 export function normalizeVisionConfig(value?: VisionConfig): Required<VisionConfig> {
   const target = value?.target || DEFAULT_VISION.target
+  const targetDefaults = TARGET_DEFAULTS[target] || TARGET_DEFAULTS[DEFAULT_VISION.target]
   return {
     ...DEFAULT_VISION,
+    ...targetDefaults,
     ...value,
     target,
-    min_confidence: value?.min_confidence ?? (target.startsWith('face_') ? 0.72 : 0.82),
+    min_confidence: value?.min_confidence ?? targetDefaults.min_confidence,
+    stable_for_ms: value?.stable_for_ms ?? targetDefaults.stable_for_ms,
   }
 }
 

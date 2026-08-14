@@ -9,6 +9,12 @@ export type VisionConfig = {
   stable_for_ms?: number
 }
 
+export type VisionResolution = {
+  target_source: 'ai' | 'fallback' | 'operator'
+  fallback_reason?: 'missing' | 'unsupported'
+  evidence?: string
+}
+
 export type Interaction = {
   gate_at_ms: number
   gate_end_ms?: number
@@ -23,6 +29,7 @@ export type Interaction = {
   outcomes?: Outcomes
   pause_video?: boolean
   vision?: VisionConfig
+  vision_resolution?: VisionResolution
 }
 
 export const GESTURE_LABEL: Record<string, string> = {

@@ -20,6 +20,7 @@ import type { AnnotateState, VersionInfo } from '../types/run'
 import PreviewPlayer from '../components/PreviewPlayer'
 import VisionInteractionFields, {
   normalizeVisionConfig,
+  VISION_TARGET_HINTS,
 } from '../components/VisionInteractionFields'
 
 const GESTURES = Object.entries(GESTURE_LABEL).map(([value, label]) => ({ value, label }))
@@ -98,7 +99,12 @@ export default function AnnotatePage() {
         ...(typeof r.gate_end_ms === 'number' ? { gate_end_ms: Math.round(r.gate_end_ms) } : {}),
         ...(r.hint ? { hint: r.hint } : {}),
         ...(r.pause_video === false ? { pause_video: false } : { pause_video: true }),
-        ...(r.gesture === 'camera_motion' ? { vision: normalizeVisionConfig(r.vision) } : {}),
+        ...(r.gesture === 'camera_motion'
+          ? {
+              vision: normalizeVisionConfig(r.vision),
+              vision_resolution: r.vision_resolution || { target_source: 'operator' as const },
+            }
+          : {}),
         ...(r.custom_action ? { custom_action: true } : {}),
         ...(r.action_description ? { action_description: r.action_description } : {}),
         ...(r.gameplay_description ? { gameplay_description: r.gameplay_description } : {}),
@@ -447,6 +453,8 @@ export default function AnnotatePage() {
                                 camera_facing: 'front',
                                 show_preview: true,
                               },
+                              vision_resolution: { target_source: 'operator' },
+                              hint: VISION_TARGET_HINTS.hand_victory,
                             }
                           : {}),
                       })
@@ -478,15 +486,24 @@ export default function AnnotatePage() {
               {!selected.custom_action && selected.gesture === 'camera_motion' ? (
                 <VisionInteractionFields
                   value={selected.vision}
-                  onChange={(vision) => updateSelected({ vision })}
+                  onChange={(vision) =>
+                    updateSelected({
+                      vision,
+                      vision_resolution: { target_source: 'operator' },
+                      hint: VISION_TARGET_HINTS[vision.target],
+                    })
+                  }
                 />
               ) : null}
             </div>
 
             <div>
-              <Typography.Text type="secondary">Hint（播放器提示，最多 40 字）</Typography.Text>
+              <Typography.Text type="secondary">
+                Hint（{selected.gesture === 'camera_motion' ? '随识别目标自动生成' : '播放器提示，最多 40 字'}）
+              </Typography.Text>
               <Input
                 style={{ marginTop: 8 }}
+                disabled={selected.gesture === 'camera_motion'}
                 value={selected.hint || ''}
                 maxLength={40}
                 showCount
