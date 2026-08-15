@@ -316,7 +316,7 @@ export default function RunDetailPage() {
         brief: reanalyzeBrief,
         note: reanalyzeNote || undefined,
       })
-      messageApi.success(`重新分析完成（${reanalyzeVersion} / ${reanalyzeModel}）`)
+      messageApi.success(`已加入分析队列（${reanalyzeVersion} / ${reanalyzeModel}）`)
       setReanalyzeOpen(false)
       await load()
     } catch (err) {
