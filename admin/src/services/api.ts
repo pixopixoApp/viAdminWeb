@@ -159,11 +159,26 @@ export type RunListParams = {
   status?: string
 }
 
+export type ListOwnRunsParams = {
+  status_filter?: string
+  page?: number
+  page_size?: number
+}
+
 export function listRuns(params: RunListParams = {}) {
   const query = new URLSearchParams()
   if (params.source) query.set('source', params.source)
   if (params.status) query.set('status', params.status)
   return api<{ items: Run[]; total: number }>(`/api/v1/content-management?${query.toString()}`)
+}
+
+/** 当前登录人的视频列表（operator 等非全量角色使用） */
+export function listOwnRuns(params: ListOwnRunsParams = {}) {
+  const query = new URLSearchParams()
+  if (params.status_filter) query.set('status_filter', params.status_filter)
+  if (params.page) query.set('page', String(params.page))
+  if (params.page_size) query.set('page_size', String(params.page_size))
+  return api<{ items: Run[]; total: number }>(`/api/v1/runs?${query.toString()}`)
 }
 
 export function getRun(id: string) {
@@ -492,6 +507,7 @@ export const engineApi = {
 
 export const runsApi = {
   list: listRuns,
+  listOwn: listOwnRuns,
   get: getRun,
   createRunUploadSession,
   finalizeRunUpload,

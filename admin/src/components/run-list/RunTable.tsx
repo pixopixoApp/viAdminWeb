@@ -17,6 +17,7 @@ export function formatDuration(ms?: number) {
 }
 
 interface RunTableProps {
+  manageAll: boolean
   rows: Run[]
   loading: boolean
   total: number
@@ -29,6 +30,7 @@ interface RunTableProps {
 }
 
 export default function RunTable({
+  manageAll,
   rows,
   loading,
   total,
@@ -39,6 +41,13 @@ export default function RunTable({
   onDelete,
   onEditWeight,
 }: RunTableProps) {
+  const sourceColumn: ColumnsType<Run>[number] = {
+    title: '来源',
+    key: 'source',
+    width: 92,
+    render: (_, row) => <Tag color={row.source === 'ugc' ? 'purple' : row.source === 'manual_upload' ? 'cyan' : 'blue'}>{row.source === 'ugc' ? 'UGC' : row.source === 'manual_upload' ? '手动上传' : 'PGC'}</Tag>,
+  }
+
   const columns: ColumnsType<Run> = [
     {
       title: '封面', key: 'cover', width: 88,
@@ -63,10 +72,7 @@ export default function RunTable({
         </Link>
       ),
     },
-    {
-      title: '来源', key: 'source', width: 92,
-      render: (_, row) => <Tag color={row.source === 'ugc' ? 'purple' : row.source === 'manual_upload' ? 'cyan' : 'blue'}>{row.source === 'ugc' ? 'UGC' : row.source === 'manual_upload' ? '手动上传' : 'PGC'}</Tag>,
-    },
+    ...(manageAll ? [sourceColumn] : []),
     {
       title: '类型',
       key: 'content_mode',
@@ -120,25 +126,33 @@ export default function RunTable({
       title: '权重',
       dataIndex: 'feed_weight',
       width: 72,
-      render: (_v: number | undefined, row) => (
+      render: (_v: number | undefined, row) => manageAll ? (
         <Button size="small" onClick={() => onEditWeight(row)}>
           {row.feed_weight ?? 0}
         </Button>
+      ) : (
+        <span>{row.feed_weight ?? 0}</span>
       ),
     },
     {
-      title: '操作', key: 'actions', width: 160,
+      title: '操作', key: 'actions', width: manageAll ? 160 : 90,
       render: (_, row) => row.source === 'ugc' && row.review_status === 'pending' ? (
         <Space>
           <Button size="small" type="primary" onClick={() => onReview(row)}>审核</Button>
         </Space>
-      ) : (
+      ) : manageAll ? (
         <Space>
           <Link to={row.has_run === false ? `/content/${row.id}` : `/runs/${row.id}`}>
             <Button size="small">详情</Button>
           </Link>
           {row.preview_url ? <Button size="small" href={row.preview_url} target="_blank">预览</Button> : null}
           <Button size="small" danger onClick={() => onDelete(row)}>下架</Button>
+        </Space>
+      ) : (
+        <Space>
+          <Link to={`/runs/${row.id}`}>
+            <Button size="small">详情</Button>
+          </Link>
         </Space>
       ),
     },
