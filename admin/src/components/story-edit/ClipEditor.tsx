@@ -4,7 +4,7 @@ import { GESTURE_LABEL } from '../../types/interaction'
 import type { ClipMeta } from '../../types/run'
 import ClipOutcomesEditor from '../ClipOutcomesEditor'
 import PreviewPlayer from '../PreviewPlayer'
-import VisionInteractionFields from '../VisionInteractionFields'
+import VisionInteractionFields, { VISION_TARGET_HINTS } from '../VisionInteractionFields'
 
 const GESTURES = Object.entries(GESTURE_LABEL).map(([value, label]) => ({ value, label }))
 
@@ -132,6 +132,8 @@ export default function ClipEditor({
                                 camera_facing: 'front',
                                 show_preview: true,
                               },
+                              vision_resolution: { target_source: 'operator' },
+                              hint: VISION_TARGET_HINTS.hand_victory,
                             }
                           : {}),
                       })
@@ -164,16 +166,24 @@ export default function ClipEditor({
                 <VisionInteractionFields
                   value={selected.vision}
                   disabled={!editing}
-                  onChange={(vision) => onUpdateSelected({ vision })}
+                  onChange={(vision) =>
+                    onUpdateSelected({
+                      vision,
+                      vision_resolution: { target_source: 'operator' },
+                      hint: VISION_TARGET_HINTS[vision.target],
+                    })
+                  }
                 />
               ) : null}
             </div>
 
             <div>
-              <Typography.Text type="secondary">Hint</Typography.Text>
+              <Typography.Text type="secondary">
+                Hint{selected.gesture === 'camera_motion' ? '（随识别目标自动生成）' : ''}
+              </Typography.Text>
               <Input
                 style={{ marginTop: 8 }}
-                disabled={!editing}
+                disabled={!editing || selected.gesture === 'camera_motion'}
                 value={selected.hint || ''}
                 maxLength={40}
                 showCount

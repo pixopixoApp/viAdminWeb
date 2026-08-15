@@ -171,7 +171,12 @@ export default function StoryEditPage() {
             ...(typeof r.gate_end_ms === 'number' ? { gate_end_ms: Math.round(r.gate_end_ms) } : {}),
             ...(r.hint ? { hint: r.hint } : {}),
             ...(r.pause_video === false ? { pause_video: false } : { pause_video: true }),
-            ...(r.gesture === 'camera_motion' ? { vision: normalizeVisionConfig(r.vision) } : {}),
+            ...(r.gesture === 'camera_motion'
+              ? {
+                  vision: normalizeVisionConfig(r.vision),
+                  vision_resolution: r.vision_resolution || { target_source: 'operator' as const },
+                }
+              : {}),
             ...(r.custom_action ? { custom_action: true } : {}),
             ...(r.action_description ? { action_description: r.action_description } : {}),
             ...(r.gameplay_description ? { gameplay_description: r.gameplay_description } : {}),
