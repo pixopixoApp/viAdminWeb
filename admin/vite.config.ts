@@ -6,7 +6,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://127.0.0.1:8000',
+      // 本地联调可用 IVADMIN_API_PROXY 指向任意后端（默认本机 ivadmin 8000 端口）
+      '/api': process.env.IVADMIN_API_PROXY || 'http://127.0.0.1:8000',
     },
   },
 })
