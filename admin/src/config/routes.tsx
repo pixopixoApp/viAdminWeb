@@ -6,7 +6,6 @@ import {
   SettingOutlined,
   TeamOutlined,
   SafetyCertificateOutlined,
-  Html5Outlined,
   VideoCameraOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons'
@@ -49,13 +48,6 @@ export const menuConfig: MenuItemConfig[] = [
     path: '/moderation',
     label: '内容安全',
     icon: <SafetyCertificateOutlined />,
-    permission: 'operator',
-  },
-  {
-    key: '/html-imports',
-    path: '/html-imports',
-    label: 'HTML 内容',
-    icon: <Html5Outlined />,
     permission: 'operator',
   },
   {

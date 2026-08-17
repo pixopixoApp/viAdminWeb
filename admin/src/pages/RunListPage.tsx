@@ -1,10 +1,10 @@
 import { message } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useAuth } from '../auth'
 import { runsApi, engineApi, storiesApi } from '../services/api'
 import HtmlImportsPage from './HtmlImportsPage'
 import { Run } from '../types/run'
-import { useAuth } from '../auth'
 import {
   RunFilterBar,
   RunTable,
@@ -21,6 +21,8 @@ export default function RunListPage() {
   const navigate = useNavigate()
   const { me } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
+  // admin / manager 使用全量内容管理列表；operator 等角色只能看到自己创建的视频
+  const manageAll = me?.role === 'admin' || me?.role === 'manager'
   const [rows, setRows] = useState<Run[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -30,12 +32,11 @@ export default function RunListPage() {
   const [engineReady, setEngineReady] = useState(true)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [ownStatusFilter, setOwnStatusFilter] = useState<OwnStatusFilter>('all')
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() => {
-    const source = searchParams.get('source')
-    return sourceOptions.some((option) => option.value === source)
-      ? (source as SourceFilter)
-      : 'pgc'
-  })
+  const sourceParam = searchParams.get('source')
+  const sourceFilter: SourceFilter = sourceOptions.some((option) => option.value === sourceParam) &&
+    (sourceParam !== 'manual_upload' || manageAll)
+    ? sourceParam as SourceFilter
+    : 'pgc'
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [reviewRun, setReviewRun] = useState<Run | null>(null)
@@ -44,14 +45,25 @@ export default function RunListPage() {
   const [weightModalOpen, setWeightModalOpen] = useState(false)
   const [messageApi, contextHolder] = message.useMessage()
 
-  // admin / manager 使用全量内容管理列表；operator 等角色只能看到自己创建的视频
-  const manageAll = me?.role === 'admin' || me?.role === 'manager'
-
   const selectSource = useCallback((value: SourceFilter) => {
-    setSourceFilter(value)
     setPage(1)
-    setSearchParams(value === 'pgc' ? {} : { source: value })
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      if (value === 'pgc') next.delete('source')
+      else next.set('source', value)
+      return next
+    })
   }, [setSearchParams])
+
+  useEffect(() => {
+    if (sourceParam === 'manual_upload' && !manageAll) {
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current)
+        next.delete('source')
+        return next
+      }, { replace: true })
+    }
+  }, [manageAll, setSearchParams, sourceParam])
 
   const load = useCallback(async () => {
     if (!manageAll) {
@@ -101,8 +113,8 @@ export default function RunListPage() {
     if (!engineReady) return
     try {
       const data = await engineApi.getModels()
-      setModels(data.items.map((i) => i.id))
       setDefaultModel(data.default)
+      setModels(data.default ? [data.default] : [])
     } catch (err) {
       messageApi.warning(err instanceof Error ? err.message : '模型列表加载失败')
       setModels([])

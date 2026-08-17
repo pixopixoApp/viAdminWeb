@@ -62,7 +62,7 @@ export default function RunTable({
       dataIndex: 'title',
       render: (_t, row) => (
         <Link
-          to={row.source === 'manual_upload' ? '/html-imports' : row.has_run === false ? `/content/${row.id}` : (
+          to={row.source === 'manual_upload' ? '/?source=manual_upload' : row.has_run === false ? `/content/${row.id}` : (
             row.content_mode === 'story'
               ? `/stories/${row.id}/${row.analysis_version || '0.0.1'}`
               : `/runs/${row.id}`
