@@ -1,4 +1,4 @@
-import { api } from '../api'
+import { api, uploadLocalMedia } from '../api'
 import type {
   Account,
   AnnotateState,
@@ -196,7 +196,8 @@ export type CreateRunUploadSessionParams = {
   filename: string
   content_type: string
   size_bytes: number
-  sha256: string
+  sha256?: string
+  transport?: 'local' | 'oss'
   processing_mode: 'ai' | 'manual'
   model?: string
   brief?: string
@@ -204,10 +205,19 @@ export type CreateRunUploadSessionParams = {
 }
 
 export function createRunUploadSession(params: CreateRunUploadSessionParams) {
-  return api<{ session_id: string; uploads: Array<{ url: string; fields: Record<string, string> }> }>('/api/v1/run-upload-sessions', {
+  return api<{
+    session_id: string
+    transport?: 'local' | 'oss'
+    upload?: { method: 'PUT'; url: string }
+    uploads: Array<{ url: string; fields: Record<string, string> }>
+  }>('/api/v1/run-upload-sessions', {
     method: 'POST',
     body: JSON.stringify(params),
   })
+}
+
+export function uploadRunSource(sessionId: string, file: File, onProgress?: (percent: number) => void) {
+  return uploadLocalMedia(`/api/v1/run-upload-sessions/${sessionId}/source`, file, onProgress)
 }
 
 export function finalizeRunUpload(sessionId: string) {
@@ -253,11 +263,41 @@ export function updateRunTutorial(id: string, is_tutorial: boolean) {
   })
 }
 
-export function publishRun(id: string, version: string, user_id: string) {
-  return api<{ id: string; version: string; ivapp: { updated?: boolean } }>(`/api/v1/runs/${id}/publish`, {
+export type PublishJob = {
+  id: string
+  run_id: string
+  version: string
+  user_id: string
+  state: 'waiting_for_backup' | 'publishing' | 'retry_wait' | 'succeeded' | 'failed'
+  error_message?: string
+  result?: { id: string; version: string; ivapp?: { updated?: boolean } }
+  poll_after_ms?: number
+}
+
+export function createPublishJob(id: string, version: string, user_id: string) {
+  return api<PublishJob>(`/api/v1/runs/${id}/publish-jobs`, {
     method: 'POST',
     body: JSON.stringify({ version, user_id }),
   })
+}
+
+export function getPublishJob(id: string, jobId: string) {
+  return api<PublishJob>(`/api/v1/runs/${id}/publish-jobs/${jobId}`)
+}
+
+export async function waitForPublishJob(id: string, initial: PublishJob) {
+  let job = initial
+  while (!['succeeded', 'failed'].includes(job.state)) {
+    await new Promise((resolve) => window.setTimeout(resolve, job.poll_after_ms || 1500))
+    job = await getPublishJob(id, job.id)
+  }
+  if (job.state === 'failed') throw new Error(job.error_message || '发布失败')
+  if (!job.result) throw new Error('发布任务完成但未返回结果')
+  return job.result
+}
+
+export async function publishRun(id: string, version: string, user_id: string) {
+  return waitForPublishJob(id, await createPublishJob(id, version, user_id))
 }
 
 export function unpublishRun(id: string) {
@@ -342,11 +382,20 @@ export function createStoryAnnotateVersion(id: string, source_version: string) {
   })
 }
 
-export function createClipUploadSession(id: string, body: { filename: string; content_type: string; size_bytes: number; sha256: string }) {
-  return api<{ session_id: string; uploads: Array<{ url: string; fields: Record<string, string> }> }>(`/api/v1/stories/${id}/clip-upload-sessions`, {
+export function createClipUploadSession(id: string, body: { filename: string; content_type: string; size_bytes: number; sha256?: string; transport?: 'local' | 'oss' }) {
+  return api<{
+    session_id: string
+    transport?: 'local' | 'oss'
+    upload?: { method: 'PUT'; url: string }
+    uploads: Array<{ url: string; fields: Record<string, string> }>
+  }>(`/api/v1/stories/${id}/clip-upload-sessions`, {
     method: 'POST',
     body: JSON.stringify(body),
   })
+}
+
+export function uploadClipSource(id: string, sessionId: string, file: File, onProgress?: (percent: number) => void) {
+  return uploadLocalMedia(`/api/v1/stories/${id}/clip-upload-sessions/${sessionId}/source`, file, onProgress)
 }
 
 export function finalizeClipUpload(id: string, sessionId: string) {
@@ -456,21 +505,40 @@ export function revokeCreatorAccess(userId: string) {
 // ── HTML Imports ──────────────────────────────────
 
 export function listHtmlImports() {
-  return api<{ items: HtmlImport[] }>('/api/v1/html-imports')
+  return api<{ items: HtmlImport[] }>('/api/v1/html-imports?route_version=2')
 }
 
 export function createHtmlImport(body: { filename: string; size_bytes: number; sha256: string }) {
-  return api<{ import: HtmlImport; upload: { session_id: string; uploads: Array<{ client_ref: string; url: string; fields: Record<string, string> }> } }>('/api/v1/html-imports', {
+  return api<{ import: HtmlImport; upload: { session_id: string; uploads: Array<{ client_ref: string; url: string; fields: Record<string, string> }> } }>('/api/v1/html-imports?route_version=2', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function createLocalHtmlImport(body: { filename: string; size_bytes: number }) {
+  return api<{ import: HtmlImport; upload: { method: 'PUT'; url: string } }>('/api/v1/html-imports/local-uploads', {
     method: 'POST',
     body: JSON.stringify(body),
   })
 }
 
 export function finalizeHtmlImport(id: string, body: { session_id: string; manifest_hash: string }) {
-  return api<{ import: HtmlImport }>(`/api/v1/html-imports/${id}/finalize-source`, {
+  return api<{ import: HtmlImport; poll_after_ms: number }>(`/api/v1/html-imports/${id}/finalize-source`, {
     method: 'POST',
     body: JSON.stringify(body),
   })
+}
+
+export function retryHtmlImportInspection(id: string) {
+  return api<{ import: HtmlImport; poll_after_ms: number }>(`/api/v1/html-imports/${id}/retry-inspection`, { method: 'POST' })
+}
+
+export function retryHtmlImport(id: string) {
+  return api<{ import: HtmlImport; poll_after_ms: number }>(`/api/v1/html-imports/${id}/retry`, { method: 'POST' })
+}
+
+export function retryHtmlImportBackup(id: string) {
+  return api<{ import: HtmlImport; poll_after_ms: number }>(`/api/v1/html-imports/${id}/retry-backup`, { method: 'POST' })
 }
 
 export function updateHtmlImport(id: string, body: { entry?: string; title?: string; description?: string; required_capabilities?: string[] }) {
@@ -479,10 +547,6 @@ export function updateHtmlImport(id: string, body: { entry?: string; title?: str
 
 export function prepareHtmlImport(id: string) {
   return api<{ import: HtmlImport; preview: string }>(`/api/v1/html-imports/${id}/prepare`, { method: 'POST' })
-}
-
-export function suggestHtmlImport(id: string) {
-  return api<{ import: HtmlImport; suggestion_source: string }>(`/api/v1/html-imports/${id}/suggest`, { method: 'POST' })
 }
 
 export function publishHtmlImport(id: string) {
@@ -510,6 +574,7 @@ export const runsApi = {
   listOwn: listOwnRuns,
   get: getRun,
   createRunUploadSession,
+  uploadRunSource,
   finalizeRunUpload,
   review: reviewRun,
   delete: deleteRun,
@@ -517,6 +582,8 @@ export const runsApi = {
   updateRunTitle,
   updateRunFeedWeightById,
   updateRunTutorial,
+  queuePublish: createPublishJob,
+  waitForPublish: waitForPublishJob,
   publish: publishRun,
   unpublish: unpublishRun,
   reanalyze: reanalyzeRun,
@@ -539,6 +606,7 @@ export const storiesApi = {
   finalize: finalizeStory,
   createAnnotateVersion: createStoryAnnotateVersion,
   createClipUploadSession,
+  uploadClipSource,
   finalizeClipUpload,
 }
 
@@ -574,9 +642,11 @@ export const invitesApi = {
 export const htmlApi = {
   listHtmlImports: listHtmlImports,
   createHtmlImport: createHtmlImport,
+  createLocalHtmlImport: createLocalHtmlImport,
   finalizeHtmlImport: finalizeHtmlImport,
+  retryHtmlImport: retryHtmlImport,
+  retryHtmlImportBackup: retryHtmlImportBackup,
   updateHtmlImport: updateHtmlImport,
   prepareHtmlImport: prepareHtmlImport,
-  suggestHtmlImport: suggestHtmlImport,
   publishHtmlImport: publishHtmlImport,
 }

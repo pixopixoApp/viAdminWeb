@@ -1,7 +1,6 @@
 import { CloudUploadOutlined, EditOutlined, RobotOutlined } from '@ant-design/icons'
 import { Form, Input, Modal, Radio, Select, Tag, Typography, Upload } from 'antd'
 import { useWatch } from 'antd/es/form/Form'
-import { sha256Hex, uploadToSignedOss } from '../../api'
 import { runsApi } from '../../services/api'
 import { useEffect, useState } from 'react'
 
@@ -67,19 +66,18 @@ export default function UploadRunModal({
       0,
     )
     try {
-      const checksum = await sha256Hex(file)
       const session = await runsApi.createRunUploadSession({
         filename: file.name,
         content_type: file.type || 'video/mp4',
         size_bytes: file.size,
-        sha256: checksum,
+        transport: 'local',
         processing_mode: values.processing_mode,
         model: values.processing_mode === 'ai' ? values.model : '',
         brief: values.processing_mode === 'ai' ? values.brief || '' : '',
         title: (values.title || '').trim(),
       })
-      if (session.uploads.length !== 1) throw new Error('服务端未返回有效上传策略')
-      await uploadToSignedOss(session.uploads[0], file)
+      if (!session.upload?.url) throw new Error('服务端未返回有效的本地上传地址')
+      await runsApi.uploadRunSource(session.session_id, file)
       const run = await runsApi.finalizeRunUpload(session.session_id)
       messageApi.success(manual ? '已创建，正在进入手动标注' : '分析任务已创建')
       onSuccess(run.id, run.analysis_version, manual)
@@ -134,7 +132,7 @@ export default function UploadRunModal({
             <div className="upload-video-copy">
               <Typography.Text strong>{file?.name || '点击或拖入 MP4 视频'}</Typography.Text>
               <Typography.Text type="secondary">
-                {file ? `${formatBytes(file.size)} · 点击可重新选择` : '单个文件，最大 100 MB'}
+                {file ? `${formatBytes(file.size)} · 点击可重新选择` : '单个文件，最大 2 GB'}
               </Typography.Text>
             </div>
           </Upload.Dragger>
@@ -179,7 +177,6 @@ export default function UploadRunModal({
                 showSearch
                 optionFilterProp="value"
                 options={models.map((id) => ({ value: id, label: id }))}
-                disabled={models.length <= 1}
               />
             </Form.Item>
             <Form.Item name="brief" label="创作者要求（可选）" preserve={false}>
