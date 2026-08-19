@@ -1,16 +1,25 @@
-import { PlusOutlined } from '@ant-design/icons'
-import { Alert, Button, Segmented, Space, Typography } from 'antd'
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons'
+import { Alert, Button, Input, Segmented, Space, Typography } from 'antd'
 import { Link } from 'react-router-dom'
 
 export type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected'
 export type SourceFilter = 'all' | 'pgc' | 'ugc' | 'manual_upload'
 export type OwnStatusFilter = 'all' | 'attention' | 'unpublished' | 'published' | 'processing'
+export type ProcessStatusFilter = 'all' | 'failed' | 'no_playable_plan' | 'ready' | 'processing'
 
 export const statusFilterOptions: { label: string; value: StatusFilter }[] = [
   { label: '全部', value: 'all' },
   { label: '待审核', value: 'pending' },
   { label: '已发布', value: 'approved' },
   { label: '已拒绝', value: 'rejected' },
+]
+
+export const processStatusFilterOptions: { label: string; value: ProcessStatusFilter }[] = [
+  { label: '全部', value: 'all' },
+  { label: '处理失败', value: 'failed' },
+  { label: '不可播放', value: 'no_playable_plan' },
+  { label: '分析完成', value: 'ready' },
+  { label: '处理中', value: 'processing' },
 ]
 
 export const ownStatusFilterOptions: { label: string; value: OwnStatusFilter }[] = [
@@ -33,12 +42,16 @@ interface RunFilterBarProps {
   total: number
   sourceFilter: SourceFilter
   statusFilter: StatusFilter
+  processStatusFilter: ProcessStatusFilter
   ownStatusFilter: OwnStatusFilter
+  keyword: string
   engineReady: boolean
   isManualUpload: boolean
   onSourceChange: (value: SourceFilter) => void
   onStatusChange: (value: StatusFilter) => void
+  onProcessStatusChange: (value: ProcessStatusFilter) => void
   onOwnStatusChange: (value: OwnStatusFilter) => void
+  onKeywordChange: (value: string) => void
   onCreateStory: () => void
   onUpload: () => void
 }
@@ -48,12 +61,16 @@ export default function RunFilterBar({
   total,
   sourceFilter,
   statusFilter,
+  processStatusFilter,
   ownStatusFilter,
+  keyword,
   engineReady,
   isManualUpload,
   onSourceChange,
   onStatusChange,
+  onProcessStatusChange,
   onOwnStatusChange,
+  onKeywordChange,
   onCreateStory,
   onUpload,
 }: RunFilterBarProps) {
@@ -91,7 +108,16 @@ export default function RunFilterBar({
           )}
         </Typography.Title>
         {!isManualUpload ? (
-          <Space>
+          <Space wrap>
+            <Input.Search
+              allowClear
+              placeholder="搜索标题 / 文件名"
+              value={keyword}
+              onChange={(e) => onKeywordChange(e.target.value)}
+              onSearch={onKeywordChange}
+              style={{ width: 240 }}
+              prefix={<SearchOutlined />}
+            />
             <Button onClick={onCreateStory}>创建故事</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={onUpload}>
               上传视频
@@ -108,12 +134,18 @@ export default function RunFilterBar({
         />
       ) : null}
       {!isManualUpload && manageAll ? (
-        <Segmented<StatusFilter>
-          value={statusFilter}
-          options={statusFilterOptions}
-          onChange={(value) => onStatusChange(value as StatusFilter)}
-          style={{ margin: '0 0 16px 12px' }}
-        />
+        <Space wrap style={{ margin: '0 0 16px 12px' }}>
+          <Segmented<StatusFilter>
+            value={statusFilter}
+            options={statusFilterOptions}
+            onChange={(value) => onStatusChange(value as StatusFilter)}
+          />
+          <Segmented<ProcessStatusFilter>
+            value={processStatusFilter}
+            options={processStatusFilterOptions}
+            onChange={(value) => onProcessStatusChange(value as ProcessStatusFilter)}
+          />
+        </Space>
       ) : null}
       {!manageAll ? (
         <Segmented<OwnStatusFilter>

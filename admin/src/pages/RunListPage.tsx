@@ -1,5 +1,5 @@
-import { message } from 'antd'
-import { useCallback, useEffect, useState } from 'react'
+import { message, Modal } from 'antd'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { runsApi, engineApi, storiesApi } from '../services/api'
@@ -12,9 +12,12 @@ import {
   ReviewRunModal,
   EditWeightModal,
   sourceOptions,
+  normalizeProcessStatus,
+  isRetryable,
   type StatusFilter,
   type SourceFilter,
   type OwnStatusFilter,
+  type ProcessStatusFilter,
 } from '../components/run-list'
 
 export default function RunListPage() {
@@ -24,14 +27,15 @@ export default function RunListPage() {
   // admin / manager 使用全量内容管理列表；operator 等角色只能看到自己创建的视频
   const manageAll = me?.role === 'admin' || me?.role === 'manager'
   const [rows, setRows] = useState<Run[]>([])
-  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
   const [models, setModels] = useState<string[]>([])
   const [defaultModel, setDefaultModel] = useState('')
   const [engineReady, setEngineReady] = useState(true)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [processStatusFilter, setProcessStatusFilter] = useState<ProcessStatusFilter>('all')
   const [ownStatusFilter, setOwnStatusFilter] = useState<OwnStatusFilter>('all')
+  const [keyword, setKeyword] = useState('')
   const sourceParam = searchParams.get('source')
   const sourceFilter: SourceFilter = sourceOptions.some((option) => option.value === sourceParam) &&
     (sourceParam !== 'manual_upload' || manageAll)
@@ -44,6 +48,22 @@ export default function RunListPage() {
   const [weightRun, setWeightRun] = useState<Run | null>(null)
   const [weightModalOpen, setWeightModalOpen] = useState(false)
   const [messageApi, contextHolder] = message.useMessage()
+
+  // 前端叠加过滤：关键字 + 处理（生成）状态。审核状态与来源由后端粗筛。
+  const visibleRows = useMemo(() => {
+    let list = rows
+    const kw = keyword.trim().toLowerCase()
+    if (kw) {
+      list = list.filter((row) =>
+        (row.title || '').toLowerCase().includes(kw) ||
+        (row.source_filename || '').toLowerCase().includes(kw),
+      )
+    }
+    if (processStatusFilter !== 'all') {
+      list = list.filter((row) => normalizeProcessStatus(row) === processStatusFilter)
+    }
+    return list
+  }, [rows, keyword, processStatusFilter])
 
   const selectSource = useCallback((value: SourceFilter) => {
     setPage(1)
@@ -74,7 +94,6 @@ export default function RunListPage() {
           engineApi.getReady(),
         ])
         setRows(data.items)
-        setTotal(data.total)
         setEngineReady(settings.ready)
       } catch (err) {
         messageApi.error(err instanceof Error ? err.message : '加载失败')
@@ -85,7 +104,6 @@ export default function RunListPage() {
     }
     if (sourceFilter === 'manual_upload') {
       setRows([])
-      setTotal(0)
       return
     }
     setLoading(true)
@@ -95,7 +113,6 @@ export default function RunListPage() {
         engineApi.getReady(),
       ])
       setRows(data.items)
-      setTotal(data.total)
       setEngineReady(settings.ready)
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '加载失败')
@@ -204,20 +221,43 @@ export default function RunListPage() {
     }
   }, [navigate])
 
+  const handleReanalyze = useCallback((run: Run) => {
+    if (!isRetryable(run)) return
+    Modal.confirm({
+      title: '重新分析',
+      content: `确认对「${run.title || run.source_filename}」重新发起分析？当前分析结果将基于新模型重新生成。`,
+      okText: '加入分析队列',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await runsApi.reanalyze(run.id, {})
+          messageApi.success('已加入分析队列')
+          void load()
+        } catch (e) {
+          messageApi.error(e instanceof Error ? e.message : '重新分析失败')
+        }
+      },
+    })
+  }, [load, messageApi])
+
   return (
     <>
       {contextHolder}
       <RunFilterBar
         manageAll={manageAll}
-        total={total}
+        total={visibleRows.length}
         sourceFilter={sourceFilter}
         statusFilter={statusFilter}
+        processStatusFilter={processStatusFilter}
         ownStatusFilter={ownStatusFilter}
+        keyword={keyword}
         engineReady={engineReady}
         isManualUpload={sourceFilter === 'manual_upload'}
         onSourceChange={selectSource}
         onStatusChange={(value) => { setStatusFilter(value); setPage(1) }}
+        onProcessStatusChange={(value) => { setProcessStatusFilter(value); setPage(1) }}
         onOwnStatusChange={(value) => { setOwnStatusFilter(value); setPage(1) }}
+        onKeywordChange={(value) => { setKeyword(value); setPage(1) }}
         onCreateStory={handleCreateStory}
         onUpload={() => void openUpload()}
       />
@@ -226,15 +266,16 @@ export default function RunListPage() {
       ) : (
         <RunTable
           manageAll={manageAll}
-          rows={rows}
+          rows={visibleRows}
           loading={loading}
-          total={total}
+          total={visibleRows.length}
           page={page}
           pageSize={pageSize}
           onPageChange={(p, ps) => { setPage(p); setPageSize(ps) }}
           onReview={handleReview}
           onDelete={handleDelete}
           onEditWeight={handleEditWeight}
+          onReanalyze={handleReanalyze}
         />
       )}
       <UploadRunModal
