@@ -542,6 +542,17 @@
   display: none;
 }
 
+/* 把触发块与弹出框之间的 6px 空隙并入弹出框的悬停区，
+   避免鼠标移向弹出框时先经过空隙导致弹出框提前隐藏 */
+.seedance-param-pop::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  height: 6px;
+}
+
 .seedance-model-wrap:hover .seedance-model-pop,
 .seedance-params-wrap:hover .seedance-params-pop {
   display: block;
