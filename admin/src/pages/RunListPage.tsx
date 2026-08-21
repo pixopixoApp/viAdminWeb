@@ -27,6 +27,8 @@ export default function RunListPage() {
   // admin / manager 使用全量内容管理列表；operator 等角色只能看到自己创建的视频
   const manageAll = me?.role === 'admin' || me?.role === 'manager'
   const [rows, setRows] = useState<Run[]>([])
+  // operator 等角色使用后端分页，total 取后端返回的总数用于翻页
+  const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
   const [models, setModels] = useState<string[]>([])
@@ -65,6 +67,9 @@ export default function RunListPage() {
     return list
   }, [rows, keyword, processStatusFilter])
 
+  // admin/manager 全量加载后在前端分页；operator 等角色由后端分页，总数用后端 total
+  const tableTotal = manageAll ? visibleRows.length : total
+
   const selectSource = useCallback((value: SourceFilter) => {
     setPage(1)
     setSearchParams((current) => {
@@ -94,6 +99,7 @@ export default function RunListPage() {
           engineApi.getReady(),
         ])
         setRows(data.items)
+        setTotal(data.total)
         setEngineReady(settings.ready)
       } catch (err) {
         messageApi.error(err instanceof Error ? err.message : '加载失败')
@@ -104,6 +110,7 @@ export default function RunListPage() {
     }
     if (sourceFilter === 'manual_upload') {
       setRows([])
+      setTotal(0)
       return
     }
     setLoading(true)
@@ -113,6 +120,7 @@ export default function RunListPage() {
         engineApi.getReady(),
       ])
       setRows(data.items)
+      setTotal(data.total)
       setEngineReady(settings.ready)
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '加载失败')
@@ -245,7 +253,7 @@ export default function RunListPage() {
       {contextHolder}
       <RunFilterBar
         manageAll={manageAll}
-        total={visibleRows.length}
+        total={tableTotal}
         sourceFilter={sourceFilter}
         statusFilter={statusFilter}
         processStatusFilter={processStatusFilter}
@@ -268,7 +276,7 @@ export default function RunListPage() {
           manageAll={manageAll}
           rows={visibleRows}
           loading={loading}
-          total={visibleRows.length}
+          total={tableTotal}
           page={page}
           pageSize={pageSize}
           onPageChange={(p, ps) => { setPage(p); setPageSize(ps) }}
