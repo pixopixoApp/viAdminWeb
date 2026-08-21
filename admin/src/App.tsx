@@ -18,6 +18,7 @@ import AppVersionPolicyPage from './pages/AppVersionPolicyPage'
 import InteractionIntentCatalogPage from './pages/InteractionIntentCatalogPage'
 import PublishedContentDetailPage from './pages/PublishedContentDetailPage'
 import SeedanceVideoPage from './pages/SeedanceVideoPage'
+import TrashPage from './pages/TrashPage'
 
 function Private({ children }: { children: React.ReactNode }) {
   const { me, loading } = useAuth()
@@ -85,6 +86,7 @@ function AppRoutes() {
         <Route path="html-imports" element={<OperationsGate page={<Navigate to="/?source=manual_upload" replace />} />} />
         <Route path="seedance" element={<OperationsGate page={<SeedanceVideoPage />} />} />
         <Route path="staff" element={<StaffGate />} />
+        <Route path="trash" element={<TrashPage />} />
         <Route path="interaction-intents" element={<AdminGate page={<InteractionIntentCatalogPage />} />} />
         <Route path="app-versions" element={<AdminGate page={<AppVersionPolicyPage />} />} />
         <Route path="settings" element={<AdminGate page={<SettingsPage />} />} />

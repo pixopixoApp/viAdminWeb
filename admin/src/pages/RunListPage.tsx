@@ -198,6 +198,25 @@ export default function RunListPage() {
     }
   }, [messageApi, load])
 
+  const handleTrash = useCallback((run: Run) => {
+    Modal.confirm({
+      title: '删除视频',
+      content: `确定要将「${run.title || run.source_filename}」移入垃圾箱吗？删除后可在"垃圾箱"中查看，已发布的视频也会同步标记删除。`,
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await runsApi.trash(run.id)
+          messageApi.success('已移入垃圾箱')
+          void load()
+        } catch (e) {
+          messageApi.error(e instanceof Error ? e.message : '删除失败')
+        }
+      },
+    })
+  }, [messageApi, load])
+
   const handleEditWeight = useCallback((run: Run) => {
     setWeightRun(run)
     setWeightModalOpen(true)
@@ -282,6 +301,7 @@ export default function RunListPage() {
           onPageChange={(p, ps) => { setPage(p); setPageSize(ps) }}
           onReview={handleReview}
           onDelete={handleDelete}
+          onTrash={handleTrash}
           onEditWeight={handleEditWeight}
           onReanalyze={handleReanalyze}
         />

@@ -44,6 +44,7 @@ interface RunTableProps {
   onPageChange: (page: number, pageSize: number) => void
   onReview: (run: Run) => void
   onDelete: (run: Run) => void
+  onTrash: (run: Run) => void
   onEditWeight: (run: Run) => void
   onReanalyze?: (run: Run) => void
 }
@@ -58,6 +59,7 @@ export default function RunTable({
   onPageChange,
   onReview,
   onDelete,
+  onTrash,
   onEditWeight,
   onReanalyze,
 }: RunTableProps) {
@@ -170,12 +172,14 @@ export default function RunTable({
             <Button size="small" onClick={() => onReanalyze(row)}>重新分析</Button>
           ) : null}
           <Button size="small" danger onClick={() => onDelete(row)}>下架</Button>
+          <Button size="small" danger onClick={() => onTrash(row)}>删除</Button>
         </Space>
       ) : (
         <Space>
           <Link to={`/runs/${row.id}`}>
             <Button size="small">详情</Button>
           </Link>
+          <Button size="small" danger onClick={() => onTrash(row)}>删除</Button>
         </Space>
       ),
     },

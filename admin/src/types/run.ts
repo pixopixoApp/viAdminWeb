@@ -20,6 +20,7 @@ export type Run = {
   created_by_name?: string | null
   created_at: string
   updated_at?: string
+  deleted_at?: string | null
   source?: 'pgc' | 'ugc' | 'manual_upload'
   content_type?: 'runtime' | 'html'
   review_status?: 'draft' | 'pending' | 'approved' | 'rejected'

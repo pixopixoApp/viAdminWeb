@@ -181,6 +181,24 @@ export function listOwnRuns(params: ListOwnRunsParams = {}) {
   return api<{ items: Run[]; total: number }>(`/api/v1/runs?${query.toString()}`)
 }
 
+/** 垃圾箱：已软删除（移入垃圾箱）的视频列表 */
+export function listTrashRuns(page = 1, page_size = 20) {
+  const query = new URLSearchParams()
+  query.set('page', String(page))
+  query.set('page_size', String(page_size))
+  return api<{ items: Run[]; total: number }>(`/api/v1/trash?${query.toString()}`)
+}
+
+/** 把视频移入垃圾箱（软删除） */
+export function trashRun(id: string) {
+  return api<Run>(`/api/v1/runs/${id}/trash`, { method: 'POST' })
+}
+
+/** 从垃圾箱恢复视频 */
+export function restoreRun(id: string) {
+  return api<Run>(`/api/v1/runs/${id}/restore`, { method: 'POST' })
+}
+
 export function getRun(id: string) {
   return api<RunDetail>(`/api/v1/runs/${id}`)
 }
@@ -572,12 +590,15 @@ export const engineApi = {
 export const runsApi = {
   list: listRuns,
   listOwn: listOwnRuns,
+  listTrash: listTrashRuns,
   get: getRun,
   createRunUploadSession,
   uploadRunSource,
   finalizeRunUpload,
   review: reviewRun,
   delete: deleteRun,
+  trash: trashRun,
+  restore: restoreRun,
   updateRunFeedWeight,
   updateRunTitle,
   updateRunFeedWeightById,
