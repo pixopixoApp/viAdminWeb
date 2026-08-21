@@ -54,6 +54,102 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>
 }
 
+export function uploadBinary<T>(
+  path: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    request.open('PUT', path)
+    request.withCredentials = true
+    request.setRequestHeader('Content-Type', 'application/zip')
+    const token = getToken()
+    if (token) request.setRequestHeader('Authorization', `Bearer ${token}`)
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100))))
+      }
+    }
+    request.onerror = () => reject(new Error('ZIP 上传网络连接失败'))
+    request.onabort = () => reject(new Error('ZIP 上传已取消'))
+    request.onload = () => {
+      if (request.status === 401) {
+        clearToken()
+        window.location.href = '/login'
+      }
+      let body: unknown
+      try {
+        body = JSON.parse(request.responseText)
+      } catch {
+        body = null
+      }
+      if (request.status < 200 || request.status >= 300) {
+        const detail = body && typeof body === 'object' && 'detail' in body
+          ? String((body as { detail?: unknown }).detail || '')
+          : request.responseText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
+        reject(new Error(detail || `ZIP 上传失败（HTTP ${request.status}）`))
+        return
+      }
+      if (!body || typeof body !== 'object') {
+        reject(new Error('服务器返回了无效的上传结果'))
+        return
+      }
+      onProgress?.(100)
+      resolve(body as T)
+    }
+    request.send(file)
+  })
+}
+
+export function uploadLocalMedia<T>(
+  path: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    request.open('PUT', path)
+    request.withCredentials = true
+    request.setRequestHeader('Content-Type', file.type || 'video/mp4')
+    const token = getToken()
+    if (token) request.setRequestHeader('Authorization', `Bearer ${token}`)
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100))))
+      }
+    }
+    request.onerror = () => reject(new Error('视频上传网络连接失败'))
+    request.onabort = () => reject(new Error('视频上传已取消'))
+    request.onload = () => {
+      if (request.status === 401) {
+        clearToken()
+        window.location.href = '/login'
+      }
+      let body: unknown
+      try {
+        body = JSON.parse(request.responseText)
+      } catch {
+        body = null
+      }
+      if (request.status < 200 || request.status >= 300) {
+        const detail = body && typeof body === 'object' && 'detail' in body
+          ? String((body as { detail?: unknown }).detail || '')
+          : request.responseText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
+        reject(new Error(detail || `视频上传失败（HTTP ${request.status}）`))
+        return
+      }
+      if (!body || typeof body !== 'object') {
+        reject(new Error('服务器返回了无效的上传结果'))
+        return
+      }
+      onProgress?.(100)
+      resolve(body as T)
+    }
+    request.send(file)
+  })
+}
+
 export async function sha256Hex(file: Blob): Promise<string> {
   const bytes = await file.arrayBuffer()
   const digest = await crypto.subtle.digest('SHA-256', bytes)

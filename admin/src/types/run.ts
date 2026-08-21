@@ -150,10 +150,23 @@ export type SecretField = {
 }
 
 export type HtmlImport = {
-  id: string; status: string; source_filename: string; item_id: string; entry: string
+  id: string; status: string; source_filename: string; source_bytes: number; source_sha256: string
+  item_id: string; entry: string
   entry_candidates: string[]; suggested_capabilities: string[]; required_capabilities: string[]
   title: string; description: string; author_user_id: string; package_version?: string | null
-  html_url?: string | null; error_message: string; created_at: string
+  html_url?: string | null; preview_qr_url?: string | null; qa_result?: {
+    inspection?: { unsupported_features?: string[]; compatibility_warnings?: string[]; compatibility_profile?: string }
+    playwright?: Record<string, unknown>; compatibility_profile?: string
+    entry_auto_selected_from_multiple?: boolean
+    ai?: { used?: boolean; calls?: number; derived_copy_modified?: boolean; history?: Array<{ call_number?: number; outcome?: string; summary?: string }> }
+  } | null; processing?: {
+    active?: boolean; stage: string; stage_index?: number; stage_total?: number
+    progress_percent: number; detail?: string; attempt?: number; can_retry?: boolean
+    retry_scope?: string | null; failed_stage?: string | null; skipped_stages?: string[]
+    queued_at?: string | null; started_at?: string | null; heartbeat_at?: string | null; updated_at?: string | null
+  } | null
+  source_backup?: { status: string; progress_percent: number; can_retry?: boolean; error_message?: string; updated_at?: string | null } | null
+  error_message: string; created_at: string; updated_at?: string
 }
 
 export const statusMeta: Record<string, { label: string; color: string }> = {

@@ -1,5 +1,10 @@
-export { default as RunFilterBar, sourceOptions, statusFilterOptions } from './RunFilterBar'
-export type { SourceFilter, StatusFilter } from './RunFilterBar'
+export {
+  default as RunFilterBar,
+  sourceOptions,
+  statusFilterOptions,
+  ownStatusFilterOptions,
+} from './RunFilterBar'
+export type { SourceFilter, StatusFilter, OwnStatusFilter } from './RunFilterBar'
 export { default as RunTable, formatBytes, formatDuration } from './RunTable'
 export { default as UploadRunModal } from './UploadRunModal'
 export { default as ReviewRunModal } from './ReviewRunModal'

@@ -1,6 +1,7 @@
 import { message } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useAuth } from '../auth'
 import { runsApi, engineApi, storiesApi } from '../services/api'
 import HtmlImportsPage from './HtmlImportsPage'
 import { Run } from '../types/run'
@@ -13,11 +14,15 @@ import {
   sourceOptions,
   type StatusFilter,
   type SourceFilter,
+  type OwnStatusFilter,
 } from '../components/run-list'
 
 export default function RunListPage() {
   const navigate = useNavigate()
+  const { me } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
+  // admin / manager 使用全量内容管理列表；operator 等角色只能看到自己创建的视频
+  const manageAll = me?.role === 'admin' || me?.role === 'manager'
   const [rows, setRows] = useState<Run[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -26,12 +31,12 @@ export default function RunListPage() {
   const [defaultModel, setDefaultModel] = useState('')
   const [engineReady, setEngineReady] = useState(true)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() => {
-    const source = searchParams.get('source')
-    return sourceOptions.some((option) => option.value === source)
-      ? (source as SourceFilter)
-      : 'pgc'
-  })
+  const [ownStatusFilter, setOwnStatusFilter] = useState<OwnStatusFilter>('all')
+  const sourceParam = searchParams.get('source')
+  const sourceFilter: SourceFilter = sourceOptions.some((option) => option.value === sourceParam) &&
+    (sourceParam !== 'manual_upload' || manageAll)
+    ? sourceParam as SourceFilter
+    : 'pgc'
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [reviewRun, setReviewRun] = useState<Run | null>(null)
@@ -41,12 +46,43 @@ export default function RunListPage() {
   const [messageApi, contextHolder] = message.useMessage()
 
   const selectSource = useCallback((value: SourceFilter) => {
-    setSourceFilter(value)
     setPage(1)
-    setSearchParams(value === 'pgc' ? {} : { source: value })
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      if (value === 'pgc') next.delete('source')
+      else next.set('source', value)
+      return next
+    })
   }, [setSearchParams])
 
+  useEffect(() => {
+    if (sourceParam === 'manual_upload' && !manageAll) {
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current)
+        next.delete('source')
+        return next
+      }, { replace: true })
+    }
+  }, [manageAll, setSearchParams, sourceParam])
+
   const load = useCallback(async () => {
+    if (!manageAll) {
+      setLoading(true)
+      try {
+        const [data, settings] = await Promise.all([
+          runsApi.listOwn({ status_filter: ownStatusFilter, page, page_size: pageSize }),
+          engineApi.getReady(),
+        ])
+        setRows(data.items)
+        setTotal(data.total)
+        setEngineReady(settings.ready)
+      } catch (err) {
+        messageApi.error(err instanceof Error ? err.message : '加载失败')
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
     if (sourceFilter === 'manual_upload') {
       setRows([])
       setTotal(0)
@@ -66,7 +102,7 @@ export default function RunListPage() {
     } finally {
       setLoading(false)
     }
-  }, [messageApi, statusFilter, sourceFilter, page, pageSize])
+  }, [manageAll, messageApi, statusFilter, ownStatusFilter, sourceFilter, page, pageSize])
 
   useEffect(() => {
     void load()
@@ -172,18 +208,24 @@ export default function RunListPage() {
     <>
       {contextHolder}
       <RunFilterBar
+        manageAll={manageAll}
         total={total}
         sourceFilter={sourceFilter}
         statusFilter={statusFilter}
+        ownStatusFilter={ownStatusFilter}
         engineReady={engineReady}
         isManualUpload={sourceFilter === 'manual_upload'}
         onSourceChange={selectSource}
         onStatusChange={(value) => { setStatusFilter(value); setPage(1) }}
+        onOwnStatusChange={(value) => { setOwnStatusFilter(value); setPage(1) }}
         onCreateStory={handleCreateStory}
         onUpload={() => void openUpload()}
       />
-      {sourceFilter !== 'manual_upload' ? (
+      {manageAll && sourceFilter === 'manual_upload' ? (
+        <HtmlImportsPage embedded />
+      ) : (
         <RunTable
+          manageAll={manageAll}
           rows={rows}
           loading={loading}
           total={total}
@@ -194,8 +236,6 @@ export default function RunListPage() {
           onDelete={handleDelete}
           onEditWeight={handleEditWeight}
         />
-      ) : (
-        <HtmlImportsPage embedded />
       )}
       <UploadRunModal
         open={open}

@@ -164,7 +164,7 @@ export default function PublishedContentDetailPage() {
           </div>
         </div>
         <Space wrap>
-          <Button type="primary" disabled={!qrUrl || data.content_type !== 'runtime'} onClick={() => setQrOpen(true)}>扫码预览</Button>
+          <Button type="primary" disabled={!qrUrl} onClick={() => setQrOpen(true)}>扫码预览</Button>
           <Button onClick={() => setEditing((current) => !current)}>{editing ? '收起编辑' : '编辑信息'}</Button>
         </Space>
       </Space>

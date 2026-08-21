@@ -246,13 +246,16 @@ export default function RunDetailPage() {
     }
     setPublishing(true)
     try {
-      const result = await runsApi.publish(id, publishVersion, publishUserId)
-      const updated = result.ivapp?.updated
-      messageApi.success(
-        updated ? `已更新发布 ${result.version}` : `已发布 ${result.version}`,
-      )
+      const job = await runsApi.queuePublish(id, publishVersion, publishUserId)
+      messageApi.success('已进入发布队列，媒体备份完成后会自动发布')
       setPublishOpen(false)
-      await load()
+      void runsApi.waitForPublish(id, job).then(async (result) => {
+        const updated = result.ivapp?.updated
+        messageApi.success(updated ? `已更新发布 ${result.version}` : `已发布 ${result.version}`)
+        await load()
+      }).catch((err) => {
+        messageApi.error(err instanceof Error ? err.message : '发布失败')
+      })
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '发布失败')
     } finally {

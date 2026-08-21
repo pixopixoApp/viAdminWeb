@@ -6,7 +6,6 @@ import {
 } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
-import { sha256Hex, uploadToSignedOss } from '../api'
 import { storiesApi, runsApi, accountsApi } from '../services/api'
 import type { Interaction, SaveStatus } from '../types/interaction'
 import type {
@@ -337,12 +336,17 @@ export default function StoryEditPage() {
     }
     setPublishing(true)
     try {
-      const result = await runsApi.publish(id, publishVersion, publishUserId)
-      const updated = result.ivapp?.updated
-      messageApi.success(updated ? `已更新发布 ${result.version}` : `已发布 ${result.version}`)
+      const job = await runsApi.queuePublish(id, publishVersion, publishUserId)
+      messageApi.success('已进入发布队列，媒体备份完成后会自动发布')
       setPublishOpen(false)
-      setPublishedVersion(result.version)
-      await load()
+      void runsApi.waitForPublish(id, job).then(async (result) => {
+        const updated = result.ivapp?.updated
+        messageApi.success(updated ? `已更新发布 ${result.version}` : `已发布 ${result.version}`)
+        setPublishedVersion(result.version)
+        await load()
+      }).catch((err) => {
+        messageApi.error(err instanceof Error ? err.message : '发布失败')
+      })
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '发布失败')
     } finally {
@@ -381,16 +385,15 @@ export default function StoryEditPage() {
     setUploadElapsedSeconds(0)
     setUploadStage('preparing')
     try {
-      const checksum = await sha256Hex(file)
       const session = await storiesApi.createClipUploadSession(id, {
         filename: file.name,
         content_type: file.type || 'video/mp4',
         size_bytes: file.size,
-        sha256: checksum,
+        transport: 'local',
       })
-      if (session.uploads.length !== 1) throw new Error('服务端未返回有效上传策略')
+      if (!session.upload?.url) throw new Error('服务端未返回有效的本地上传地址')
       setUploadStage('uploading')
-      await uploadToSignedOss(session.uploads[0], file)
+      await storiesApi.uploadClipSource(id, session.session_id, file)
       setUploadStage('processing')
       const data = await storiesApi.finalizeClipUpload(id, session.session_id)
       skipAutosave.current = true

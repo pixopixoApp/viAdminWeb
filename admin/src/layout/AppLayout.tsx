@@ -14,6 +14,21 @@ import { getAccessibleMenu } from '../config/routes'
 
 const { Header, Sider, Content } = Layout
 
+export function selectedMenuKey(pathname: string): string {
+  // HTML imports now live under 视频列表 > 手动上传. Keep the legacy path
+  // associated with 视频列表 while its redirect is resolving.
+  if (
+    pathname === '/' ||
+    pathname === '/html-imports' ||
+    pathname.startsWith('/runs/') ||
+    pathname.startsWith('/stories') ||
+    pathname.startsWith('/content/')
+  ) {
+    return '/'
+  }
+  return pathname
+}
+
 export default function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -21,14 +36,7 @@ export default function AppLayout() {
   const { token } = theme.useToken()
   const { mode, toggle } = useTheme()
   const dark = mode === 'dark'
-  // 列表、详情、标注、故事编辑都属于“视频列表”菜单项
-  const selected =
-    location.pathname === '/' ||
-    location.pathname.startsWith('/runs/') ||
-    location.pathname.startsWith('/stories') ||
-    location.pathname.startsWith('/content/')
-      ? '/'
-      : location.pathname
+  const selected = selectedMenuKey(location.pathname)
 
   const menuItems = getAccessibleMenu(me?.role).map((item) => ({
     key: item.key,
