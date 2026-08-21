@@ -33,22 +33,29 @@ export type SeedanceTask = {
   updated_at?: string
 }
 
+export type SeedanceProvider = 'ark' | 'vidu'
+
 export type SeedanceSettings = {
   has_api_key: boolean
+  provider: SeedanceProvider
   model: string
   base_url: string
   public_base_url: string
 }
 
 export type SeedanceSettingsPatch = {
+  provider?: SeedanceProvider
   api_key?: string
+  vidu_api_key?: string
   model?: string
   base_url?: string
+  vidu_base_url?: string
   public_base_url?: string
 }
 
 export type SeedanceGenerateParams = {
   prompt: string
+  model?: string
   images: SeedanceImageInput[]
   videos: SeedanceVideoInput[]
   resolution?: string

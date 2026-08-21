@@ -16,6 +16,24 @@ export function formatDuration(ms?: number) {
   return `${(ms / 1000).toFixed(1)} 秒`
 }
 
+/** 归一化的处理（生成）状态，用于「处理失败 / 不可播放 / 分析完成 / 处理中」筛选 */
+export type NormalizedProcessStatus = 'failed' | 'no_playable_plan' | 'ready' | 'processing' | 'other'
+
+export function normalizeProcessStatus(row: Run): NormalizedProcessStatus {
+  const cs = row.creation_status || row.status || ''
+  if (cs === 'failed') return 'failed'
+  if (cs === 'no_playable_plan') return 'no_playable_plan'
+  if (cs === 'ready') return 'ready'
+  if (cs === 'queued' || cs === 'running' || cs === 'processing') return 'processing'
+  return 'other'
+}
+
+/** 是否为可重试的分析失败 / 方案不可播内容 */
+export function isRetryable(row: Run): boolean {
+  const s = normalizeProcessStatus(row)
+  return (s === 'failed' || s === 'no_playable_plan') && row.has_run !== false
+}
+
 interface RunTableProps {
   manageAll: boolean
   rows: Run[]
@@ -27,6 +45,7 @@ interface RunTableProps {
   onReview: (run: Run) => void
   onDelete: (run: Run) => void
   onEditWeight: (run: Run) => void
+  onReanalyze?: (run: Run) => void
 }
 
 export default function RunTable({
@@ -40,6 +59,7 @@ export default function RunTable({
   onReview,
   onDelete,
   onEditWeight,
+  onReanalyze,
 }: RunTableProps) {
   const sourceColumn: ColumnsType<Run>[number] = {
     title: '来源',
@@ -135,17 +155,20 @@ export default function RunTable({
       ),
     },
     {
-      title: '操作', key: 'actions', width: manageAll ? 160 : 90,
+      title: '操作', key: 'actions', width: manageAll ? 230 : 90,
       render: (_, row) => row.source === 'ugc' && row.review_status === 'pending' ? (
         <Space>
           <Button size="small" type="primary" onClick={() => onReview(row)}>审核</Button>
         </Space>
       ) : manageAll ? (
-        <Space>
+        <Space wrap>
           <Link to={row.has_run === false ? `/content/${row.id}` : `/runs/${row.id}`}>
             <Button size="small">详情</Button>
           </Link>
           {row.preview_url ? <Button size="small" href={row.preview_url} target="_blank">预览</Button> : null}
+          {onReanalyze && isRetryable(row) ? (
+            <Button size="small" onClick={() => onReanalyze(row)}>重新分析</Button>
+          ) : null}
           <Button size="small" danger onClick={() => onDelete(row)}>下架</Button>
         </Space>
       ) : (

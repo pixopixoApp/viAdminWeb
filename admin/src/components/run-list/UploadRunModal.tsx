@@ -48,6 +48,14 @@ export default function UploadRunModal({
     }
   }, [open, initialVideo, initialTitle, form])
 
+  // 模型列表只保留默认模型时，打开弹窗即自动选中，无需手动选择
+  useEffect(() => {
+    if (open && processingMode === 'ai') {
+      const next = defaultModel || models[0]
+      if (next) form.setFieldsValue({ model: next })
+    }
+  }, [open, processingMode, defaultModel, models, form])
+
   const handleOk = async () => {
     const values = await form.validateFields()
     if (!file) return

@@ -4,7 +4,7 @@ import {
   ReloadOutlined,
   SettingOutlined,
 } from '@ant-design/icons'
-import { Button, Form, Input, Modal, Switch, Tag, Typography, message } from 'antd'
+import { Button, Form, Input, Modal, Select, Switch, Tag, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -22,23 +22,58 @@ import {
 import type { SeedanceImageInput, SeedanceSettings, SeedanceTask } from '../types'
 import UploadRunModal from '../components/run-list/UploadRunModal'
 
-const MODELS = [
+type ModelConfig = {
+  id: string
+  label: string
+  provider: 'ark' | 'vidu'
+  durations: number[]
+  resolutions: string[]
+  ratios: string[]
+  video: { max: number; minDur: number; maxDur: number; totalMax: number }
+}
+
+const NO_VIDEO = { max: 0, minDur: 0, maxDur: 0, totalMax: 0 }
+const SEEDANCE_RATIOS = ['16:9', '9:16', '1:1', '3:4', '21:9']
+const VIDU_RATIOS = ['16:9', '9:16', '3:4', '4:3', '1:1']
+
+const MODELS: ModelConfig[] = [
   {
     id: 'doubao-seedance-2-5-260628',
     label: 'Seedance 2.5',
+    provider: 'ark',
     durations: [5, 10, 15, 20, 25, 30],
     resolutions: ['480p', '720p', '1080p'],
+    ratios: SEEDANCE_RATIOS,
     video: { max: 10, minDur: 2, maxDur: 30, totalMax: 30 },
   },
   {
     id: 'doubao-seedance-2-0-260128',
     label: 'Seedance 2.0',
+    provider: 'ark',
     durations: [5, 10, 15],
     resolutions: ['480p', '720p', '1080p'],
+    ratios: SEEDANCE_RATIOS,
     video: { max: 3, minDur: 2, maxDur: 15, totalMax: 15 },
   },
+  {
+    id: 'viduq3-pro',
+    label: 'Vidu Q3 Pro',
+    provider: 'vidu',
+    durations: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+    resolutions: ['540p', '720p', '1080p'],
+    ratios: VIDU_RATIOS,
+    video: NO_VIDEO,
+  },
+  {
+    id: 'viduq3-turbo',
+    label: 'Vidu Q3 Turbo',
+    provider: 'vidu',
+    durations: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+    resolutions: ['540p', '720p', '1080p'],
+    ratios: VIDU_RATIOS,
+    video: NO_VIDEO,
+  },
 ]
-const RATIOS = ['16:9', '9:16', '1:1', '3:4', '21:9']
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024
 const STATUS_TEXT: Record<SeedanceTask['status'], string> = {
   queued: '排队中',
@@ -65,9 +100,12 @@ type LocalVideo = {
 }
 
 type SettingsFormValues = {
+  provider: 'ark' | 'vidu'
   api_key?: string
+  vidu_api_key?: string
   model: string
   base_url: string
+  vidu_base_url?: string
   public_base_url: string
 }
 
@@ -77,6 +115,7 @@ export default function SeedanceVideoPage() {
   const [settings, setSettings] = useState<SeedanceSettings | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsForm] = Form.useForm<SettingsFormValues>()
+  const settingsProvider = Form.useWatch('provider', settingsForm) ?? 'ark'
   const [savingSettings, setSavingSettings] = useState(false)
 
   const [model, setModel] = useState(MODELS[0])
@@ -113,10 +152,11 @@ export default function SeedanceVideoPage() {
       setModel(matched)
       if (!matched.durations.includes(duration)) setDuration(matched.durations[0])
       if (!matched.resolutions.includes(resolution)) setResolution(matched.resolutions[0])
+      if (!matched.ratios.includes(ratio)) setRatio(matched.ratios[0])
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '加载接口设置失败')
     }
-  }, [duration, messageApi, resolution])
+  }, [duration, messageApi, ratio, resolution])
 
   const loadTasks = useCallback(async () => {
     try {
@@ -158,10 +198,14 @@ export default function SeedanceVideoPage() {
   function openSettings() {
     if (!settings) return
     settingsForm.setFieldsValue({
+      provider: settings.provider ?? 'ark',
       model: settings.model,
       base_url: settings.base_url,
+      vidu_base_url:
+        settings.provider === 'vidu' ? settings.base_url : 'https://api.vidu.cn/ent/v2',
       public_base_url: settings.public_base_url,
       api_key: '',
+      vidu_api_key: '',
     })
     setSettingsOpen(true)
   }
@@ -170,18 +214,47 @@ export default function SeedanceVideoPage() {
     setSavingSettings(true)
     try {
       const data = await saveSeedanceSettings({
-        ...(values.api_key ? { api_key: values.api_key.trim() } : {}),
+        provider: values.provider,
+        ...(values.provider === 'ark' && values.api_key
+          ? { api_key: values.api_key.trim() }
+          : {}),
+        ...(values.provider === 'vidu' && values.vidu_api_key
+          ? { vidu_api_key: values.vidu_api_key.trim() }
+          : {}),
         model: values.model.trim(),
-        base_url: values.base_url.trim(),
+        ...(values.provider === 'ark'
+          ? { base_url: values.base_url.trim() }
+          : { vidu_base_url: values.vidu_base_url?.trim() || 'https://api.vidu.cn/ent/v2' }),
         public_base_url: values.public_base_url.trim(),
       })
       setSettings(data)
+      const matched = MODELS.find((m) => m.id === data.model) || MODELS[0]
+      setModel(matched)
+      setDuration(matched.durations.includes(duration) ? duration : matched.durations[0])
+      setResolution(matched.resolutions.includes(resolution) ? resolution : matched.resolutions[0])
+      setRatio(matched.ratios.includes(ratio) ? ratio : matched.ratios[0])
       setSettingsOpen(false)
       messageApi.success('接口设置已保存')
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '保存失败')
     } finally {
       setSavingSettings(false)
+    }
+  }
+
+  // ── 模型选择（自动同步服务商，保证生成走对 API）──
+  async function selectModel(m: ModelConfig) {
+    setModel(m)
+    setDuration(m.durations.includes(duration) ? duration : m.durations[0])
+    setResolution(m.resolutions.includes(resolution) ? resolution : m.resolutions[0])
+    setRatio(m.ratios.includes(ratio) ? ratio : m.ratios[0])
+    if (!settings || m.provider !== settings.provider || m.id !== settings.model) {
+      try {
+        const data = await saveSeedanceSettings({ provider: m.provider, model: m.id })
+        setSettings(data)
+      } catch (err) {
+        messageApi.error(err instanceof Error ? err.message : '同步模型设置失败')
+      }
     }
   }
 
@@ -192,6 +265,10 @@ export default function SeedanceVideoPage() {
       return
     }
     if (/^video\/(mp4|quicktime|x-m4v)$/i.test(file.type) || /\.(mp4|mov)$/i.test(file.name || '')) {
+      if (model.video.max === 0) {
+        setError(`当前模型 ${model.label} 不支持参考视频，请上传图片`)
+        return
+      }
       addVideo(file)
       return
     }
@@ -207,15 +284,20 @@ export default function SeedanceVideoPage() {
       setError(`图片 ${file.name} 超过 10MB`)
       return
     }
-    if (images.length >= 10) {
-      setError('最多上传 10 张参考图')
+    const maxImages = model.provider === 'vidu' ? 1 : 10
+    if (images.length >= maxImages) {
+      setError(model.provider === 'vidu' ? 'Vidu 图生视频仅支持 1 张首帧图片' : '最多上传 10 张参考图')
       return
     }
     const reader = new FileReader()
     reader.onload = () => {
       setImages((current) => [
         ...current,
-        { data_url: String(reader.result), role: 'reference_image', name: file.name },
+        {
+          data_url: String(reader.result),
+          role: model.provider === 'vidu' ? ('first_frame' as const) : ('reference_image' as const),
+          name: file.name,
+        },
       ])
       setError('')
     }
@@ -223,6 +305,10 @@ export default function SeedanceVideoPage() {
   }
 
   function addVideo(file: File) {
+    if (model.video.max === 0) {
+      setError(`当前模型 ${model.label} 不支持参考视频`)
+      return
+    }
     if (file.size > MAX_VIDEO_BYTES) {
       setError(`视频 ${file.name} 超过 200MB`)
       return
@@ -344,6 +430,10 @@ export default function SeedanceVideoPage() {
       setError('请先输入视频描述')
       return
     }
+    if (model.video.max === 0 && videos.length > 0) {
+      setError(`当前模型 ${model.label} 不支持参考视频`)
+      return
+    }
     if (videos.length > model.video.max) {
       setError(`当前模型最多支持 ${model.video.max} 段参考视频`)
       return
@@ -366,6 +456,7 @@ export default function SeedanceVideoPage() {
       }))
       const data = await createSeedanceTask({
         prompt: text,
+        model: model.id,
         images: imagesPayload,
         videos: uploadedVideos,
         duration,
@@ -459,19 +550,23 @@ export default function SeedanceVideoPage() {
               <div className="seedance-ref-item" key={`img-${i}`}>
                 <img src={img.data_url} alt={img.name} />
                 <div className="seedance-ref-role">
-                  <select
-                    value={img.role}
-                    onChange={(e) =>
-                      setImages((current) =>
-                        current.map((item, idx) =>
-                          idx === i ? { ...item, role: e.target.value as LocalImage['role'] } : item,
-                        ),
-                      )
-                    }
-                  >
-                    <option value="first_frame">首帧</option>
-                    <option value="reference_image">参考图</option>
-                  </select>
+                  {model.provider === 'vidu' ? (
+                    <span className="seedance-ref-role-static">首帧</span>
+                  ) : (
+                    <select
+                      value={img.role}
+                      onChange={(e) =>
+                        setImages((current) =>
+                          current.map((item, idx) =>
+                            idx === i ? { ...item, role: e.target.value as LocalImage['role'] } : item,
+                          ),
+                        )
+                      }
+                    >
+                      <option value="first_frame">首帧</option>
+                      <option value="reference_image">参考图</option>
+                    </select>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -589,11 +684,7 @@ export default function SeedanceVideoPage() {
                       type="button"
                       key={m.id}
                       className="seedance-model-option"
-                      onClick={() => {
-                        setModel(m)
-                        setDuration(m.durations.includes(duration) ? duration : m.durations[0])
-                        setResolution(m.resolutions.includes(resolution) ? resolution : m.resolutions[0])
-                      }}
+                      onClick={() => void selectModel(m)}
                     >
                       {m.label}
                     </button>
@@ -624,7 +715,7 @@ export default function SeedanceVideoPage() {
                   <div className="seedance-param-group">
                     <span className="seedance-setting-label">画面比例</span>
                     <div className="seedance-option-list">
-                      {RATIOS.map((r) => (
+                      {model.ratios.map((r) => (
                         <button
                           type="button"
                           key={r}
@@ -824,22 +915,52 @@ export default function SeedanceVideoPage() {
       >
         <Form form={settingsForm} layout="vertical" onFinish={(values) => void saveSettings(values)}>
           <Form.Item
-            label="API Key（火山方舟，ark- 开头）"
-            name="api_key"
-            extra={settings?.has_api_key ? '当前已配置，留空表示保留原值' : '未配置'}
+            label="模型服务商"
+            name="provider"
+            rules={[{ required: true, message: '请选择模型服务商' }]}
+            extra="模型列表会展示全部模型；在创作区选择模型时会自动同步服务商"
           >
-            <Input.Password placeholder="ark-xxxxxxxxxxxxxxxx" autoComplete="off" />
+            <Select
+              options={[
+                { value: 'ark', label: '火山方舟（Seedance）' },
+                { value: 'vidu', label: 'Vidu' },
+              ]}
+            />
           </Form.Item>
+          {settingsProvider === 'vidu' ? (
+            <>
+              <Form.Item
+                label="Vidu API Key"
+                name="vidu_api_key"
+                extra={settings?.provider === 'vidu' && settings?.has_api_key ? '当前已配置，留空表示保留原值' : '未配置'}
+              >
+                <Input.Password placeholder="vda-xxxxxxxxxxxxxxxx" autoComplete="off" />
+              </Form.Item>
+              <Form.Item label="接入地址" name="vidu_base_url">
+                <Input placeholder="https://api.vidu.cn/ent/v2" />
+              </Form.Item>
+            </>
+          ) : (
+            <>
+              <Form.Item
+                label="API Key（火山方舟，ark- 开头）"
+                name="api_key"
+                extra={settings?.provider === 'ark' && settings?.has_api_key ? '当前已配置，留空表示保留原值' : '未配置'}
+              >
+                <Input.Password placeholder="ark-xxxxxxxxxxxxxxxx" autoComplete="off" />
+              </Form.Item>
+              <Form.Item label="接入地址" name="base_url" rules={[{ required: true, message: '请填写接入地址' }]}>
+                <Input placeholder="https://ark.cn-beijing.volces.com/api/v3" />
+              </Form.Item>
+            </>
+          )}
           <Form.Item label="模型 ID" name="model" rules={[{ required: true, message: '请填写模型 ID' }]}>
-            <Input placeholder="doubao-seedance-2-5-260628" />
-          </Form.Item>
-          <Form.Item label="接入地址" name="base_url" rules={[{ required: true, message: '请填写接入地址' }]}>
-            <Input placeholder="https://ark.cn-beijing.volces.com/api/v3" />
+            <Input placeholder={settingsProvider === 'vidu' ? 'viduq3-pro' : 'doubao-seedance-2-5-260628'} />
           </Form.Item>
           <Form.Item
-            label="公网访问地址（可选，上传参考视频时必填）"
+            label="公网访问地址（可选）"
             name="public_base_url"
-            extra="参考视频需要由火山方舟服务器拉取，本机需能通过该公网地址访问到工具"
+            extra={settingsProvider === 'ark' ? 'Seedance 参考视频需要由火山方舟服务器拉取，本机需能通过该公网地址访问到工具' : '可选：Vidu 图生视频如需使用公网图片地址可填写'}
           >
             <Input placeholder="https://your-domain.com/seedance-tool" />
           </Form.Item>
