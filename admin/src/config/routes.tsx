@@ -8,7 +8,6 @@ import {
   SafetyCertificateOutlined,
   VideoCameraOutlined,
   ThunderboltOutlined,
-  DeleteOutlined,
 } from '@ant-design/icons'
 import type { ReactElement } from 'react'
 
@@ -28,13 +27,6 @@ export const menuConfig: MenuItemConfig[] = [
     path: '/',
     label: '视频列表',
     icon: <VideoCameraOutlined />,
-    permission: 'authenticated',
-  },
-  {
-    key: '/trash',
-    path: '/trash',
-    label: '垃圾箱',
-    icon: <DeleteOutlined />,
     permission: 'authenticated',
   },
   {

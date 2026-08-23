@@ -1,6 +1,6 @@
-import { Button, Card, Descriptions, Input, Modal, Select, Space, Tag, Typography } from 'antd'
+import { Avatar, Button, Card, Descriptions, Input, Modal, Select, Space, Tag, Typography } from 'antd'
 import { QRCodeSVG } from 'qrcode.react'
-import type { RunDetail, VersionInfo, PlaybackMetrics, PickAccount } from '../../types/run'
+import { RANDOM_USER_MARKER, type RunDetail, type VersionInfo, type PlaybackMetrics, type PickAccount } from '../../types/run'
 import { versionOptionLabel } from '../../types/interaction'
 import { formatServerTime } from '../../time'
 import RunDetailSettings from './RunDetailSettings'
@@ -262,13 +262,35 @@ export default function RunDetailPublish(props: Props) {
               placeholder="选择 App 账号"
               loading={pickLoading}
               value={publishUserId}
-              options={pickAccounts.map((a) => ({
-                value: a.user_id,
-                label: a.nickname || a.user_id,
-              }))}
+              options={[
+                {
+                  value: RANDOM_USER_MARKER,
+                  label: (
+                    <Space size={6}>
+                      <Avatar size={22}>🎲</Avatar>
+                      <span>随机账号</span>
+                    </Space>
+                  ),
+                  searchText: '随机',
+                },
+                ...pickAccounts.map((a) => ({
+                  value: a.user_id,
+                  label: (
+                    <Space size={6}>
+                      <Avatar size={22} src={a.avatar_absolute_url || undefined}>{a.nickname?.[0]}</Avatar>
+                      <span>{a.nickname || a.user_id}</span>
+                    </Space>
+                  ),
+                  searchText: a.nickname || a.user_id,
+                })),
+              ]}
               onChange={onPublishUserIdChange}
               showSearch
-              optionFilterProp="label"
+              filterOption={(input, option) =>
+                String(option?.searchText || '')
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
+              }
             />
           </div>
           <Typography.Paragraph

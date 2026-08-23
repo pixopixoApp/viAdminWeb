@@ -6,7 +6,7 @@ import { runsApi } from '../services/api'
 import { formatServerTime } from '../time'
 import type { Run } from '../types/run'
 
-export default function TrashPage() {
+export default function TrashPage({ embedded = false, onTotalChange }: { embedded?: boolean; onTotalChange?: (total: number) => void }) {
   const { me } = useAuth()
   const manageAll = me?.role === 'admin' || me?.role === 'manager'
   const [rows, setRows] = useState<Run[]>([])
@@ -22,12 +22,13 @@ export default function TrashPage() {
       const data = await runsApi.listTrash(page, pageSize)
       setRows(data.items)
       setTotal(data.total)
+      onTotalChange?.(data.total)
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '加载垃圾箱失败')
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, messageApi])
+  }, [page, pageSize, messageApi, onTotalChange])
 
   useEffect(() => {
     void load()
@@ -96,9 +97,11 @@ export default function TrashPage() {
   return (
     <>
       {contextHolder}
-      <Typography.Title level={4} style={{ margin: '0 0 16px' }} className="page-title">
-        垃圾箱 <Typography.Text type="secondary">({total})</Typography.Text>
-      </Typography.Title>
+      {!embedded ? (
+        <Typography.Title level={4} style={{ margin: '0 0 16px' }} className="page-title">
+          垃圾箱 <Typography.Text type="secondary">({total})</Typography.Text>
+        </Typography.Title>
+      ) : null}
       <Table
         rowKey="id"
         loading={loading}

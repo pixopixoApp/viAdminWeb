@@ -2,8 +2,9 @@ import { Card, Empty, Modal, message } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { runsApi, engineApi, accountsApi } from '../services/api'
-import type { RunDetail, PlaybackMetrics, PickAccount } from '../types/run'
+import { RANDOM_USER_MARKER, type RunDetail, type PlaybackMetrics, type PickAccount } from '../types/run'
 import RunDetailHeader from '../components/run-detail/RunDetailHeader'
+import RunDetailCoverModal from '../components/run-detail/RunDetailCoverModal'
 import RunDetailPreview from '../components/run-detail/RunDetailPreview'
 import RunDetailInteraction from '../components/run-detail/RunDetailInteraction'
 import RunDetailPublish from '../components/run-detail/RunDetailPublish'
@@ -17,6 +18,7 @@ export default function RunDetailPage() {
   const [publishOpen, setPublishOpen] = useState(false)
   const [unpublishing, setUnpublishing] = useState(false)
   const [qrOpen, setQrOpen] = useState(false)
+  const [coverEditOpen, setCoverEditOpen] = useState(false)
   const [reanalyzing, setReanalyzing] = useState(false)
   const [switching, setSwitching] = useState(false)
   const [annotating, setAnnotating] = useState(false)
@@ -103,8 +105,9 @@ export default function RunDetailPage() {
       const items = (resp.items || []).filter((a) => a.enabled)
       setPickAccounts(items)
       setPublishUserId((prev) => {
-        if (prev && items.some((a) => a.user_id === prev)) return prev
-        return items[0]?.user_id
+        if (prev && (prev === RANDOM_USER_MARKER || items.some((a) => a.user_id === prev))) return prev
+        // 无绑定账号时默认随机发布
+        return items[0]?.user_id || RANDOM_USER_MARKER
       })
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '账号列表加载失败')
@@ -309,6 +312,24 @@ export default function RunDetailPage() {
     }
   }
 
+  async function onSaveDescription(next: string) {
+    if (!id || !data) return
+    const text = next.trim()
+    const current = String(data.run.description || '')
+    if (text === current) return
+    try {
+      const updated = await runsApi.updateRunDescription(id, text)
+      setData((prev) =>
+        prev
+          ? { ...prev, run: { ...prev.run, description: updated.description || '' } }
+          : prev,
+      )
+      messageApi.success('作品简介已更新')
+    } catch (err) {
+      messageApi.error(err instanceof Error ? err.message : '作品简介保存失败')
+    }
+  }
+
   async function onReanalyze() {
     if (!id) return
     setReanalyzing(true)
@@ -377,6 +398,8 @@ export default function RunDetailPage() {
       <RunDetailHeader
         displayTitle={displayTitle}
         filename={String(data.media.filename || '')}
+        coverUrl={data.run.cover_url || undefined}
+        description={data.run.description || undefined}
         errorMessage={data.run.error_message}
         businessStatus={businessStatus}
         businessStatusColor={businessStatusColor}
@@ -393,6 +416,8 @@ export default function RunDetailPage() {
         unpublishing={unpublishing}
         published={Boolean(published)}
         onSaveTitle={(v) => void onSaveTitle(v)}
+        onSaveDescription={(v) => void onSaveDescription(v)}
+        onEditCover={() => setCoverEditOpen(true)}
         onPublish={() => setPublishOpen(true)}
         onQrOpen={() => setQrOpen(true)}
         onStartAnnotate={() => void onStartAnnotate()}
@@ -461,6 +486,22 @@ export default function RunDetailPage() {
         onReanalyzeModelChange={setReanalyzeModel}
         onReanalyzeBriefChange={setReanalyzeBrief}
         onReanalyzeNoteChange={setReanalyzeNote}
+      />
+
+      <RunDetailCoverModal
+        open={coverEditOpen}
+        run={data.run}
+        onClose={() => setCoverEditOpen(false)}
+        onSaved={(coverMediaObjectId, coverUrl) => {
+          setData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  run: { ...prev.run, cover_media_object_id: coverMediaObjectId || null, cover_url: coverUrl || null },
+                }
+              : prev,
+          )
+        }}
       />
     </>
   )

@@ -1,4 +1,4 @@
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons'
+import { DeleteOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Segmented, Space, Typography } from 'antd'
 import { Link } from 'react-router-dom'
 
@@ -122,6 +122,9 @@ export default function RunFilterBar({
             <Button type="primary" icon={<PlusOutlined />} onClick={onUpload}>
               上传视频
             </Button>
+            <Link to="/trash">
+              <Button icon={<DeleteOutlined />}>垃圾箱</Button>
+            </Link>
           </Space>
         ) : null}
       </Space>

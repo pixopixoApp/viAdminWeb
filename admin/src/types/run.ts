@@ -2,6 +2,8 @@ export type Run = {
   id: string
   status: string
   title?: string
+  brief?: string | null
+  description?: string | null
   source_filename: string
   source_bytes?: number
   duration_ms?: number
@@ -48,6 +50,10 @@ export type RunDetail = {
     content_mode?: 'single' | 'story'
     feed_weight?: number
     is_tutorial?: boolean
+    description?: string | null
+    cover_url?: string | null
+    cover_media_object_id?: string | null
+    cover_candidates_json?: string | null
   }
   media: Record<string, unknown>
   analysis_refine: {
@@ -85,7 +91,12 @@ export type PickAccount = {
   user_id: string
   nickname: string
   enabled: boolean
+  avatar_url?: string
+  avatar_absolute_url?: string
 }
+
+/** 发布到随机无归属账号的标记（与后端一致） */
+export const RANDOM_USER_MARKER = 'random'
 
 export type PlaybackMetrics = {
   video_id: string

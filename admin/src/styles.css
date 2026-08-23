@@ -1419,3 +1419,191 @@ body {
 [data-theme='dark'] .timeline-bar {
   background: #26282D;
 }
+
+/* ── 上传封面选择 ─────────────────────────── */
+.upload-cover-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.upload-cover-scroll .upload-cover-cell {
+  flex: 0 0 auto;
+}
+
+.upload-cover-cell {
+  position: relative;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #f0f2f5;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.upload-cover-cell:hover {
+  border-color: #3366cc;
+}
+
+.upload-cover-cell.is-selected {
+  border-color: #3366cc;
+  box-shadow: 0 0 0 2px rgba(51, 102, 204, 0.25);
+}
+
+.upload-cover-time {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 4px;
+}
+
+.upload-cover-check {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  color: #3366cc;
+  font-size: 18px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+}
+
+[data-theme='dark'] .upload-cover-cell {
+  background: #1a1c1f;
+}
+
+[data-theme='dark'] .upload-cover-cell.is-selected {
+  border-color: #5b8def;
+  box-shadow: 0 0 0 2px rgba(91, 141, 239, 0.3);
+}
+
+[data-theme='dark'] .upload-cover-check {
+  background: rgba(40, 44, 52, 0.95);
+  color: #5b8def;
+}
+
+/* ── 上传封面：按视频方向显示横/竖比例（单行横向滚动） ─────── */
+.upload-cover-scroll.is-landscape .upload-cover-cell {
+  width: 150px;
+  aspect-ratio: 16 / 10;
+}
+
+.upload-cover-scroll.is-portrait .upload-cover-cell {
+  width: 96px;
+  aspect-ratio: 9 / 16;
+}
+
+/* ── 上传弹窗：合并视频标题 + 作品简介 ─────── */
+.upload-title-brief {
+  border: 1px solid #d9d9d9;
+  border-radius: 5px;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.upload-title-brief:hover {
+  border-color: #3366cc;
+  box-shadow: 0 0 0 2px rgba(51, 102, 204, 0.12);
+}
+
+.upload-title-brief .ant-form-item {
+  margin: 0;
+}
+
+.upload-title-brief-input,
+.upload-title-brief-textarea {
+  padding: 12px 14px;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.upload-title-brief-input.ant-input::placeholder,
+.upload-title-brief-textarea.ant-input::placeholder {
+  color: #999;
+}
+
+.upload-title-brief-textarea.ant-input {
+  resize: none;
+  height: 120px !important;
+}
+
+.upload-title-brief-divider {
+  height: 1px;
+  background: #e4e4e6;
+  margin: 0 10px;
+}
+
+[data-theme='dark'] .upload-title-brief {
+  border-color: #2a2d33;
+}
+
+[data-theme='dark'] .upload-title-brief:hover {
+  border-color: #5b8def;
+  box-shadow: 0 0 0 2px rgba(91, 141, 239, 0.2);
+}
+
+[data-theme='dark'] .upload-title-brief-divider {
+  background: #303338;
+}
+
+
+/* ── 详情页封面 ─────────────────────────── */
+.run-detail-cover {
+  position: relative;
+  width: 66px;
+  height: 90px;
+  border-radius: 5px;
+  overflow: hidden;
+  cursor: pointer;
+  flex: 0 0 auto;
+  background: #f0f2f5;
+  border: 1px solid #e4e4e6;
+}
+
+.run-detail-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.run-detail-cover-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  font-size: 12px;
+}
+
+.run-detail-cover-edit {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 3px 0;
+  text-align: center;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.run-detail-cover:hover .run-detail-cover-edit {
+  opacity: 1;
+}
+
+[data-theme='dark'] .run-detail-cover {
+  background: #1a1c1f;
+  border-color: #2a2d33;
+}

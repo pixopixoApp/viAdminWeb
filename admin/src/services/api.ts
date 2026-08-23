@@ -219,7 +219,10 @@ export type CreateRunUploadSessionParams = {
   processing_mode: 'ai' | 'manual'
   model?: string
   brief?: string
+  description?: string
   title?: string
+  cover_media_object_id?: string
+  cover_candidates_json?: string
 }
 
 export function createRunUploadSession(params: CreateRunUploadSessionParams) {
@@ -231,6 +234,16 @@ export function createRunUploadSession(params: CreateRunUploadSessionParams) {
   }>('/api/v1/run-upload-sessions', {
     method: 'POST',
     body: JSON.stringify(params),
+  })
+}
+
+/** 上传封面图片，返回本地内容寻址 media object id 与预览 URL。 */
+export function uploadCoverImage(file: File) {
+  const form = new FormData()
+  form.append('file', file, file.name)
+  return api<{ media_object_id: string; cover_url: string }>('/api/v1/runs/cover-upload', {
+    method: 'POST',
+    body: form,
   })
 }
 
@@ -264,6 +277,20 @@ export function updateRunTitle(id: string, title: string) {
   return api<{ title: string }>(`/api/v1/runs/${id}`, {
     method: 'PATCH',
     body: JSON.stringify({ title }),
+  })
+}
+
+export function updateRunCover(id: string, body: { cover_media_object_id?: string; cover_candidates_json?: string }) {
+  return api<{ cover_media_object_id?: string | null; cover_url?: string | null }>(`/api/v1/runs/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateRunDescription(id: string, description: string) {
+  return api<{ description?: string | null }>(`/api/v1/runs/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ description }),
   })
 }
 
@@ -594,6 +621,7 @@ export const runsApi = {
   get: getRun,
   createRunUploadSession,
   uploadRunSource,
+  uploadCover: uploadCoverImage,
   finalizeRunUpload,
   review: reviewRun,
   delete: deleteRun,
@@ -601,6 +629,8 @@ export const runsApi = {
   restore: restoreRun,
   updateRunFeedWeight,
   updateRunTitle,
+  updateRunCover,
+  updateRunDescription,
   updateRunFeedWeightById,
   updateRunTutorial,
   queuePublish: createPublishJob,

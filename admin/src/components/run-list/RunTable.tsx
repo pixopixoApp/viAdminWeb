@@ -66,7 +66,7 @@ export default function RunTable({
   const sourceColumn: ColumnsType<Run>[number] = {
     title: '来源',
     key: 'source',
-    width: 92,
+    width: 90,
     render: (_, row) => <Tag color={row.source === 'ugc' ? 'purple' : row.source === 'manual_upload' ? 'cyan' : 'blue'}>{row.source === 'ugc' ? 'UGC' : row.source === 'manual_upload' ? '手动上传' : 'PGC'}</Tag>,
   }
 
@@ -104,7 +104,7 @@ export default function RunTable({
     {
       title: '状态',
       key: 'status',
-      width: 150,
+      width: 100,
       render: (_, row) => {
         if (row.review_status === 'pending') return <Tag color="orange">待审核</Tag>
         if (row.review_status === 'rejected') return <Tag color="red">已拒绝</Tag>
@@ -129,7 +129,7 @@ export default function RunTable({
     {
       title: '发布账号',
       key: 'published_user',
-      width: 160,
+      width: 140,
       render: (_, row) => {
         if (!row.published_version && !row.published_user_id && !row.author_user_id) return '-'
         const name = row.author_nickname || row.author_user_id || row.published_user_nickname || row.published_user_id || '-'
@@ -147,7 +147,7 @@ export default function RunTable({
     {
       title: '权重',
       dataIndex: 'feed_weight',
-      width: 72,
+      width: 70,
       render: (_v: number | undefined, row) => manageAll ? (
         <Button size="small" onClick={() => onEditWeight(row)}>
           {row.feed_weight ?? 0}
@@ -155,6 +155,35 @@ export default function RunTable({
       ) : (
         <span>{row.feed_weight ?? 0}</span>
       ),
+    },
+    {
+      title: '教学',
+      dataIndex: 'is_tutorial',
+      width: 60,
+      render: (v?: boolean) => (v ? '是' : '否'),
+    },
+    {
+      title: '上传人',
+      dataIndex: 'created_by_name',
+      width: 100,
+      render: (v?: string | null) => v || '-',
+    },
+    {
+      title: '视频信息',
+      key: 'media',
+      width: 130,
+      render: (_, row) => (
+        <Space size={6} split={<Typography.Text type="secondary">·</Typography.Text>}>
+          <span>{formatDuration(row.duration_ms)}</span>
+          <Typography.Text type="secondary">{formatBytes(row.source_bytes)}</Typography.Text>
+        </Space>
+      ),
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'created_at',
+      width: 180,
+      render: (v: string) => formatServerTime(v),
     },
     {
       title: '操作', key: 'actions', width: manageAll ? 230 : 90,
@@ -182,36 +211,7 @@ export default function RunTable({
           <Button size="small" danger onClick={() => onTrash(row)}>删除</Button>
         </Space>
       ),
-    },
-    {
-      title: '教学',
-      dataIndex: 'is_tutorial',
-      width: 64,
-      render: (v?: boolean) => (v ? '是' : '否'),
-    },
-    {
-      title: '上传人',
-      dataIndex: 'created_by_name',
-      width: 120,
-      render: (v?: string | null) => v || '-',
-    },
-    {
-      title: '视频信息',
-      key: 'media',
-      width: 170,
-      render: (_, row) => (
-        <Space size={6} split={<Typography.Text type="secondary">·</Typography.Text>}>
-          <span>{formatDuration(row.duration_ms)}</span>
-          <Typography.Text type="secondary">{formatBytes(row.source_bytes)}</Typography.Text>
-        </Space>
-      ),
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      width: 180,
-      render: (v: string) => formatServerTime(v),
-    },
+    }
   ]
 
   return (

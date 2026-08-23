@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom'
 type Props = {
   displayTitle: string
   filename?: string
+  coverUrl?: string
+  description?: string
   errorMessage?: string
   businessStatus: string
   businessStatusColor: string
@@ -20,6 +22,8 @@ type Props = {
   unpublishing: boolean
   published: boolean
   onSaveTitle: (v: string) => void
+  onSaveDescription: (v: string) => void
+  onEditCover: () => void
   onPublish: () => void
   onQrOpen: () => void
   onStartAnnotate: () => void
@@ -30,6 +34,8 @@ type Props = {
 export default function RunDetailHeader({
   displayTitle,
   filename,
+  coverUrl,
+  description,
   errorMessage,
   businessStatus,
   businessStatusColor,
@@ -46,6 +52,8 @@ export default function RunDetailHeader({
   unpublishing,
   published,
   onSaveTitle,
+  onSaveDescription,
+  onEditCover,
   onPublish,
   onQrOpen,
   onStartAnnotate,
@@ -58,28 +66,50 @@ export default function RunDetailHeader({
         style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between', alignItems: 'flex-start' }}
         wrap
       >
-        <div>
-          <Typography.Title
-            level={4}
-            style={{ margin: 0 }}
-            editable={{
-              tooltip: '点击修改标题',
-              onChange: (v) => void onSaveTitle(v),
-              triggerType: ['text', 'icon'],
-            }}
-          >
-            {displayTitle}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            <Link to="/">返回列表</Link>
-            {filename ? ` · 文件 ${filename}` : ''}
-          </Typography.Text>
-          <div style={{ marginTop: 10 }}>
-            <Tag color={businessStatusColor}>{businessStatus}</Tag>
-            <Tag color={generationStatus.color}>{generationStatus.label}</Tag>
-            {publishedAccountDisabled ? (
-              <Tag color="orange">发布账号已停用</Tag>
-            ) : null}
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', minWidth: 0 }}>
+          <div className="run-detail-cover" onClick={onEditCover} title="编辑封面">
+            {coverUrl ? (
+              <img src={coverUrl} alt="" className="run-detail-cover-img" />
+            ) : (
+              <div className="run-detail-cover-empty">无封面</div>
+            )}
+            <div className="run-detail-cover-edit">编辑封面</div>
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <Typography.Title
+              level={4}
+              style={{ margin: 0 }}
+              editable={{
+                tooltip: '点击修改标题',
+                onChange: (v) => void onSaveTitle(v),
+                triggerType: ['text', 'icon'],
+              }}
+            >
+              {displayTitle}
+            </Typography.Title>
+            <Typography.Paragraph
+              type="secondary"
+              ellipsis={{ rows: 2, expandable: true, symbol: '展开' }}
+              style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap' }}
+              editable={{
+                tooltip: '点击编辑作品简介',
+                onChange: (v) => void onSaveDescription(v),
+                triggerType: ['text', 'icon'],
+              }}
+            >
+              {description || '添加作品简介'}
+            </Typography.Paragraph>
+            <Typography.Text type="secondary">
+              <Link to="/">返回列表</Link>
+              {filename ? ` · 文件 ${filename}` : ''}
+            </Typography.Text>
+            <div style={{ marginTop: 10 }}>
+              <Tag color={businessStatusColor}>{businessStatus}</Tag>
+              <Tag color={generationStatus.color}>{generationStatus.label}</Tag>
+              {publishedAccountDisabled ? (
+                <Tag color="orange">发布账号已停用</Tag>
+              ) : null}
+            </div>
           </div>
         </div>
         <Space wrap>
