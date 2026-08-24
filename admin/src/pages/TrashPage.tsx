@@ -5,6 +5,7 @@ import { useAuth } from '../auth'
 import { runsApi } from '../services/api'
 import { formatServerTime } from '../time'
 import type { Run } from '../types/run'
+import CoverThumb from '../components/run-list/CoverThumb'
 
 export default function TrashPage({ embedded = false, onTotalChange }: { embedded?: boolean; onTotalChange?: (total: number) => void }) {
   const { me } = useAuth()
@@ -47,11 +48,13 @@ export default function TrashPage({ embedded = false, onTotalChange }: { embedde
   const columns: ColumnsType<Run> = [
     {
       title: '封面', key: 'cover', width: 88,
-      render: (_, row) => row.cover_url ? (
-        <img src={row.cover_url} alt="" style={{ width: 56, height: 76, objectFit: 'cover', borderRadius: 6 }} />
-      ) : row.preview_url && row.content_type !== 'html' ? (
-        <video src={row.preview_url} muted preload="metadata" style={{ width: 56, height: 76, objectFit: 'cover', borderRadius: 6, background: '#111' }} />
-      ) : <div style={{ width: 56, height: 76, borderRadius: 6, background: '#1f2937', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11 }}>{row.content_type === 'html' ? 'HTML' : '视频'}</div>,
+      render: (_, row) => (
+        <CoverThumb
+          coverUrl={row.cover_url}
+          previewUrl={row.preview_url}
+          contentType={row.content_type}
+        />
+      ),
     },
     {
       title: '标题',

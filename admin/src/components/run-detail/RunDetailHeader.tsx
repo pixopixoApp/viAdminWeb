@@ -1,5 +1,7 @@
 import { Button, Card, Space, Tag, Typography } from 'antd'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuthorizedImageUrl } from '../../hooks/useAuthorizedImageUrl'
 
 type Props = {
   displayTitle: string
@@ -60,6 +62,9 @@ export default function RunDetailHeader({
   onReanalyze,
   onUnpublish,
 }: Props) {
+  const [coverFailed, setCoverFailed] = useState(false)
+  const displayCoverUrl = useAuthorizedImageUrl(coverUrl)
+  const showCover = Boolean(displayCoverUrl) && !coverFailed
   return (
     <>
       <Space
@@ -68,8 +73,13 @@ export default function RunDetailHeader({
       >
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', minWidth: 0 }}>
           <div className="run-detail-cover" onClick={onEditCover} title="编辑封面">
-            {coverUrl ? (
-              <img src={coverUrl} alt="" className="run-detail-cover-img" />
+            {showCover ? (
+              <img
+                src={displayCoverUrl}
+                alt=""
+                className="run-detail-cover-img"
+                onError={() => setCoverFailed(true)}
+              />
             ) : (
               <div className="run-detail-cover-empty">无封面</div>
             )}

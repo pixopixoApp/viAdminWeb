@@ -2,6 +2,7 @@ import { Button, Modal, Space, Typography, Image, message } from 'antd'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RunDetail } from '../../types/run'
 import { runsApi } from '../../services/api'
+import { useAuthorizedImageUrl } from '../../hooks/useAuthorizedImageUrl'
 
 type Props = {
   open: boolean
@@ -20,6 +21,15 @@ function dataUrlToBlob(dataUrl: string): Blob {
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
   return new Blob([bytes], { type: mime })
+}
+
+/** 单个封面候选图：对带鉴权的相对 API 路径用 token 拉取后再展示。 */
+function CoverCandidate({ src }: { src: string }) {
+  const displayUrl = useAuthorizedImageUrl(src)
+  if (!displayUrl) return null
+  return (
+    <Image src={displayUrl} preview={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+  )
 }
 
 export default function RunDetailCoverModal({ open, run, onClose, onSaved }: Props) {
@@ -202,7 +212,7 @@ export default function RunDetailCoverModal({ open, run, onClose, onSaved }: Pro
                 onClick={() => !saving && void (src.startsWith('data:') ? handlePickDataUrl(src) : handlePickPersisted(src))}
                 style={{ width: 96, aspectRatio: '9 / 16', flex: '0 0 auto' }}
               >
-                <Image src={src} preview={false} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <CoverCandidate src={src} />
                 {currentUrl === src ? <span className="upload-cover-check">✓</span> : null}
               </div>
             ))}
