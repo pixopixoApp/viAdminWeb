@@ -14,8 +14,8 @@ export function useAuthorizedImageUrl(src?: string): string | undefined {
   const revokeRef = useRef<string | null>(null)
 
   useEffect(() => {
-    // 只处理需要鉴权的相对 API 路径；公开的绝对 URL 直接使用。
-    if (!src || /^https?:\/\//i.test(src)) {
+    // data:/blob: 及公开的绝对 URL 可直接展示；只有相对 API 路径需要带 token 拉取。
+    if (!src || /^(https?:|data:|blob:)/i.test(src)) {
       if (revokeRef.current) {
         URL.revokeObjectURL(revokeRef.current)
         revokeRef.current = null
@@ -30,6 +30,9 @@ export function useAuthorizedImageUrl(src?: string): string | undefined {
     fetch(src, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       credentials: 'include',
+      // 封面地址是不变的（/runs/<id>/media/cover），但内容会变；禁用缓存以确保
+      // 修改封面后视频列表能立即拿到最新封面，而不是浏览器缓存的旧图。
+      cache: 'no-store',
     })
       .then((resp) => {
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
