@@ -313,7 +313,7 @@ export type PublishJob = {
   run_id: string
   version: string
   user_id: string
-  state: 'waiting_for_backup' | 'publishing' | 'retry_wait' | 'succeeded' | 'failed'
+  state: 'waiting_for_backup' | 'waiting_for_cdn' | 'publishing' | 'retry_wait' | 'succeeded' | 'failed'
   error_message?: string
   result?: { id: string; version: string; ivapp?: { updated?: boolean } }
   poll_after_ms?: number
