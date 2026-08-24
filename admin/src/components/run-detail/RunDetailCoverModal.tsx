@@ -1,5 +1,5 @@
 import { Button, Modal, Space, Typography, Image, message } from 'antd'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RunDetail } from '../../types/run'
 import { runsApi } from '../../services/api'
 import { useAuthorizedImageUrl } from '../../hooks/useAuthorizedImageUrl'
@@ -23,6 +23,38 @@ function dataUrlToBlob(dataUrl: string): Blob {
   return new Blob([bytes], { type: mime })
 }
 
+type CoverItem = { sha?: string; url: string }
+
+/** 解析 cover_candidates_json（兼容新的对象数组与旧的纯字符串数组）。 */
+function parseCandidates(raw?: string | null): CoverItem[] {
+  try {
+    const parsed = JSON.parse(raw || '[]')
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((x): CoverItem | null => {
+          if (typeof x === 'string') {
+            const tail = x.split('/').pop() || ''
+            return { sha: tail.length === 64 ? tail : undefined, url: x }
+          }
+          if (x && typeof x === 'object') {
+            const sha = typeof x.sha === 'string' ? x.sha : undefined
+            const url = typeof x.url === 'string' ? x.url : ''
+            return url ? { sha: sha || undefined, url } : null
+          }
+          return null
+        })
+        .filter((x): x is CoverItem => x !== null)
+    }
+  } catch {
+    /* ignore malformed */
+  }
+  return []
+}
+
+function serializeCandidates(items: CoverItem[]): string {
+  return JSON.stringify(items)
+}
+
 /** 单个封面候选图：对带鉴权的相对 API 路径用 token 拉取后再展示。 */
 function CoverCandidate({ src }: { src: string }) {
   const displayUrl = useAuthorizedImageUrl(src)
@@ -42,17 +74,16 @@ export default function RunDetailCoverModal({ open, run, onClose, onSaved }: Pro
   const timerRef = useRef<number | null>(null)
   const timeRef = useRef(0)
 
-  // 已持久化的候选封面 URL 列表（后端存 JSON 字符串数组）
-  let persisted: string[] = []
-  try {
-    const parsed = JSON.parse(run.cover_candidates_json || '[]')
-    if (Array.isArray(parsed)) persisted = parsed.filter((x): x is string => typeof x === 'string')
-  } catch {
-    persisted = []
-  }
+  // 已持久化的候选封面列表（兼容对象数组与旧字符串数组，可能混存本地地址与 CDN 地址）
+  const persisted = useMemo<CoverItem[]>(
+    () => parseCandidates(run.cover_candidates_json),
+    [run.cover_candidates_json],
+  )
 
   const currentUrl = run.cover_url || ''
-  const list = localCandidates.length > 0 ? localCandidates : persisted
+  const list: CoverItem[] = localCandidates.length > 0
+    ? localCandidates.map((url): CoverItem => ({ url }))
+    : persisted
 
   const stopExtract = useCallback(() => {
     if (timerRef.current !== null) {
@@ -135,7 +166,7 @@ export default function RunDetailCoverModal({ open, run, onClose, onSaved }: Pro
     if (!dataUrl.startsWith('data:')) return
     setSaving(true)
     try {
-      // 把本次抽帧的所有候选都上传，收集 URL；选中的作为当前封面
+      // 把本次抽帧的所有候选上传到本地，收集 {sha, url}；选中的作为当前封面
       const uploaded: { media_object_id: string; cover_url: string }[] = []
       for (const src of localCandidates) {
         const blob = dataUrlToBlob(src)
@@ -144,10 +175,13 @@ export default function RunDetailCoverModal({ open, run, onClose, onSaved }: Pro
       }
       const idx = localCandidates.indexOf(dataUrl)
       const mediaObjectId = idx >= 0 ? uploaded[idx]?.media_object_id : uploaded[0]?.media_object_id
-      const coverCandidatesJson = JSON.stringify(uploaded.map((u) => u.cover_url))
+      const newCandidates: CoverItem[] = uploaded.map((u) => ({
+        sha: u.media_object_id,
+        url: u.cover_url,
+      }))
       await runsApi.updateRunCover(run.id, {
         cover_media_object_id: mediaObjectId || undefined,
-        cover_candidates_json: coverCandidatesJson,
+        cover_candidates_json: serializeCandidates(newCandidates),
       })
       onSaved(mediaObjectId || undefined, uploaded[idx]?.cover_url || uploaded[0]?.cover_url)
       message.success('封面已更新')
@@ -159,15 +193,15 @@ export default function RunDetailCoverModal({ open, run, onClose, onSaved }: Pro
     }
   }
 
-  const handlePickPersisted = async (coverUrl: string) => {
+  const handlePickPersisted = async (item: CoverItem) => {
     setSaving(true)
     try {
-      const sha = coverUrl.split('/').pop() || ''
+      // 只传选中的本地 sha 与完整候选数组；是否要上传 OSS 由后端 update_run 判断并处理
       await runsApi.updateRunCover(run.id, {
-        cover_media_object_id: sha || undefined,
+        cover_media_object_id: item.sha || undefined,
         cover_candidates_json: run.cover_candidates_json || '',
       })
-      onSaved(sha || undefined, coverUrl)
+      onSaved(item.sha || undefined, item.url)
       message.success('封面已更新')
       onClose()
     } catch (err) {
@@ -205,15 +239,15 @@ export default function RunDetailCoverModal({ open, run, onClose, onSaved }: Pro
             从抽帧候选中选择一张作为封面（点击"重新抽帧"可重新抽取）
           </Typography.Paragraph>
           <div className="upload-cover-scroll is-portrait" style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
-            {list.map((src, i) => (
+            {list.map((item, i) => (
               <div
                 key={i}
-                className={`upload-cover-cell${currentUrl === src ? ' is-selected' : ''}`}
-                onClick={() => !saving && void (src.startsWith('data:') ? handlePickDataUrl(src) : handlePickPersisted(src))}
+                className={`upload-cover-cell${currentUrl === item.url ? ' is-selected' : ''}`}
+                onClick={() => !saving && void (item.url.startsWith('data:') ? handlePickDataUrl(item.url) : handlePickPersisted(item))}
                 style={{ width: 96, aspectRatio: '9 / 16', flex: '0 0 auto' }}
               >
-                <CoverCandidate src={src} />
-                {currentUrl === src ? <span className="upload-cover-check">✓</span> : null}
+                <CoverCandidate src={item.url} />
+                {currentUrl === item.url ? <span className="upload-cover-check">✓</span> : null}
               </div>
             ))}
           </div>

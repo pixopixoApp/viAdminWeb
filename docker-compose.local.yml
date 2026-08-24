@@ -12,6 +12,8 @@ services:
     # 覆盖默认 nginx 配置：upstream 指向 pixo-backend 中的 ivadmin api 别名
     volumes:
       - ./deploy/nginx.local.conf:/etc/nginx/conf.d/default.conf:ro
+      # 提供 ivAdminApi 的本地媒体缓存，nginx 通过 X-Accel-Redirect 从 /__local_media/ 提供封面/视频
+      - ../ivAdminApi/volumes/media-cache:/data/media-cache:ro
     networks:
       pixo-backend:
         aliases:
