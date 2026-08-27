@@ -32,6 +32,37 @@ export type Interaction = {
   vision_resolution?: VisionResolution
 }
 
+export const CONTINUOUS_SWIPE_TYPE = 'continuous_swipe'
+export const CONTINUOUS_SWIPE_HINT = '持续往复滑动以播放'
+export const CONTINUOUS_TAP_TYPE = 'continuous_tap'
+export const CONTINUOUS_TAP_HINT = '持续点击以播放'
+
+export function isContinuousSwipe(value: { gesture?: string } | undefined | null) {
+  return value?.gesture === CONTINUOUS_SWIPE_TYPE
+}
+
+export function isContinuousTap(value: { gesture?: string } | undefined | null) {
+  return value?.gesture === CONTINUOUS_TAP_TYPE
+}
+
+export function isSustainedPlaybackInteraction(
+  value: { gesture?: string } | undefined | null,
+) {
+  return isContinuousSwipe(value) || isContinuousTap(value)
+}
+
+export function enforceInteractionTypeRules(value: Interaction): Interaction {
+  if (!isSustainedPlaybackInteraction(value)) return value
+  const next: Interaction = {
+    ...value,
+    pause_video: true,
+    hint: isContinuousTap(value) ? CONTINUOUS_TAP_HINT : CONTINUOUS_SWIPE_HINT,
+  }
+  delete next.gate_end_ms
+  delete next.outcomes
+  return next
+}
+
 export const GESTURE_LABEL: Record<string, string> = {
   tap: '点击',
   double_tap: '双击',
@@ -63,6 +94,8 @@ export const GESTURE_LABEL: Record<string, string> = {
   scrub_right: '右推进',
   scrub_up: '上推进',
   scrub_down: '下推进',
+  continuous_swipe: '连续滑动',
+  continuous_tap: '持续点击',
 }
 
 export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'

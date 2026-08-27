@@ -115,11 +115,45 @@ export type ClipMeta = {
   height?: number | null
 }
 
-export type ClipOnEnd = { action: 'goto'; clip_id: string }
+export type ClipOnEnd =
+  | { action: 'goto'; clip_id: string }
+  | { action: 'end' }
+  | { action: 'retry_previous_point' }
 
 export type ClipBody = {
   timeline?: { interactions?: import('./interaction').Interaction[]; media?: { duration_ms?: number } }
   on_end?: ClipOnEnd
+}
+
+export type StoryEditorMode = 'simple_abc' | 'advanced'
+export type SimpleStoryRole = 'a' | 'b' | 'c'
+
+export type SimpleStoryPlacement =
+  | { type: 'time'; at_ms: number }
+  | { type: 'end' }
+
+export type SimpleStoryInteraction = Pick<
+  import('./interaction').Interaction,
+  | 'gesture'
+  | 'hint'
+  | 'custom_action'
+  | 'action_description'
+  | 'gameplay_description'
+  | 'vision'
+  | 'vision_resolution'
+>
+
+export type SimpleStoryConfig = {
+  roles: Partial<Record<SimpleStoryRole, string>>
+  branch_interaction_index: number | null
+  /** Legacy projection retained while old cached admin bundles roll out. */
+  interaction?: SimpleStoryInteraction | null
+  /** Legacy projection retained while old cached admin bundles roll out. */
+  placement?: SimpleStoryPlacement
+  response_window_ms: number
+  failure_behavior: 'end' | 'retry_previous_point'
+  complete: boolean
+  issues: string[]
 }
 
 export type StoryState = {
@@ -130,6 +164,10 @@ export type StoryState = {
   editing: boolean
   note: string
   label?: string
+  editor_mode?: StoryEditorMode
+  simple_config?: SimpleStoryConfig
+  authoring?: Record<string, unknown>
+  warnings?: string[]
 }
 
 export type AnnotateState = {
@@ -193,8 +231,11 @@ export const statusMeta: Record<string, { label: string; color: string }> = {
 export function parseClipOnEnd(raw: unknown): ClipOnEnd | undefined {
   if (!raw || typeof raw !== 'object') return undefined
   const edge = raw as { action?: string; clip_id?: string }
-  if (edge.action !== 'goto') return undefined
-  const clipId = typeof edge.clip_id === 'string' ? edge.clip_id.trim() : ''
-  if (!clipId) return undefined
-  return { action: 'goto', clip_id: clipId }
+  if (edge.action === 'end') return { action: 'end' }
+  if (edge.action === 'retry_previous_point') return { action: 'retry_previous_point' }
+  if (edge.action === 'goto') {
+    const clipId = typeof edge.clip_id === 'string' ? edge.clip_id.trim() : ''
+    if (clipId) return { action: 'goto', clip_id: clipId }
+  }
+  return undefined
 }

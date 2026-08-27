@@ -15,7 +15,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { annotateApi, runsApi } from '../services/api'
 import type { Interaction, SaveStatus } from '../types/interaction'
-import { versionOptionLabel, GESTURE_LABEL } from '../types/interaction'
+import {
+  enforceInteractionTypeRules,
+  GESTURE_LABEL,
+  isContinuousTap,
+  isSustainedPlaybackInteraction,
+  versionOptionLabel,
+} from '../types/interaction'
 import type { AnnotateState, VersionInfo } from '../types/run'
 import PreviewPlayer from '../components/PreviewPlayer'
 import VisionInteractionFields, {
@@ -71,7 +77,9 @@ export default function AnnotatePage() {
       setSourceFilename(String(detail?.media?.filename || ''))
       setPublishedVersion(detail?.run?.published_version || null)
       setVersionInfos(detail?.version_infos || [])
-      const nextRows = [...(data.timeline?.interactions || [])].sort(
+      const nextRows = [...(data.timeline?.interactions || [])].map(
+        enforceInteractionTypeRules,
+      ).sort(
         (a, b) => a.gate_at_ms - b.gate_at_ms,
       )
       setRows(nextRows)
@@ -96,7 +104,9 @@ export default function AnnotatePage() {
       interactions: rows.map((r) => ({
         gesture: r.gesture,
         gate_at_ms: Math.round(r.gate_at_ms),
-        ...(typeof r.gate_end_ms === 'number' ? { gate_end_ms: Math.round(r.gate_end_ms) } : {}),
+        ...(!isSustainedPlaybackInteraction(r) && typeof r.gate_end_ms === 'number'
+          ? { gate_end_ms: Math.round(r.gate_end_ms) }
+          : {}),
         ...(r.hint ? { hint: r.hint } : {}),
         ...(r.pause_video === false ? { pause_video: false } : { pause_video: true }),
         ...(r.gesture === 'camera_motion'
@@ -218,12 +228,13 @@ export default function AnnotatePage() {
       if (typeof gate_end_ms === 'number' && gate_end_ms < gate_at_ms) {
         gate_end_ms = undefined
       }
-      const updated: Interaction = {
+      let updated: Interaction = {
         ...cur,
         ...patch,
         gate_at_ms,
         ...(gate_end_ms !== undefined ? { gate_end_ms } : { gate_end_ms: undefined }),
       }
+      updated = enforceInteractionTypeRules(updated)
       if (gate_end_ms === undefined) delete updated.gate_end_ms
       const next = prev.map((r, i) => (i === selectedIndex ? updated : r)).sort(
         (a, b) => a.gate_at_ms - b.gate_at_ms,
@@ -404,25 +415,35 @@ export default function AnnotatePage() {
                   updateSelected({ gate_at_ms: Math.max(0, Math.round(Number(n || 0) * 1000)) })
                 }
               />
-              <Typography.Text type="secondary">结束 (s)</Typography.Text>
-              <InputNumber
-                min={Number((selected.gate_at_ms / 1000).toFixed(3))}
-                step={0.033}
-                precision={3}
-                value={
-                  typeof selected.gate_end_ms === 'number'
-                    ? Number((selected.gate_end_ms / 1000).toFixed(3))
-                    : null
-                }
-                onChange={(n) =>
-                  updateSelected({
-                    gate_end_ms:
-                      n == null
-                        ? undefined
-                        : Math.max(selected.gate_at_ms, Math.round(Number(n) * 1000)),
-                  })
-                }
-              />
+              {isSustainedPlaybackInteraction(selected) ? (
+                <Typography.Text type="secondary">
+                  作用区间：当前节点 → {rows[(selectedIndex ?? -1) + 1]
+                    ? `${(rows[(selectedIndex ?? -1) + 1].gate_at_ms / 1000).toFixed(2)}s 的下一节点`
+                    : '视频结束'}
+                </Typography.Text>
+              ) : (
+                <>
+                  <Typography.Text type="secondary">结束 (s)</Typography.Text>
+                  <InputNumber
+                    min={Number((selected.gate_at_ms / 1000).toFixed(3))}
+                    step={0.033}
+                    precision={3}
+                    value={
+                      typeof selected.gate_end_ms === 'number'
+                        ? Number((selected.gate_end_ms / 1000).toFixed(3))
+                        : null
+                    }
+                    onChange={(n) =>
+                      updateSelected({
+                        gate_end_ms:
+                          n == null
+                            ? undefined
+                            : Math.max(selected.gate_at_ms, Math.round(Number(n) * 1000)),
+                      })
+                    }
+                  />
+                </>
+              )}
               <Button size="small" onClick={setGateToPlayhead}>
                 取当前播放时刻
               </Button>
@@ -495,6 +516,13 @@ export default function AnnotatePage() {
                   }
                 />
               ) : null}
+              {isSustainedPlaybackInteraction(selected) ? (
+                <Typography.Paragraph type="secondary" style={{ margin: '10px 0 0' }}>
+                  {isContinuousTap(selected)
+                    ? '该类型固定暂停进入、全画面识别；首次点击立即播放，每次点击续期 500ms，停止点击后暂停。'
+                    : '该类型固定暂停进入、全画面识别；抬手立即暂停，停止移动 500ms 后暂停。'}
+                </Typography.Paragraph>
+              ) : null}
             </div>
 
             <div>
@@ -503,7 +531,10 @@ export default function AnnotatePage() {
               </Typography.Text>
               <Input
                 style={{ marginTop: 8 }}
-                disabled={selected.gesture === 'camera_motion'}
+                disabled={
+                  selected.gesture === 'camera_motion' ||
+                  isSustainedPlaybackInteraction(selected)
+                }
                 value={selected.hint || ''}
                 maxLength={40}
                 showCount

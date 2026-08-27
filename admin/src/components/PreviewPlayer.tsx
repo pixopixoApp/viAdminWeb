@@ -1,8 +1,21 @@
 import { PauseCircleFilled, PlayCircleFilled } from '@ant-design/icons'
 import { Button } from 'antd'
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import type { Gate } from '../types/interaction'
-import { GESTURE_LABEL } from '../types/interaction'
+import {
+  GESTURE_LABEL,
+  isContinuousSwipe,
+  isContinuousTap,
+  isSustainedPlaybackInteraction,
+} from '../types/interaction'
 export { GESTURE_LABEL }
 
 type Props = {
@@ -23,6 +36,23 @@ type Props = {
 const FRAME_MS = 33
 const SECOND_MS = 1000
 const SLOW_MEDIA_LOAD_MS = 8_000
+const CONTINUOUS_MIN_TRAVEL_DP = 32 * 0.85
+const CONTINUOUS_IDLE_TIMEOUT_MS = 500
+const CONTINUOUS_JITTER_DP = 3
+const CONTINUOUS_REVERSAL_COSINE = -0.5
+
+type ContinuousPointerState = {
+  pointerId: number
+  phase: 'first_leg' | 'return_leg' | 'driving'
+  anchorX: number
+  anchorY: number
+  directionX: number
+  directionY: number
+  turnX: number
+  turnY: number
+  lastAcceptedX: number
+  lastAcceptedY: number
+}
 
 function actionLabel(gate: Gate) {
   if (gate.custom_action && gate.action_description) return gate.action_description
@@ -58,6 +88,12 @@ export default function PreviewPlayer({
   const [mediaLoading, setMediaLoading] = useState(true)
   const [mediaSlow, setMediaSlow] = useState(false)
   const [mediaError, setMediaError] = useState<string | null>(null)
+  const [continuousDriving, setContinuousDriving] = useState(false)
+  const [continuousTapPulse, setContinuousTapPulse] = useState(0)
+  const continuousPointerRef = useRef<ContinuousPointerState | null>(null)
+  const continuousIdleTimerRef = useRef<number | null>(null)
+  const continuousSessionRef = useRef(0)
+  const continuousTapRenewalRef = useRef(0)
   const onSelectGateRef = useRef(onSelectGate)
   onSelectGateRef.current = onSelectGate
 
@@ -66,6 +102,9 @@ export default function PreviewPlayer({
     [gates],
   )
   const active = pausedAtGate ? sorted[index] : null
+  const activeSustained = pausedAtGate && isSustainedPlaybackInteraction(active)
+  const activeContinuousSwipe = activeSustained && isContinuousSwipe(active)
+  const activeContinuousTap = activeSustained && isContinuousTap(active)
   const totalMs =
     mediaDuration || durationMs || (sorted.length ? sorted[sorted.length - 1].gate_at_ms : 1)
 
@@ -81,6 +120,7 @@ export default function PreviewPlayer({
     setMediaLoading(true)
     setMediaSlow(false)
     setMediaError(null)
+    resetContinuousControl(true)
     // Only reset when the media identity changes; durationMs is seed for the new clip.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: clip/run identity
   }, [clipId, runId])
@@ -154,7 +194,21 @@ export default function PreviewPlayer({
       const ms = video.currentTime * 1000
       setProgress(ms)
       onPlayheadChange?.(Math.round(ms))
-      if (pausedAtGate || ended || !started) return
+      if (pausedAtGate) {
+        if (isSustainedPlaybackInteraction(active) && index + 1 < sorted.length) {
+          const next = sorted[index + 1]
+          if (ms >= next.gate_at_ms) {
+            resetContinuousControl(true)
+            video.currentTime = next.gate_at_ms / 1000
+            setProgress(next.gate_at_ms)
+            setIndex(index + 1)
+            setPausedAtGate(true)
+            if (annotate) onSelectGateRef.current?.(index + 1)
+          }
+        }
+        return
+      }
+      if (ended || !started) return
       if (index >= sorted.length) return
       const next = sorted[index]
       if (ms >= next.gate_at_ms) {
@@ -167,6 +221,7 @@ export default function PreviewPlayer({
     }
 
     const onEnded = () => {
+      resetContinuousControl(false)
       setEnded(true)
       setPausedAtGate(false)
       setPlaying(false)
@@ -188,7 +243,14 @@ export default function PreviewPlayer({
       video.removeEventListener('play', onPlay)
       video.removeEventListener('pause', onPause)
     }
-  }, [annotate, index, pausedAtGate, ended, started, sorted, totalMs, onPlayheadChange])
+  }, [active?.gesture, annotate, index, pausedAtGate, ended, started, sorted, totalMs, onPlayheadChange])
+
+  useEffect(() => {
+    if (!activeSustained) resetContinuousControl(false)
+    return () => {
+      if (activeSustained) resetContinuousControl(true)
+    }
+  }, [active?.gesture, activeSustained, index])
 
   async function requestPlay(video: HTMLVideoElement) {
     setMediaError(null)
@@ -204,16 +266,207 @@ export default function PreviewPlayer({
     }
   }
 
+  function clearContinuousIdleTimer() {
+    if (continuousIdleTimerRef.current != null) {
+      window.clearTimeout(continuousIdleTimerRef.current)
+      continuousIdleTimerRef.current = null
+    }
+  }
+
+  function resetContinuousControl(pauseVideo: boolean) {
+    clearContinuousIdleTimer()
+    continuousSessionRef.current += 1
+    continuousTapRenewalRef.current += 1
+    continuousPointerRef.current = null
+    setContinuousDriving(false)
+    if (pauseVideo) videoRef.current?.pause()
+  }
+
+  function resetContinuousQualifier(pointer: ContinuousPointerState) {
+    pointer.phase = 'first_leg'
+    pointer.anchorX = pointer.lastAcceptedX
+    pointer.anchorY = pointer.lastAcceptedY
+    pointer.directionX = 0
+    pointer.directionY = 0
+    pointer.turnX = pointer.lastAcceptedX
+    pointer.turnY = pointer.lastAcceptedY
+  }
+
+  function armContinuousIdleTimer(pointer: ContinuousPointerState) {
+    clearContinuousIdleTimer()
+    continuousIdleTimerRef.current = window.setTimeout(() => {
+      continuousIdleTimerRef.current = null
+      if (continuousPointerRef.current !== pointer || pointer.phase !== 'driving') return
+      videoRef.current?.pause()
+      setContinuousDriving(false)
+      resetContinuousQualifier(pointer)
+    }, CONTINUOUS_IDLE_TIMEOUT_MS)
+  }
+
+  async function requestContinuousPlay(pointer: ContinuousPointerState) {
+    const video = videoRef.current
+    if (!video) return
+    setMediaError(null)
+    try {
+      await video.play()
+      if (continuousPointerRef.current !== pointer || pointer.phase !== 'driving') {
+        video.pause()
+      }
+    } catch {
+      if (continuousPointerRef.current === pointer) {
+        video.pause()
+        setContinuousDriving(false)
+        resetContinuousQualifier(pointer)
+        setMediaError('视频暂时无法开始播放，请重新往复滑动。')
+      }
+    }
+  }
+
+  function handleContinuousPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!activeContinuousSwipe || !event.isPrimary || continuousPointerRef.current) return
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    videoRef.current?.pause()
+    setContinuousDriving(false)
+    continuousPointerRef.current = {
+      pointerId: event.pointerId,
+      phase: 'first_leg',
+      anchorX: event.clientX,
+      anchorY: event.clientY,
+      directionX: 0,
+      directionY: 0,
+      turnX: event.clientX,
+      turnY: event.clientY,
+      lastAcceptedX: event.clientX,
+      lastAcceptedY: event.clientY,
+    }
+  }
+
+  function handleContinuousPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const pointer = continuousPointerRef.current
+    if (!pointer || pointer.pointerId !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+    const stepX = event.clientX - pointer.lastAcceptedX
+    const stepY = event.clientY - pointer.lastAcceptedY
+    if (Math.hypot(stepX, stepY) < CONTINUOUS_JITTER_DP) return
+    pointer.lastAcceptedX = event.clientX
+    pointer.lastAcceptedY = event.clientY
+
+    if (pointer.phase === 'driving') {
+      armContinuousIdleTimer(pointer)
+      return
+    }
+    if (pointer.phase === 'first_leg') {
+      const deltaX = event.clientX - pointer.anchorX
+      const deltaY = event.clientY - pointer.anchorY
+      const distance = Math.hypot(deltaX, deltaY)
+      if (distance < CONTINUOUS_MIN_TRAVEL_DP) return
+      pointer.directionX = deltaX / distance
+      pointer.directionY = deltaY / distance
+      pointer.turnX = event.clientX
+      pointer.turnY = event.clientY
+      pointer.phase = 'return_leg'
+      return
+    }
+
+    const returnX = event.clientX - pointer.turnX
+    const returnY = event.clientY - pointer.turnY
+    const projection = returnX * pointer.directionX + returnY * pointer.directionY
+    if (projection > 0) {
+      pointer.turnX = event.clientX
+      pointer.turnY = event.clientY
+      return
+    }
+    const returnDistance = Math.hypot(returnX, returnY)
+    if (returnDistance < CONTINUOUS_MIN_TRAVEL_DP) return
+    const cosine = projection / returnDistance
+    if (cosine > CONTINUOUS_REVERSAL_COSINE) return
+    pointer.phase = 'driving'
+    setContinuousDriving(true)
+    armContinuousIdleTimer(pointer)
+    void requestContinuousPlay(pointer)
+  }
+
+  function handleContinuousPointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
+    const pointer = continuousPointerRef.current
+    if (!pointer || pointer.pointerId !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+    resetContinuousControl(true)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  async function requestContinuousTapPlay(session: number) {
+    const video = videoRef.current
+    if (!video) return
+    setMediaError(null)
+    try {
+      await video.play()
+      if (continuousSessionRef.current !== session) video.pause()
+    } catch {
+      if (continuousSessionRef.current === session) {
+        video.pause()
+        setContinuousDriving(false)
+        setMediaError('视频暂时无法开始播放，请再次点击。')
+      }
+    }
+  }
+
+  function renewContinuousTap() {
+    const video = videoRef.current
+    if (!video || !activeContinuousTap) return
+    setStarted(true)
+    setEnded(false)
+    setContinuousDriving(true)
+    setContinuousTapPulse((value) => value + 1)
+    const session = continuousSessionRef.current
+    const renewal = continuousTapRenewalRef.current + 1
+    continuousTapRenewalRef.current = renewal
+    clearContinuousIdleTimer()
+    continuousIdleTimerRef.current = window.setTimeout(() => {
+      continuousIdleTimerRef.current = null
+      if (
+        continuousSessionRef.current !== session ||
+        continuousTapRenewalRef.current !== renewal
+      ) return
+      continuousSessionRef.current += 1
+      video.pause()
+      setContinuousDriving(false)
+    }, CONTINUOUS_IDLE_TIMEOUT_MS)
+    void requestContinuousTapPlay(session)
+  }
+
+  function handleContinuousTapPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
+    event.preventDefault()
+    event.stopPropagation()
+    renewContinuousTap()
+  }
+
+  function handleContinuousTapKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    event.stopPropagation()
+    renewContinuousTap()
+  }
+
   function start() {
     const video = videoRef.current
     if (!video) return
     setStarted(true)
     setEnded(false)
-    setPausedAtGate(false)
+    const startsWithGate = sorted[0]?.gate_at_ms === 0
+    setPausedAtGate(startsWithGate)
     setIndex(0)
     setProgress(0)
     video.currentTime = 0
-    void requestPlay(video)
+    if (startsWithGate) video.pause()
+    else void requestPlay(video)
   }
 
   function advance() {
@@ -224,6 +477,7 @@ export default function PreviewPlayer({
       return
     }
     if (!pausedAtGate) return
+    if (activeSustained) return
     setPausedAtGate(false)
     setIndex((value) => value + 1)
     void requestPlay(video)
@@ -236,6 +490,7 @@ export default function PreviewPlayer({
       start()
       return
     }
+    if (activeSustained) return
     if (pausedAtGate) {
       setPausedAtGate(false)
       setIndex((value) => value + 1)
@@ -253,6 +508,7 @@ export default function PreviewPlayer({
   }
 
   function togglePlay() {
+    if (activeSustained) return
     const video = videoRef.current
     // Prefer element state: rapid play/pause can leave React `playing` out of sync.
     if (video && !video.paused) pausePlay()
@@ -263,15 +519,21 @@ export default function PreviewPlayer({
     const video = videoRef.current
     if (!video || totalMs <= 0) return
     const clamped = Math.max(0, Math.min(ms, totalMs))
+    const continuousIndex = sorted.findIndex((gate, gateIndex) => {
+      if (!isSustainedPlaybackInteraction(gate)) return false
+      const end = sorted[gateIndex + 1]?.gate_at_ms ?? totalMs
+      return clamped >= gate.gate_at_ms && clamped < end
+    })
     const nextIndex = sorted.findIndex((gate) => gate.gate_at_ms > clamped + 1)
     setStarted(true)
     setEnded(clamped >= totalMs - 40)
-    setPausedAtGate(false)
-    setIndex(nextIndex === -1 ? sorted.length : nextIndex)
+    setPausedAtGate(continuousIndex >= 0)
+    setIndex(continuousIndex >= 0 ? continuousIndex : (nextIndex === -1 ? sorted.length : nextIndex))
     video.currentTime = clamped / 1000
     setProgress(clamped)
     onPlayheadChange?.(Math.round(clamped))
-    if (play && clamped < totalMs - 40) void requestPlay(video)
+    if (continuousIndex >= 0) video.pause()
+    else if (play && clamped < totalMs - 40) void requestPlay(video)
     else video.pause()
   }
 
@@ -284,6 +546,7 @@ export default function PreviewPlayer({
     setEnded(false)
     setIndex(gateIndex)
     setPausedAtGate(true)
+    resetContinuousControl(true)
     video.pause()
     video.currentTime = gate.gate_at_ms / 1000
     setProgress(gate.gate_at_ms)
@@ -376,36 +639,83 @@ export default function PreviewPlayer({
               <span>{mediaSlow ? '视频资源响应较慢，仍在加载…' : '正在加载视频…'}</span>
             </div>
           ) : null}
-          <div
-            className={`preview-overlay${playing ? ' preview-overlay-playing' : ''}`}
-            onClick={(e) => {
-              e.stopPropagation()
-              togglePlay()
-            }}
-          >
-            <button
-              type="button"
-              className="preview-transport-btn"
-              aria-label={playing ? '暂停' : '播放'}
-              onClick={(e) => {
-                e.stopPropagation()
-                togglePlay()
-              }}
+          {activeSustained && active ? (
+            <div
+              className={`preview-continuous-surface${continuousDriving ? ' is-driving' : ''}${activeContinuousTap ? ' is-tap' : ''}`}
+              role={activeContinuousTap ? 'button' : 'application'}
+              tabIndex={activeContinuousTap ? 0 : undefined}
+              aria-label={
+                activeContinuousTap
+                  ? '在画面任意位置持续点击以播放，停止点击 500 毫秒后暂停'
+                  : '在画面任意位置持续往复滑动以播放'
+              }
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={activeContinuousTap ? handleContinuousTapKeyDown : undefined}
+              onPointerDown={
+                activeContinuousTap
+                  ? handleContinuousTapPointerDown
+                  : handleContinuousPointerDown
+              }
+              onPointerMove={activeContinuousSwipe ? handleContinuousPointerMove : undefined}
+              onPointerUp={activeContinuousSwipe ? handleContinuousPointerEnd : undefined}
+              onPointerCancel={activeContinuousSwipe ? handleContinuousPointerEnd : undefined}
             >
-              {playing ? <PauseCircleFilled /> : <PlayCircleFilled />}
-            </button>
-          </div>
-          {pausedAtGate && active ? (
-            <div className="preview-gate" onClick={(e) => e.stopPropagation()}>
-              <span className="preview-gate-index">{String(index + 1).padStart(2, '0')}</span>
-              <div className="preview-gate-body">
-                <div className="preview-gate-action">动作：{actionLabel(active)}</div>
-                <strong className="preview-gate-hint">{hintLabel(active)}</strong>
-                <div className="preview-gate-sub">点击画面任意处继续</div>
+              <div className="preview-continuous-indicator" aria-hidden="true">
+                <span key={activeContinuousTap ? continuousTapPulse : undefined}>
+                  {activeContinuousTap ? '●' : '↔'}
+                </span>
               </div>
-              <Button type="primary" size="small" onClick={advance}>继续</Button>
+              <div className="preview-gate preview-gate-continuous">
+                <span className="preview-gate-index">{String(index + 1).padStart(2, '0')}</span>
+                <div className="preview-gate-body">
+                  <div className="preview-gate-action">动作：{actionLabel(active)}</div>
+                  <strong className="preview-gate-hint">{hintLabel(active)}</strong>
+                  <div className="preview-gate-sub">
+                    {activeContinuousTap
+                      ? continuousDriving
+                        ? '点击已续期 · 视频播放中，停止 500ms 后暂停'
+                        : '点击画面开始播放，并持续点击以续播'
+                      : continuousDriving
+                        ? '正在滑动 · 视频播放中，抬手即暂停'
+                        : '在画面任意位置完成一次往复滑动'}
+                  </div>
+                </div>
+              </div>
             </div>
-          ) : null}
+          ) : (
+            <>
+              <div
+                className={`preview-overlay${playing ? ' preview-overlay-playing' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  togglePlay()
+                }}
+              >
+                <button
+                  type="button"
+                  className="preview-transport-btn"
+                  aria-label={playing ? '暂停' : '播放'}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    togglePlay()
+                  }}
+                >
+                  {playing ? <PauseCircleFilled /> : <PlayCircleFilled />}
+                </button>
+              </div>
+              {pausedAtGate && active ? (
+                <div className="preview-gate" onClick={(e) => e.stopPropagation()}>
+                  <span className="preview-gate-index">{String(index + 1).padStart(2, '0')}</span>
+                  <div className="preview-gate-body">
+                    <div className="preview-gate-action">动作：{actionLabel(active)}</div>
+                    <strong className="preview-gate-hint">{hintLabel(active)}</strong>
+                    <div className="preview-gate-sub">点击画面任意处继续</div>
+                  </div>
+                  <Button type="primary" size="small" onClick={advance}>继续</Button>
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
         {annotate ? (
           <div
@@ -424,6 +734,7 @@ export default function PreviewPlayer({
               type="primary"
               icon={playing ? <PauseCircleFilled /> : <PlayCircleFilled />}
               onClick={togglePlay}
+              disabled={activeSustained}
               aria-label={playing ? '暂停' : '播放'}
             >
               {playing ? '暂停' : '播放'}
@@ -434,9 +745,11 @@ export default function PreviewPlayer({
             <Button size="small" onClick={() => stepBy(SECOND_MS)}>
               +1s
             </Button>
-            <Button size="small" type="primary" onClick={() => onAddAtPlayhead?.()}>
-              在当前时刻加点
-            </Button>
+            {onAddAtPlayhead ? (
+              <Button size="small" type="primary" onClick={onAddAtPlayhead}>
+                在当前时刻加点
+              </Button>
+            ) : null}
             <span className="preview-annotate-time">{(progress / 1000).toFixed(2)}s</span>
           </div>
         ) : null}
@@ -465,6 +778,20 @@ export default function PreviewPlayer({
             className="preview-rail-fill"
             style={{ width: `${Math.min(100, (progress / Math.max(totalMs, 1)) * 100)}%` }}
           />
+          {sorted.map((gate, gateIndex) => {
+            if (!isSustainedPlaybackInteraction(gate)) return null
+            const endMs = sorted[gateIndex + 1]?.gate_at_ms ?? totalMs
+            const left = (gate.gate_at_ms / Math.max(totalMs, 1)) * 100
+            const right = (endMs / Math.max(totalMs, 1)) * 100
+            return (
+              <div
+                key={`continuous-range-${gate.gate_at_ms}-${gateIndex}`}
+                className="preview-continuous-range"
+                style={{ left: `${left}%`, width: `${Math.max(0, right - left)}%` }}
+                title={`${actionLabel(gate)}作用区间 · ${(gate.gate_at_ms / 1000).toFixed(2)}s → ${(endMs / 1000).toFixed(2)}s`}
+              />
+            )
+          })}
           {sorted.map((gate, gateIndex) => {
             const left = `${Math.min(100, (gate.gate_at_ms / Math.max(totalMs, 1)) * 100)}%`
             const state = nodeState(gateIndex)

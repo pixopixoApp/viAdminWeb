@@ -1,12 +1,14 @@
 import { Button, Space, Switch, Tag, Typography } from 'antd'
 import { Link } from 'react-router-dom'
 import type { SaveStatus } from '../../types/interaction'
+import type { StoryEditorMode } from '../../types/run'
 import FeedWeightInput from '../FeedWeightInput'
 
 type Props = {
   title: string
   editing: boolean
   published: boolean
+  editorMode: StoryEditorMode
   saveLabel: string
   saveStatus: SaveStatus
   feedWeight: number
@@ -19,6 +21,7 @@ type Props = {
   onRetrySave: () => void
   onFinalize: () => void
   finalizing: boolean
+  finalizeDisabled?: boolean
   onStartAnnotate: () => void
   forking: boolean
   publishOptionsLength: number
@@ -31,6 +34,7 @@ export default function StoryHeader({
   title,
   editing,
   published,
+  editorMode,
   saveLabel,
   saveStatus,
   feedWeight,
@@ -43,6 +47,7 @@ export default function StoryHeader({
   onRetrySave,
   onFinalize,
   finalizing,
+  finalizeDisabled = false,
   onStartAnnotate,
   forking,
   publishOptionsLength,
@@ -79,7 +84,9 @@ export default function StoryHeader({
         <div style={{ marginTop: 10 }}>
           <Tag color={published ? 'green' : 'blue'}>{published ? '已发布' : '待发布'}</Tag>
           <Tag>{editing ? '编辑中' : '已定稿'}</Tag>
-          <Tag color="purple">故事</Tag>
+          <Tag color="purple">
+            {editorMode === 'simple_abc' ? 'ABC 简化故事' : '高级故事'}
+          </Tag>
         </div>
         <div style={{ marginTop: 10 }}>
           <FeedWeightInput
@@ -107,7 +114,13 @@ export default function StoryHeader({
           </Button>
         ) : null}
         {editing ? (
-          <Button type="primary" loading={finalizing} onClick={() => void onFinalize()}>
+          <Button
+            type="primary"
+            loading={finalizing}
+            disabled={finalizeDisabled}
+            title={finalizeDisabled ? '请先完成 A、互动、B、C 的配置' : undefined}
+            onClick={() => void onFinalize()}
+          >
             定稿
           </Button>
         ) : (

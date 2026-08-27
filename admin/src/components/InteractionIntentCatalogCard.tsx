@@ -22,6 +22,8 @@ type CatalogValidation = {
   alias_count: number
   unique_alias_count: number
   gesture_count: number
+  auto_gesture_count: number
+  system_gesture_count: number
   checksum: string
 }
 
@@ -309,7 +311,9 @@ export default function InteractionIntentCatalogCard() {
                 {validation?.unique_alias_count ?? '-'}
               </Descriptions.Item>
               <Descriptions.Item label="手势覆盖">
-                {validation ? validation.gesture_count + '/30' : '-'}
+                {validation
+                  ? validation.gesture_count + '/' + validation.auto_gesture_count
+                  : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="校验">
                 <Tag color={validation?.valid ? 'green' : 'red'}>
@@ -317,6 +321,12 @@ export default function InteractionIntentCatalogCard() {
                 </Tag>
               </Descriptions.Item>
             </Descriptions>
+            {validation && validation.system_gesture_count > validation.auto_gesture_count ? (
+              <Typography.Paragraph type="secondary">
+                系统共支持 {validation.system_gesture_count} 种互动；连续滑动仅支持人工配置，
+                不进入 AI 自动推荐目录。
+              </Typography.Paragraph>
+            ) : null}
 
             <Typography.Text strong>版本说明</Typography.Text>
             <Input

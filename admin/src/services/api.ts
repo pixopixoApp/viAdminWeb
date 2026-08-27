@@ -16,6 +16,9 @@ import type {
   RunDetail,
   SaveStatus,
   Staff,
+  StoryEditorMode,
+  SimpleStoryConfig,
+  SimpleStoryRole,
   StoryState,
   VersionInfo,
   SeedanceSettings,
@@ -41,6 +44,9 @@ export type {
   RunDetail,
   SaveStatus,
   Staff,
+  StoryEditorMode,
+  SimpleStoryConfig,
+  SimpleStoryRole,
   StoryState,
   VersionInfo,
   SeedanceSettings,
@@ -203,10 +209,10 @@ export function getRun(id: string) {
   return api<RunDetail>(`/api/v1/runs/${id}`)
 }
 
-export function createStory(title: string) {
-  return api<{ id: string; analysis_version?: string }>('/api/v1/stories', {
+export function createStory(title: string, editor_mode: StoryEditorMode = 'simple_abc') {
+  return api<{ id: string; analysis_version?: string; editor_mode?: StoryEditorMode }>('/api/v1/stories', {
     method: 'POST',
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, editor_mode }),
   })
 }
 
@@ -400,7 +406,7 @@ export function finalizeAnnotate(id: string, version: string, timeline: unknown,
 
 export function getStory(id: string, version?: string) {
   const query = version ? `?version=${encodeURIComponent(version)}` : ''
-  return api<{ run: { title: string; published_version?: string | null; published_user_id?: string | null; analysis_version?: string | null; feed_weight?: number; is_tutorial?: boolean }; story: StoryState; version_infos?: VersionInfo[] }>(`/api/v1/stories/${id}${query}`)
+  return api<{ run: { title: string; published_version?: string | null; published_user_id?: string | null; analysis_version?: string | null; feed_weight?: number; is_tutorial?: boolean; editor_mode?: StoryEditorMode }; story: StoryState; version_infos?: VersionInfo[] }>(`/api/v1/stories/${id}${query}`)
 }
 
 export function getStoryRedirectVersion(id: string) {
@@ -411,6 +417,29 @@ export function saveStory(id: string, body: { entry_clip_id: string; clips: unkn
   return api<{ story: StoryState }>(`/api/v1/stories/${id}`, {
     method: 'PUT',
     body: JSON.stringify(body),
+  })
+}
+
+export function saveSimpleStoryConfig(
+  id: string,
+  body: {
+    version: string
+    interactions: import('../types/interaction').Interaction[]
+    branch_interaction_index: number | null
+    response_window_ms: number
+    failure_behavior: SimpleStoryConfig['failure_behavior']
+    note: string
+  },
+) {
+  return api<{ story: StoryState }>(`/api/v1/stories/${id}/simple-config`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+export function upgradeStoryEditor(id: string) {
+  return api<{ editor_mode: 'advanced' }>(`/api/v1/stories/${id}/editor-mode/advanced`, {
+    method: 'POST',
   })
 }
 
@@ -427,7 +456,7 @@ export function createStoryAnnotateVersion(id: string, source_version: string) {
   })
 }
 
-export function createClipUploadSession(id: string, body: { filename: string; content_type: string; size_bytes: number; sha256?: string; transport?: 'local' | 'oss' }) {
+export function createClipUploadSession(id: string, body: { filename: string; content_type: string; size_bytes: number; sha256?: string; transport?: 'local' | 'oss'; version?: string; role?: SimpleStoryRole }) {
   return api<{
     session_id: string
     transport?: 'local' | 'oss'
@@ -654,6 +683,8 @@ export const storiesApi = {
   get: getStory,
   getRedirectVersion: getStoryRedirectVersion,
   save: saveStory,
+  saveSimpleConfig: saveSimpleStoryConfig,
+  upgradeEditor: upgradeStoryEditor,
   finalize: finalizeStory,
   createAnnotateVersion: createStoryAnnotateVersion,
   createClipUploadSession,

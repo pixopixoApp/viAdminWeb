@@ -13,6 +13,7 @@ type Props = {
   onSetEntryClip: () => void
   clipOnEnd: ClipOnEnd | undefined
   onClipOnEndChange: (v: ClipOnEnd | undefined) => void
+  guided?: boolean
 }
 
 export default function ClipList({
@@ -27,11 +28,12 @@ export default function ClipList({
   onSetEntryClip,
   clipOnEnd,
   onClipOnEndChange,
+  guided = false,
 }: Props) {
   return (
-    <Card className="page-card" title="片段" size="small" style={{ marginBottom: 16 }}>
+    <Card className="page-card" title={guided ? '视频素材' : '片段'} size="small" style={{ marginBottom: 16 }}>
       <Space wrap>
-        {clipMeta.map((c) => (
+        {!guided ? clipMeta.map((c) => (
           <Button
             key={c.clip_id}
             type={c.clip_id === activeClipId ? 'primary' : 'default'}
@@ -40,7 +42,9 @@ export default function ClipList({
             {c.source_filename || c.clip_id.slice(0, 8)}
             {c.clip_id === entryClipId ? ' · 入口' : ''}
           </Button>
-        ))}
+        )) : (
+          <Typography.Text type="secondary">已添加 {clipMeta.length} 个片段，在下方分配主片、成功片和失败片。</Typography.Text>
+        )}
         {editing ? (
           <Upload
             accept="video/mp4,video/*"
@@ -58,7 +62,7 @@ export default function ClipList({
           <Typography.Text type="secondary">{uploadStatusText}</Typography.Text>
         ) : null}
       </Space>
-      {activeClipId ? (
+      {activeClipId && !guided ? (
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {editing ? (
             <div>
@@ -75,19 +79,33 @@ export default function ClipList({
             </div>
           ) : null}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <Typography.Text type="secondary">播完后跳到</Typography.Text>
+            <Typography.Text type="secondary">片段播完后</Typography.Text>
             <Select
               style={{ minWidth: 200 }}
               disabled={!editing}
               allowClear
-              placeholder="无"
-              value={clipOnEnd?.clip_id}
-              options={clipMeta.map((c) => ({
-                value: c.clip_id,
-                label: c.source_filename || c.clip_id.slice(0, 8),
-              }))}
-              onChange={(clipId) => {
-                onClipOnEndChange(clipId ? { action: 'goto', clip_id: clipId } : undefined)
+              placeholder="按数组顺序继续"
+              value={
+                clipOnEnd?.action === 'goto'
+                  ? `goto:${clipOnEnd.clip_id}`
+                  : clipOnEnd?.action
+              }
+              options={[
+                { value: 'end', label: '结束体验' },
+                { value: 'retry_previous_point', label: '重试上一个互动点' },
+                ...clipMeta.map((c) => ({
+                  value: `goto:${c.clip_id}`,
+                  label: `跳到 ${c.source_filename || c.clip_id.slice(0, 8)}`,
+                })),
+              ]}
+              onChange={(value) => {
+                if (!value) onClipOnEndChange(undefined)
+                else if (value === 'end') onClipOnEndChange({ action: 'end' })
+                else if (value === 'retry_previous_point') {
+                  onClipOnEndChange({ action: 'retry_previous_point' })
+                } else if (value.startsWith('goto:')) {
+                  onClipOnEndChange({ action: 'goto', clip_id: value.slice(5) })
+                }
               }}
             />
           </div>

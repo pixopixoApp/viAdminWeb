@@ -1,6 +1,10 @@
-import { Button, Card, Empty, Input, InputNumber, Space, Typography } from 'antd'
+import { Button, Card, Empty, Input, InputNumber, Space, Tag, Typography } from 'antd'
 import type { Interaction } from '../../types/interaction'
-import { GESTURE_LABEL } from '../../types/interaction'
+import {
+  GESTURE_LABEL,
+  isContinuousTap,
+  isSustainedPlaybackInteraction,
+} from '../../types/interaction'
 import type { ClipMeta } from '../../types/run'
 import ClipOutcomesEditor from '../ClipOutcomesEditor'
 import PreviewPlayer from '../PreviewPlayer'
@@ -23,6 +27,10 @@ type Props = {
   clipMeta: ClipMeta[]
   note: string
   onNoteChange: (v: string) => void
+  showOutcomes?: boolean
+  branchInteractionIndex?: number | null
+  previewTitle?: string
+  editorTitle?: string
 }
 
 export default function ClipEditor({
@@ -40,16 +48,24 @@ export default function ClipEditor({
   clipMeta,
   note,
   onNoteChange,
+  showOutcomes = true,
+  branchInteractionIndex = null,
+  previewTitle = '标注预览',
+  editorTitle = '选中互动',
 }: Props) {
   const selected = selectedIndex != null ? rows[selectedIndex] : null
+  const selectedIsBranch =
+    selectedIndex != null &&
+    selectedIndex === branchInteractionIndex &&
+    !isSustainedPlaybackInteraction(selected)
 
   if (!activeClipId) {
-    return <Empty description="请添加片段" />
+    return <Card className="page-card"><Empty description="请先点击上方主片段 A 卡片上传视频" /></Card>
   }
 
   return (
     <>
-      <Card className="page-card" title="标注预览" size="small">
+      <Card className="page-card" title={previewTitle} size="small">
         <PreviewPlayer
           runId={runId}
           clipId={activeClipId}
@@ -63,7 +79,12 @@ export default function ClipEditor({
         />
       </Card>
 
-      <Card className="page-card" title="选中互动" size="small">
+      <Card
+        className="page-card"
+        title={editorTitle}
+        size="small"
+        extra={selectedIsBranch ? <Tag color="success">当前分支挑战</Tag> : null}
+      >
         {!selected ? (
           <Empty description="先在进度条加点或选中一个互动点" />
         ) : (
@@ -80,26 +101,40 @@ export default function ClipEditor({
                   onUpdateSelected({ gate_at_ms: Math.max(0, Math.round(Number(n || 0) * 1000)) })
                 }
               />
-              <Typography.Text type="secondary">结束 (s)</Typography.Text>
-              <InputNumber
-                min={Number((selected.gate_at_ms / 1000).toFixed(3))}
-                step={0.033}
-                precision={3}
-                disabled={!editing}
-                value={
-                  typeof selected.gate_end_ms === 'number'
-                    ? Number((selected.gate_end_ms / 1000).toFixed(3))
-                    : null
-                }
-                onChange={(n) =>
-                  onUpdateSelected({
-                    gate_end_ms:
-                      n == null
-                        ? undefined
-                        : Math.max(selected.gate_at_ms, Math.round(Number(n) * 1000)),
-                  })
-                }
-              />
+              {isSustainedPlaybackInteraction(selected) ? (
+                <Typography.Text type="secondary">
+                  作用区间：当前节点 → {rows[(selectedIndex ?? -1) + 1]
+                    ? `${(rows[(selectedIndex ?? -1) + 1].gate_at_ms / 1000).toFixed(2)}s 的下一节点`
+                    : '视频结束'}
+                </Typography.Text>
+              ) : selectedIsBranch ? (
+                <Typography.Text type="secondary">
+                  响应时间由上方分支挑战右侧统一设置
+                </Typography.Text>
+              ) : (
+                <>
+                  <Typography.Text type="secondary">结束 (s)</Typography.Text>
+                  <InputNumber
+                    min={Number((selected.gate_at_ms / 1000).toFixed(3))}
+                    step={0.033}
+                    precision={3}
+                    disabled={!editing}
+                    value={
+                      typeof selected.gate_end_ms === 'number'
+                        ? Number((selected.gate_end_ms / 1000).toFixed(3))
+                        : null
+                    }
+                    onChange={(n) =>
+                      onUpdateSelected({
+                        gate_end_ms:
+                          n == null
+                            ? undefined
+                            : Math.max(selected.gate_at_ms, Math.round(Number(n) * 1000)),
+                      })
+                    }
+                  />
+                </>
+              )}
               {editing ? (
                 <Button size="small" danger onClick={onRemoveSelected}>
                   删除此点
@@ -175,6 +210,13 @@ export default function ClipEditor({
                   }
                 />
               ) : null}
+              {isSustainedPlaybackInteraction(selected) ? (
+                <Typography.Paragraph type="secondary" style={{ margin: '10px 0 0' }}>
+                  {isContinuousTap(selected)
+                    ? '该类型固定暂停进入、全画面识别；首次点击立即播放，每次点击续期 500ms，停止点击后暂停。'
+                    : '该类型固定暂停进入、全画面识别；抬手立即暂停，停止移动 500ms 后暂停。'}
+                </Typography.Paragraph>
+              ) : null}
             </div>
 
             <div>
@@ -183,7 +225,11 @@ export default function ClipEditor({
               </Typography.Text>
               <Input
                 style={{ marginTop: 8 }}
-                disabled={!editing || selected.gesture === 'camera_motion'}
+                disabled={
+                  !editing ||
+                  selected.gesture === 'camera_motion' ||
+                  isSustainedPlaybackInteraction(selected)
+                }
                 value={selected.hint || ''}
                 maxLength={40}
                 showCount
@@ -191,13 +237,27 @@ export default function ClipEditor({
               />
             </div>
 
-            <ClipOutcomesEditor
-              value={selected.outcomes}
-              clips={clipMeta}
-              currentClipId={activeClipId}
-              disabled={!editing}
-              onChange={(outcomes) => onUpdateSelected({ outcomes })}
-            />
+            {isSustainedPlaybackInteraction(selected) ? (
+              <Typography.Text type="secondary">
+                区间结束固定继续，不配置成功或失败分支。
+              </Typography.Text>
+            ) : showOutcomes ? (
+              <ClipOutcomesEditor
+                value={selected.outcomes}
+                clips={clipMeta}
+                currentClipId={activeClipId}
+                disabled={!editing}
+                onChange={(outcomes) => onUpdateSelected({ outcomes })}
+              />
+            ) : selectedIsBranch ? (
+              <Typography.Text type="secondary">
+                这是分支挑战：成功播放 B，失败播放 C，去向由上方流程统一管理。
+              </Typography.Text>
+            ) : (
+              <Typography.Text type="secondary">
+                这是普通互动：成功或失败后都继续播放主片段 A。
+              </Typography.Text>
+            )}
           </Space>
         )}
       </Card>

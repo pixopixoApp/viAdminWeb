@@ -148,7 +148,7 @@ export default function RunListPage() {
 
   const handleCreateStory = useCallback(async () => {
     try {
-      const created = await storiesApi.create('')
+      const created = await storiesApi.create('', 'simple_abc')
       messageApi.success('已创建故事')
       navigate(`/stories/${created.id}/${created.analysis_version || '0.0.1'}`)
     } catch (err) {

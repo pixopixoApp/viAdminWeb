@@ -7,12 +7,20 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { storiesApi, runsApi, accountsApi } from '../services/api'
-import type { Interaction, SaveStatus } from '../types/interaction'
+import {
+  enforceInteractionTypeRules,
+  isSustainedPlaybackInteraction,
+  type Interaction,
+  type SaveStatus,
+} from '../types/interaction'
 import type {
   StoryState,
   VersionInfo,
   ClipOnEnd,
   PickAccount,
+  SimpleStoryConfig,
+  SimpleStoryRole,
+  StoryEditorMode,
 } from '../types/run'
 import { parseClipOnEnd } from '../types/run'
 import {
@@ -20,11 +28,52 @@ import {
   VersionManager,
   ClipList,
   ClipEditor,
+  SimpleStoryEditor,
   PublishPanel,
 } from '../components/story-edit'
 import { normalizeVisionConfig } from '../components/VisionInteractionFields'
 
 type UploadStage = 'preparing' | 'uploading' | 'processing'
+
+function emptySimpleConfig(): SimpleStoryConfig {
+  return {
+    roles: {},
+    branch_interaction_index: null,
+    response_window_ms: 5000,
+    failure_behavior: 'retry_previous_point',
+    complete: false,
+    issues: ['请上传 A 起始片段', '请上传 B 成功片段', '请上传 C 失败片段'],
+  }
+}
+
+function serializeInteraction(row: Interaction) {
+  return {
+    gesture: row.gesture,
+    gate_at_ms: Math.round(row.gate_at_ms),
+    ...(!isSustainedPlaybackInteraction(row) && typeof row.gate_end_ms === 'number'
+      ? { gate_end_ms: Math.round(row.gate_end_ms) }
+      : {}),
+    ...(row.hint ? { hint: row.hint } : {}),
+    ...(row.pause_video === false ? { pause_video: false } : { pause_video: true }),
+    ...(row.gesture === 'camera_motion'
+      ? {
+          vision: normalizeVisionConfig(row.vision),
+          vision_resolution: row.vision_resolution || { target_source: 'operator' as const },
+        }
+      : {}),
+    ...(row.custom_action ? { custom_action: true } : {}),
+    ...(row.action_description ? { action_description: row.action_description } : {}),
+    ...(row.gameplay_description ? { gameplay_description: row.gameplay_description } : {}),
+    ...(!isSustainedPlaybackInteraction(row) && row.outcomes
+      ? {
+          outcomes: {
+            success: row.outcomes.success || { action: 'continue' as const },
+            fail: row.outcomes.fail || { action: 'continue' as const },
+          },
+        }
+      : {}),
+  }
+}
 
 /** Redirect /stories/:id → /stories/:id/{analysis_version} */
 export function StoryRedirect() {
@@ -81,6 +130,10 @@ export default function StoryEditPage() {
   const [pickAccounts, setPickAccounts] = useState<PickAccount[]>([])
   const [pickLoading, setPickLoading] = useState(false)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const [storyEditorMode, setStoryEditorMode] = useState<StoryEditorMode>('advanced')
+  const [simpleConfig, setSimpleConfig] = useState<SimpleStoryConfig>(() => emptySimpleConfig())
+  const [uploadingRole, setUploadingRole] = useState<SimpleStoryRole | null>(null)
+  const [upgradingEditor, setUpgradingEditor] = useState(false)
   const [feedWeight, setFeedWeight] = useState(0)
   const [weightSaving, setWeightSaving] = useState(false)
   const [isTutorial, setIsTutorial] = useState(false)
@@ -89,8 +142,13 @@ export default function StoryEditPage() {
   const skipAutosave = useRef(true)
   const saveGen = useRef(0)
   const uploadStartedAt = useRef<number | null>(null)
+  const selectedIndexRef = useRef<number | null>(null)
 
   const uploading = uploadStage !== null
+
+  useEffect(() => {
+    selectedIndexRef.current = selectedIndex
+  }, [selectedIndex])
 
   useEffect(() => {
     if (!uploadStage || uploadStartedAt.current == null) return
@@ -105,21 +163,35 @@ export default function StoryEditPage() {
     return () => window.clearInterval(timer)
   }, [uploadStage])
 
-  const applyStory = useCallback((data: StoryState, preferClip?: string) => {
+  const applyStory = useCallback((
+    data: StoryState,
+    preferClip?: string,
+    preferInteractionIndex?: number | null,
+  ) => {
     setStory(data)
+    if (data.editor_mode) setStoryEditorMode(data.editor_mode)
+    setSimpleConfig(data.simple_config || emptySimpleConfig())
     setNote(data.note || '')
     setEntryClipId(data.entry_clip_id || '')
-    const clip =
-      preferClip && data.clips[preferClip]
+    const simpleAId = data.simple_config?.roles.a || data.entry_clip_id || ''
+    const clip = data.editor_mode === 'simple_abc'
+      ? simpleAId && data.clips[simpleAId] ? simpleAId : ''
+      : preferClip && data.clips[preferClip]
         ? preferClip
         : data.entry_clip_id || data.clip_meta[0]?.clip_id || ''
     setActiveClipId(clip)
-    const interactions = [...(data.clips[clip]?.timeline?.interactions || [])].sort(
+    const interactions = [...(data.clips[clip]?.timeline?.interactions || [])].map(
+      enforceInteractionTypeRules,
+    ).sort(
       (a, b) => a.gate_at_ms - b.gate_at_ms,
     )
     setRows(interactions)
     setClipOnEnd(parseClipOnEnd(data.clips[clip]?.on_end))
-    setSelectedIndex(interactions.length ? 0 : null)
+    setSelectedIndex(
+      interactions.length
+        ? Math.min(preferInteractionIndex ?? 0, interactions.length - 1)
+        : null,
+    )
   }, [])
 
   const load = useCallback(async () => {
@@ -128,6 +200,7 @@ export default function StoryEditPage() {
     try {
       const resp = await storiesApi.get(id, version)
       skipAutosave.current = true
+      setStoryEditorMode(resp.run.editor_mode || resp.story.editor_mode || 'advanced')
       setTitle(resp.run.title || '故事')
       setFeedWeight(resp.run.feed_weight ?? 0)
       setIsTutorial(Boolean(resp.run.is_tutorial))
@@ -164,30 +237,7 @@ export default function StoryEditPage() {
         ...rest,
         timeline: {
           ...(prev.timeline || {}),
-          interactions: rows.map((r) => ({
-            gesture: r.gesture,
-            gate_at_ms: Math.round(r.gate_at_ms),
-            ...(typeof r.gate_end_ms === 'number' ? { gate_end_ms: Math.round(r.gate_end_ms) } : {}),
-            ...(r.hint ? { hint: r.hint } : {}),
-            ...(r.pause_video === false ? { pause_video: false } : { pause_video: true }),
-            ...(r.gesture === 'camera_motion'
-              ? {
-                  vision: normalizeVisionConfig(r.vision),
-                  vision_resolution: r.vision_resolution || { target_source: 'operator' as const },
-                }
-              : {}),
-            ...(r.custom_action ? { custom_action: true } : {}),
-            ...(r.action_description ? { action_description: r.action_description } : {}),
-            ...(r.gameplay_description ? { gameplay_description: r.gameplay_description } : {}),
-            ...(r.outcomes
-              ? {
-                  outcomes: {
-                    success: r.outcomes.success || { action: 'continue' as const },
-                    fail: r.outcomes.fail || { action: 'continue' as const },
-                  },
-                }
-              : {}),
-          })),
+          interactions: rows.map(serializeInteraction),
           media: prev.timeline?.media || {
             duration_ms:
               story?.clip_meta.find((c) => c.clip_id === activeClipId)?.duration_ms || 0,
@@ -200,7 +250,7 @@ export default function StoryEditPage() {
   }, [story, activeClipId, rows, clipOnEnd])
 
   const persist = useCallback(async () => {
-    if (!id || !version || !story?.editing) return
+    if (!id || !version || !story?.editing || storyEditorMode !== 'advanced') return false
     const gen = ++saveGen.current
     setSaveStatus('saving')
     try {
@@ -214,12 +264,40 @@ export default function StoryEditPage() {
       skipAutosave.current = true
       applyStory(resp.story, activeClipId)
       setSaveStatus('saved')
+      return true
     } catch (err) {
       if (gen !== saveGen.current) return
       setSaveStatus('error')
       messageApi.error(err instanceof Error ? err.message : '保存失败')
+      return false
     }
-  }, [id, version, story?.editing, entryClipId, clipsPayload, note, activeClipId, applyStory, messageApi])
+  }, [id, version, story?.editing, storyEditorMode, entryClipId, clipsPayload, note, activeClipId, applyStory, messageApi])
+
+  const persistSimple = useCallback(async () => {
+    if (!id || !version || !story?.editing || storyEditorMode !== 'simple_abc') return false
+    const gen = ++saveGen.current
+    setSaveStatus('saving')
+    try {
+      const resp = await storiesApi.saveSimpleConfig(id, {
+        version,
+        interactions: rows.map(serializeInteraction),
+        branch_interaction_index: simpleConfig.branch_interaction_index,
+        response_window_ms: simpleConfig.response_window_ms,
+        failure_behavior: simpleConfig.failure_behavior,
+        note,
+      })
+      if (gen !== saveGen.current) return false
+      skipAutosave.current = true
+      applyStory(resp.story, resp.story.entry_clip_id, selectedIndexRef.current)
+      setSaveStatus('saved')
+      return true
+    } catch (err) {
+      if (gen !== saveGen.current) return false
+      setSaveStatus('error')
+      messageApi.error(err instanceof Error ? err.message : '保存失败')
+      return false
+    }
+  }, [id, version, story?.editing, storyEditorMode, simpleConfig, rows, note, applyStory, messageApi])
 
   useEffect(() => {
     if (skipAutosave.current) {
@@ -229,10 +307,20 @@ export default function StoryEditPage() {
     if (!story?.editing) return
     setSaveStatus('dirty')
     const timer = window.setTimeout(() => {
-      void persist()
+      void (storyEditorMode === 'simple_abc' ? persistSimple() : persist())
     }, 500)
     return () => window.clearTimeout(timer)
-  }, [rows, note, entryClipId, clipOnEnd, persist, story?.editing])
+  }, [
+    rows,
+    note,
+    entryClipId,
+    clipOnEnd,
+    simpleConfig,
+    persist,
+    persistSimple,
+    story?.editing,
+    storyEditorMode,
+  ])
 
   function switchClip(clipId: string) {
     if (!story || clipId === activeClipId) return
@@ -240,7 +328,9 @@ export default function StoryEditPage() {
     const nextStory = { ...story, clips: nextClips, entry_clip_id: entryClipId }
     setStory(nextStory)
     setActiveClipId(clipId)
-    const interactions = [...(nextClips[clipId]?.timeline?.interactions || [])].sort(
+    const interactions = [...(nextClips[clipId]?.timeline?.interactions || [])].map(
+      enforceInteractionTypeRules,
+    ).sort(
       (a, b) => a.gate_at_ms - b.gate_at_ms,
     )
     setRows(interactions)
@@ -379,9 +469,10 @@ export default function StoryEditPage() {
     })
   }
 
-  async function onUploadClip(file: File) {
-    if (!id) return false
+  async function onUploadClip(file: File, role?: SimpleStoryRole) {
+    if (!id || !version) return false
     uploadStartedAt.current = Date.now()
+    setUploadingRole(role || null)
     setUploadElapsedSeconds(0)
     setUploadStage('preparing')
     try {
@@ -390,6 +481,8 @@ export default function StoryEditPage() {
         content_type: file.type || 'video/mp4',
         size_bytes: file.size,
         transport: 'local',
+        version,
+        ...(role ? { role } : {}),
       })
       if (!session.upload?.url) throw new Error('服务端未返回有效的本地上传地址')
       setUploadStage('uploading')
@@ -397,17 +490,67 @@ export default function StoryEditPage() {
       setUploadStage('processing')
       const data = await storiesApi.finalizeClipUpload(id, session.session_id)
       skipAutosave.current = true
-      applyStory(data.story, data.clip.clip_id)
-      messageApi.success('片段已添加')
+      applyStory(
+        data.story,
+        role ? data.story.entry_clip_id : data.clip.clip_id,
+        role && role !== 'a' ? selectedIndexRef.current : undefined,
+      )
+      const warnings = data.story.warnings || []
+      if (warnings.length) messageApi.warning(warnings.join('；'))
+      else messageApi.success(role ? `${role.toUpperCase()} 片段已保存` : '片段已添加')
       setSaveStatus('idle')
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '上传失败')
     } finally {
       setUploadStage(null)
+      setUploadingRole(null)
       uploadStartedAt.current = null
       setUploadElapsedSeconds(0)
     }
     return false
+  }
+
+  async function onUploadSimpleRole(role: SimpleStoryRole, file: File) {
+    if (role === 'a' && simpleConfig.roles.a && rows.length) {
+      Modal.confirm({
+        title: '替换主片段 A？',
+        content: '替换后会清空 A 中已有的互动节点和分支挑战绑定，B、C 片段会保留。',
+        okText: '确认替换',
+        cancelText: '取消',
+        onOk: async () => {
+          await onUploadClip(file, role)
+        },
+      })
+      return false
+    }
+    return onUploadClip(file, role)
+  }
+
+  function onUpgradeEditor() {
+    if (!id) return
+    Modal.confirm({
+      title: '升级到高级模式？',
+      content: '升级后会保留当前 A/B/C 内容，但不能再返回简化模式。',
+      okText: '确认升级',
+      cancelText: '取消',
+      onOk: async () => {
+        setUpgradingEditor(true)
+        try {
+          const saved = await persistSimple()
+          if (!saved) throw new Error('当前配置保存失败，请先处理后再升级')
+          await storiesApi.upgradeEditor(id)
+          setStoryEditorMode('advanced')
+          skipAutosave.current = true
+          await load()
+          messageApi.success('已升级到高级模式')
+        } catch (err) {
+          messageApi.error(err instanceof Error ? err.message : '升级失败')
+          throw err
+        } finally {
+          setUpgradingEditor(false)
+        }
+      },
+    })
   }
 
   async function onFinalize() {
@@ -418,7 +561,8 @@ export default function StoryEditPage() {
     }
     setFinalizing(true)
     try {
-      await persist()
+      const saved = await (storyEditorMode === 'simple_abc' ? persistSimple() : persist())
+      if (!saved) return
       const resp = await storiesApi.finalize(id, version)
       messageApi.success(`已定稿 ${version}`)
       skipAutosave.current = true
@@ -485,33 +629,49 @@ export default function StoryEditPage() {
 
   function updateSelected(patch: Partial<Interaction> & { gate_end_ms?: number | null }) {
     if (selectedIndex == null) return
-    setRows((prev) => {
-      const cur = prev[selectedIndex]
-      if (!cur) return prev
-      const gate_at_ms = Math.round(Number(patch.gate_at_ms ?? cur.gate_at_ms) || 0)
-      let gate_end_ms: number | undefined
-      if ('gate_end_ms' in patch) {
-        gate_end_ms =
-          patch.gate_end_ms == null ? undefined : Math.round(Number(patch.gate_end_ms) || 0)
-      } else {
-        gate_end_ms = cur.gate_end_ms
-      }
-      if (typeof gate_end_ms === 'number' && gate_end_ms < gate_at_ms) {
-        gate_end_ms = undefined
-      }
-      const updated: Interaction = {
-        ...cur,
-        ...patch,
-        gate_at_ms,
-        ...(gate_end_ms !== undefined ? { gate_end_ms } : { gate_end_ms: undefined }),
-      }
-      if (gate_end_ms === undefined) delete updated.gate_end_ms
-      const next = prev.map((r, i) => (i === selectedIndex ? updated : r)).sort(
-        (a, b) => a.gate_at_ms - b.gate_at_ms,
-      )
-      setSelectedIndex(next.indexOf(updated))
-      return next
-    })
+    const cur = rows[selectedIndex]
+    if (!cur) return
+    const branchRow = simpleConfig.branch_interaction_index == null
+      ? null
+      : rows[simpleConfig.branch_interaction_index] || null
+    const gate_at_ms = Math.round(Number(patch.gate_at_ms ?? cur.gate_at_ms) || 0)
+    let gate_end_ms: number | undefined
+    if ('gate_end_ms' in patch) {
+      gate_end_ms =
+        patch.gate_end_ms == null ? undefined : Math.round(Number(patch.gate_end_ms) || 0)
+    } else {
+      gate_end_ms = cur.gate_end_ms
+    }
+    if (typeof gate_end_ms === 'number' && gate_end_ms < gate_at_ms) {
+      gate_end_ms = undefined
+    }
+    let updated: Interaction = {
+      ...cur,
+      ...patch,
+      gate_at_ms,
+      ...(gate_end_ms !== undefined ? { gate_end_ms } : { gate_end_ms: undefined }),
+    }
+    updated = enforceInteractionTypeRules(updated)
+    if (gate_end_ms === undefined || isSustainedPlaybackInteraction(updated)) {
+      delete updated.gate_end_ms
+    }
+    const next = rows.map((row, index) => (index === selectedIndex ? updated : row)).sort(
+      (a, b) => a.gate_at_ms - b.gate_at_ms,
+    )
+    const nextBranchRow = branchRow === cur ? updated : branchRow
+    const branchWasInvalidated =
+      nextBranchRow != null && isSustainedPlaybackInteraction(nextBranchRow)
+    setRows(next)
+    setSelectedIndex(next.indexOf(updated))
+    setSimpleConfig((previous) => ({
+      ...previous,
+      branch_interaction_index:
+        nextBranchRow && !branchWasInvalidated ? next.indexOf(nextBranchRow) : null,
+      complete: false,
+    }))
+    if (branchWasInvalidated) {
+      messageApi.warning('持续播放类互动不能作为分支挑战，请在上方重新选择挑战节点')
+    }
   }
 
   function addAtPlayhead() {
@@ -529,20 +689,36 @@ export default function StoryEditPage() {
         fail: { action: 'continue' },
       },
     }
-    setRows((prev) => {
-      const next = [...prev, item].sort((a, b) => a.gate_at_ms - b.gate_at_ms)
-      setSelectedIndex(next.indexOf(item))
-      return next
-    })
+    const branchRow = simpleConfig.branch_interaction_index == null
+      ? null
+      : rows[simpleConfig.branch_interaction_index] || null
+    const next = [...rows, item].sort((a, b) => a.gate_at_ms - b.gate_at_ms)
+    setRows(next)
+    setSelectedIndex(next.indexOf(item))
+    if (branchRow) {
+      setSimpleConfig((previous) => ({
+        ...previous,
+        branch_interaction_index: next.indexOf(branchRow),
+        complete: false,
+      }))
+    }
   }
 
   function removeSelected() {
     if (selectedIndex == null) return
-    setRows((prev) => {
-      const next = prev.filter((_, i) => i !== selectedIndex)
-      setSelectedIndex(next.length === 0 ? null : Math.min(selectedIndex, next.length - 1))
-      return next
-    })
+    const removed = rows[selectedIndex]
+    const branchRow = simpleConfig.branch_interaction_index == null
+      ? null
+      : rows[simpleConfig.branch_interaction_index] || null
+    const next = rows.filter((_, index) => index !== selectedIndex)
+    setRows(next)
+    setSelectedIndex(next.length === 0 ? null : Math.min(selectedIndex, next.length - 1))
+    setSimpleConfig((previous) => ({
+      ...previous,
+      branch_interaction_index:
+        branchRow && branchRow !== removed ? next.indexOf(branchRow) : null,
+      complete: false,
+    }))
   }
 
   if (loading && !story) return <Card loading />
@@ -568,6 +744,14 @@ export default function StoryEditPage() {
   const barNote = (note || currentInfo?.note || '').trim()
   const publishOptions = versionInfos.filter((v) => !v.editing)
   const published = Boolean(publishedVersion)
+  const uploadStatusText =
+    uploadStage === 'preparing'
+      ? `正在校验文件… ${uploadElapsedSeconds}s`
+      : uploadStage === 'uploading'
+        ? `正在上传到 OSS… ${uploadElapsedSeconds}s`
+        : uploadStage === 'processing'
+          ? `服务器正在检查视频，跨境 OSS 可能稍慢，请勿刷新或重复上传 · ${uploadElapsedSeconds}s`
+          : ''
 
   return (
     <>
@@ -576,6 +760,7 @@ export default function StoryEditPage() {
         title={title}
         editing={editing}
         published={published}
+        editorMode={storyEditorMode}
         saveLabel={saveLabel}
         saveStatus={saveStatus}
         feedWeight={feedWeight}
@@ -585,9 +770,10 @@ export default function StoryEditPage() {
         onSaveTitle={onSaveTitle}
         onSaveFeedWeight={onSaveFeedWeight}
         onSaveTutorial={onSaveTutorial}
-        onRetrySave={() => void persist()}
+        onRetrySave={() => void (storyEditorMode === 'simple_abc' ? persistSimple() : persist())}
         onFinalize={onFinalize}
         finalizing={finalizing}
+        finalizeDisabled={storyEditorMode === 'simple_abc' && !simpleConfig.complete}
         onStartAnnotate={onStartAnnotate}
         forking={forking}
         publishOptionsLength={publishOptions.length}
@@ -606,49 +792,100 @@ export default function StoryEditPage() {
         barNote={barNote}
       />
 
-      <ClipList
-        clipMeta={clipMeta}
-        activeClipId={activeClipId}
-        entryClipId={entryClipId}
-        editing={editing}
-        uploading={uploading}
-        uploadStatusText={
-          uploadStage === 'preparing'
-            ? `正在校验文件… ${uploadElapsedSeconds}s`
-            : uploadStage === 'uploading'
-              ? `正在上传到 OSS… ${uploadElapsedSeconds}s`
-              : uploadStage === 'processing'
-                ? `服务器正在检查视频，跨境 OSS 可能稍慢，请勿刷新或重复上传 · ${uploadElapsedSeconds}s`
-                : ''
-        }
-        onUploadClip={onUploadClip}
-        onSwitchClip={switchClip}
-        onSetEntryClip={() => {
-          setEntryClipId(activeClipId)
-          setStory((prev) =>
-            prev ? { ...prev, entry_clip_id: activeClipId } : prev,
-          )
-        }}
-        clipOnEnd={clipOnEnd}
-        onClipOnEndChange={setClipOnEnd}
-      />
+      {storyEditorMode === 'simple_abc' ? (
+        <>
+          <SimpleStoryEditor
+            story={story}
+            config={simpleConfig}
+            interactions={rows}
+            editing={editing}
+            uploadingRole={uploadingRole}
+            uploadStatusText={uploadStatusText}
+            upgrading={upgradingEditor}
+            onUploadRole={onUploadSimpleRole}
+            onBranchInteractionChange={(index) => setSimpleConfig((previous) => ({
+              ...previous,
+              branch_interaction_index: index,
+              complete: false,
+            }))}
+            onResponseWindowChange={(responseWindowMs) => setSimpleConfig((previous) => ({
+              ...previous,
+              response_window_ms: responseWindowMs,
+              complete: false,
+            }))}
+            onFailureBehaviorChange={(failureBehavior) => setSimpleConfig((previous) => ({
+              ...previous,
+              failure_behavior: failureBehavior,
+              complete: false,
+            }))}
+            onNotice={(content) => messageApi.warning({
+              content,
+              className: 'story-centered-toast',
+            })}
+            onUpgrade={onUpgradeEditor}
+          />
 
-      <ClipEditor
-        runId={id}
-        activeClipId={activeClipId}
-        rows={rows}
-        durationMs={durationMs}
-        editing={editing}
-        selectedIndex={selectedIndex}
-        onSelectIndex={setSelectedIndex}
-        onPlayheadChange={setPlayheadMs}
-        onAddAtPlayhead={addAtPlayhead}
-        onUpdateSelected={updateSelected}
-        onRemoveSelected={removeSelected}
-        clipMeta={clipMeta}
-        note={note}
-        onNoteChange={setNote}
-      />
+          <ClipEditor
+            runId={id}
+            activeClipId={activeClipId}
+            rows={rows}
+            durationMs={durationMs}
+            editing={editing}
+            selectedIndex={selectedIndex}
+            onSelectIndex={setSelectedIndex}
+            onPlayheadChange={setPlayheadMs}
+            onAddAtPlayhead={addAtPlayhead}
+            onUpdateSelected={updateSelected}
+            onRemoveSelected={removeSelected}
+            clipMeta={clipMeta}
+            note={note}
+            onNoteChange={setNote}
+            showOutcomes={false}
+            branchInteractionIndex={simpleConfig.branch_interaction_index}
+            previewTitle="主片段 A · 添加互动节点"
+            editorTitle="选中 A 片段互动"
+          />
+        </>
+      ) : (
+        <>
+          <ClipList
+            clipMeta={clipMeta}
+            activeClipId={activeClipId}
+            entryClipId={entryClipId}
+            editing={editing}
+            uploading={uploading}
+            uploadStatusText={uploadStatusText}
+            onUploadClip={onUploadClip}
+            onSwitchClip={switchClip}
+            onSetEntryClip={() => {
+              setEntryClipId(activeClipId)
+              setStory((prev) =>
+                prev ? { ...prev, entry_clip_id: activeClipId } : prev,
+              )
+            }}
+            clipOnEnd={clipOnEnd}
+            onClipOnEndChange={setClipOnEnd}
+          />
+
+          <ClipEditor
+            runId={id}
+            activeClipId={activeClipId}
+            rows={rows}
+            durationMs={durationMs}
+            editing={editing}
+            selectedIndex={selectedIndex}
+            onSelectIndex={setSelectedIndex}
+            onPlayheadChange={setPlayheadMs}
+            onAddAtPlayhead={addAtPlayhead}
+            onUpdateSelected={updateSelected}
+            onRemoveSelected={removeSelected}
+            clipMeta={clipMeta}
+            note={note}
+            onNoteChange={setNote}
+            showOutcomes
+          />
+        </>
+      )}
 
       <PublishPanel
         publishOpen={publishOpen}
