@@ -19,11 +19,15 @@ import InteractionIntentCatalogPage from './pages/InteractionIntentCatalogPage'
 import PublishedContentDetailPage from './pages/PublishedContentDetailPage'
 import SeedanceVideoPage from './pages/SeedanceVideoPage'
 import TrashPage from './pages/TrashPage'
+import ServiceBusyCard from './components/ServiceBusyCard'
 
 function Private({ children }: { children: React.ReactNode }) {
-  const { me, loading } = useAuth()
+  const { me, loading, refresh, serviceUnavailable } = useAuth()
   if (!getToken()) return <Navigate to="/login" replace />
   if (loading) return null
+  if (serviceUnavailable && !me) {
+    return <ServiceBusyCard onRetry={refresh} />
+  }
   if (me?.must_change_password) return <Navigate to="/change-password" replace />
   return <>{children}</>
 }

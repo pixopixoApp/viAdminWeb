@@ -32,6 +32,8 @@ import {
   PublishPanel,
 } from '../components/story-edit'
 import { normalizeVisionConfig } from '../components/VisionInteractionFields'
+import ServiceBusyCard from '../components/ServiceBusyCard'
+import { isServiceUnavailableError } from '../apiError'
 
 type UploadStage = 'preparing' | 'uploading' | 'processing'
 
@@ -80,24 +82,42 @@ export function StoryRedirect() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [target, setTarget] = useState<string | null>(null)
+  const [loadUnavailable, setLoadUnavailable] = useState(false)
+  const [retryNonce, setRetryNonce] = useState(0)
 
   useEffect(() => {
     if (!id) return
     let cancelled = false
+    setLoadUnavailable(false)
     void (async () => {
       try {
         const resp = await storiesApi.getRedirectVersion(id)
         if (cancelled) return
         setTarget(resp.run.analysis_version || '0.0.1')
-      } catch {
-        if (!cancelled) navigate('/', { replace: true })
+      } catch (err) {
+        if (cancelled) return
+        if (isServiceUnavailableError(err)) {
+          setLoadUnavailable(true)
+        } else {
+          navigate('/', { replace: true })
+        }
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [id, navigate])
+  }, [id, navigate, retryNonce])
 
+  if (loadUnavailable) {
+    return (
+      <ServiceBusyCard
+        onRetry={() => {
+          setLoadUnavailable(false)
+          setRetryNonce((value) => value + 1)
+        }}
+      />
+    )
+  }
   if (!id || !target) return <Card loading />
   return <Navigate to={`/stories/${id}/${target}`} replace />
 }
@@ -117,6 +137,7 @@ export default function StoryEditPage() {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [playheadMs, setPlayheadMs] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadUnavailable, setLoadUnavailable] = useState(false)
   const [uploadStage, setUploadStage] = useState<UploadStage | null>(null)
   const [uploadElapsedSeconds, setUploadElapsedSeconds] = useState(0)
   const [finalizing, setFinalizing] = useState(false)
@@ -197,6 +218,7 @@ export default function StoryEditPage() {
   const load = useCallback(async () => {
     if (!id || !version) return
     setLoading(true)
+    setLoadUnavailable(false)
     try {
       const resp = await storiesApi.get(id, version)
       skipAutosave.current = true
@@ -219,7 +241,11 @@ export default function StoryEditPage() {
       setLoading(false)
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '加载失败')
-      navigate('/', { replace: true })
+      if (isServiceUnavailableError(err)) {
+        setLoadUnavailable(true)
+      } else {
+        navigate('/', { replace: true })
+      }
       setLoading(false)
     }
   }, [id, version, applyStory, messageApi, navigate])
@@ -722,6 +748,7 @@ export default function StoryEditPage() {
   }
 
   if (loading && !story) return <Card loading />
+  if (loadUnavailable && !story) return <ServiceBusyCard onRetry={load} />
   if (!story || !id || !version) return <Empty />
 
   const clipMeta = story.clip_meta || []

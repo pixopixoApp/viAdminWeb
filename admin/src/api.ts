@@ -1,3 +1,9 @@
+import {
+  ApiError,
+  createServiceUnavailableError,
+  shouldInvalidateSession,
+} from './apiError'
+
 const TOKEN_KEY = 'ivadmin_token'
 
 export function getToken(): string | null {
@@ -19,12 +25,17 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!(init.body instanceof FormData) && !headers.has('Content-Type') && init.body) {
     headers.set('Content-Type', 'application/json')
   }
-  const response = await fetch(path, {
-    ...init,
-    headers,
-    credentials: 'include',
-  })
-  if (response.status === 401) {
+  let response: Response
+  try {
+    response = await fetch(path, {
+      ...init,
+      headers,
+      credentials: 'include',
+    })
+  } catch {
+    throw createServiceUnavailableError()
+  }
+  if (shouldInvalidateSession(response.status)) {
     clearToken()
     if (!path.includes('/auth/login')) {
       window.location.href = '/login'
@@ -40,6 +51,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       /* ignore */
     }
   }
+  if (response.status >= 500) {
+    throw createServiceUnavailableError(response.status)
+  }
   if (!response.ok) {
     let detail = response.statusText
     try {
@@ -48,7 +62,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       /* ignore */
     }
-    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail))
+    throw new ApiError(
+      typeof detail === 'string' ? detail : JSON.stringify(detail),
+      response.status,
+    )
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
@@ -71,12 +88,16 @@ export function uploadBinary<T>(
         onProgress(Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100))))
       }
     }
-    request.onerror = () => reject(new Error('ZIP 上传网络连接失败'))
+    request.onerror = () => reject(createServiceUnavailableError())
     request.onabort = () => reject(new Error('ZIP 上传已取消'))
     request.onload = () => {
-      if (request.status === 401) {
+      if (shouldInvalidateSession(request.status)) {
         clearToken()
         window.location.href = '/login'
+      }
+      if (request.status === 0 || request.status >= 500) {
+        reject(createServiceUnavailableError(request.status || null))
+        return
       }
       let body: unknown
       try {
@@ -88,7 +109,7 @@ export function uploadBinary<T>(
         const detail = body && typeof body === 'object' && 'detail' in body
           ? String((body as { detail?: unknown }).detail || '')
           : request.responseText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
-        reject(new Error(detail || `ZIP 上传失败（HTTP ${request.status}）`))
+        reject(new ApiError(detail || `ZIP 上传失败（HTTP ${request.status}）`, request.status))
         return
       }
       if (!body || typeof body !== 'object') {
@@ -119,12 +140,16 @@ export function uploadLocalMedia<T>(
         onProgress(Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100))))
       }
     }
-    request.onerror = () => reject(new Error('视频上传网络连接失败'))
+    request.onerror = () => reject(createServiceUnavailableError())
     request.onabort = () => reject(new Error('视频上传已取消'))
     request.onload = () => {
-      if (request.status === 401) {
+      if (shouldInvalidateSession(request.status)) {
         clearToken()
         window.location.href = '/login'
+      }
+      if (request.status === 0 || request.status >= 500) {
+        reject(createServiceUnavailableError(request.status || null))
+        return
       }
       let body: unknown
       try {
@@ -136,7 +161,7 @@ export function uploadLocalMedia<T>(
         const detail = body && typeof body === 'object' && 'detail' in body
           ? String((body as { detail?: unknown }).detail || '')
           : request.responseText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
-        reject(new Error(detail || `视频上传失败（HTTP ${request.status}）`))
+        reject(new ApiError(detail || `视频上传失败（HTTP ${request.status}）`, request.status))
         return
       }
       if (!body || typeof body !== 'object') {

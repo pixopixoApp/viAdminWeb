@@ -24,6 +24,8 @@ import {
 } from '../types/interaction'
 import type { AnnotateState, VersionInfo } from '../types/run'
 import PreviewPlayer from '../components/PreviewPlayer'
+import ServiceBusyCard from '../components/ServiceBusyCard'
+import { isServiceUnavailableError } from '../apiError'
 import VisionInteractionFields, {
   normalizeVisionConfig,
   VISION_TARGET_HINTS,
@@ -47,6 +49,7 @@ export default function AnnotatePage() {
   const [switching, setSwitching] = useState(false)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [finalizing, setFinalizing] = useState(false)
+  const [loadUnavailable, setLoadUnavailable] = useState(false)
   const [messageApi, contextHolder] = message.useMessage()
   const skipAutosave = useRef(true)
   const saveGen = useRef(0)
@@ -54,6 +57,7 @@ export default function AnnotatePage() {
   const load = useCallback(async () => {
     if (!id || !version) return
     setLoading(true)
+    setLoadUnavailable(false)
     try {
       const [data, detail] = await Promise.all([
         annotateApi.getState(id!, version!),
@@ -89,7 +93,11 @@ export default function AnnotatePage() {
       setLoading(false)
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '加载失败')
-      navigate(`/runs/${id}`, { replace: true })
+      if (isServiceUnavailableError(err)) {
+        setLoadUnavailable(true)
+      } else {
+        navigate(`/runs/${id}`, { replace: true })
+      }
       setLoading(false)
     }
   }, [id, version, messageApi, navigate])
@@ -273,6 +281,7 @@ export default function AnnotatePage() {
   }
 
   if (loading && !state) return <Card loading />
+  if (loadUnavailable && !state) return <ServiceBusyCard onRetry={load} />
   if (!state || !id) return <Empty />
 
   const selected = selectedIndex != null ? rows[selectedIndex] : null

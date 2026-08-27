@@ -8,6 +8,8 @@ import RunDetailCoverModal from '../components/run-detail/RunDetailCoverModal'
 import RunDetailPreview from '../components/run-detail/RunDetailPreview'
 import RunDetailInteraction from '../components/run-detail/RunDetailInteraction'
 import RunDetailPublish from '../components/run-detail/RunDetailPublish'
+import ServiceBusyCard from '../components/ServiceBusyCard'
+import { isServiceUnavailableError } from '../apiError'
 
 export default function RunDetailPage() {
   const { id } = useParams()
@@ -38,6 +40,7 @@ export default function RunDetailPage() {
   const [metricsLoading, setMetricsLoading] = useState(false)
   const [weightSaving, setWeightSaving] = useState(false)
   const [tutorialSaving, setTutorialSaving] = useState(false)
+  const [loadUnavailable, setLoadUnavailable] = useState(false)
   const [messageApi, contextHolder] = message.useMessage()
 
   const loadPlaybackMetrics = useCallback(async () => {
@@ -56,6 +59,7 @@ export default function RunDetailPage() {
   const load = useCallback(async () => {
     if (!id) return
     setLoading(true)
+    setLoadUnavailable(false)
     try {
       const [detail, settings] = await Promise.all([
         runsApi.get(id),
@@ -93,7 +97,11 @@ export default function RunDetailPage() {
       setLoading(false)
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '加载失败')
-      setData(null)
+      if (isServiceUnavailableError(err)) {
+        setLoadUnavailable(true)
+      } else {
+        setData(null)
+      }
       setLoading(false)
     }
   }, [id, loadPlaybackMetrics, messageApi, navigate])
@@ -365,6 +373,7 @@ export default function RunDetailPage() {
   }
 
   if (loading && !data) return <Card loading />
+  if (loadUnavailable && !data) return <ServiceBusyCard onRetry={load} />
   if (!data) return <Empty />
 
   const busy = data.run.status === 'running' || data.run.status === 'queued'
