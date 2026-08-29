@@ -25,6 +25,7 @@ import type {
   SeedanceSettingsPatch,
   SeedanceGenerateParams,
   SeedanceTask,
+  SeedanceModel,
 } from '../types'
 
 export type {
@@ -53,6 +54,7 @@ export type {
   SeedanceSettingsPatch,
   SeedanceGenerateParams,
   SeedanceTask,
+  SeedanceModel,
 }
 
 // ── Seedance（AI 生成视频）────────────────────────
@@ -61,6 +63,10 @@ const SEEDANCE_BASE = '/api/v1/seedance'
 
 export function getSeedanceSettings() {
   return api<SeedanceSettings>(`${SEEDANCE_BASE}/api/settings`)
+}
+
+export function listSeedanceModels() {
+  return api<{ models: SeedanceModel[] }>(`${SEEDANCE_BASE}/api/models`)
 }
 
 export function saveSeedanceSettings(body: SeedanceSettingsPatch) {

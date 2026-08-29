@@ -35,18 +35,34 @@ export type SeedanceTask = {
 
 export type SeedanceProvider = 'ark' | 'vidu'
 
+export type SeedanceModelVideoLimit = {
+  max: number
+  minDur: number
+  maxDur: number
+  totalMax: number
+}
+
+export type SeedanceModel = {
+  id: string
+  provider: SeedanceProvider
+  label: string
+  durations: number[]
+  resolutions: string[]
+  ratios: string[]
+  video: SeedanceModelVideoLimit
+}
+
 export type SeedanceSettings = {
   has_api_key: boolean
   provider: SeedanceProvider
   model: string
   base_url: string
+  vidu_base_url?: string
   public_base_url: string
 }
 
 export type SeedanceSettingsPatch = {
   provider?: SeedanceProvider
-  api_key?: string
-  vidu_api_key?: string
   model?: string
   base_url?: string
   vidu_base_url?: string
