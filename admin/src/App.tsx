@@ -13,6 +13,7 @@ import AccountsPage from './pages/AccountsPage'
 import StaffPage from './pages/StaffPage'
 import StoryEditPage, { StoryRedirect } from './pages/StoryEditPage'
 import CreatorInvitesPage from './pages/CreatorInvitesPage'
+import CreatorApplicationsPage from './pages/CreatorApplicationsPage'
 import ModerationPage from './pages/ModerationPage'
 import AppVersionPolicyPage from './pages/AppVersionPolicyPage'
 import InteractionIntentCatalogPage from './pages/InteractionIntentCatalogPage'
@@ -85,6 +86,7 @@ function AppRoutes() {
         <Route path="stories/:id" element={<StoryRedirect />} />
         <Route path="stories/:id/:version" element={<StoryEditPage />} />
         <Route path="accounts" element={<AccountsPage />} />
+        <Route path="creator-applications" element={<OperationsGate page={<CreatorApplicationsPage />} />} />
         <Route path="creator-invites" element={<OperationsGate page={<CreatorInvitesPage />} />} />
         <Route path="moderation" element={<OperationsGate page={<ModerationPage />} />} />
         <Route path="html-imports" element={<OperationsGate page={<Navigate to="/?source=manual_upload" replace />} />} />

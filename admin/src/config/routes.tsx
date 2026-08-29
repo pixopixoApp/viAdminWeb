@@ -8,6 +8,7 @@ import {
   SafetyCertificateOutlined,
   VideoCameraOutlined,
   ThunderboltOutlined,
+  UserAddOutlined,
 } from '@ant-design/icons'
 import type { ReactElement } from 'react'
 
@@ -35,6 +36,13 @@ export const menuConfig: MenuItemConfig[] = [
     label: '账号管理',
     icon: <IdcardOutlined />,
     permission: 'authenticated',
+  },
+  {
+    key: '/creator-applications',
+    path: '/creator-applications',
+    label: '创作权限申请',
+    icon: <UserAddOutlined />,
+    permission: 'operator',
   },
   {
     key: '/creator-invites',
