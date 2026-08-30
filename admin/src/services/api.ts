@@ -6,6 +6,8 @@ import type {
   EngineSettings,
   HtmlImport,
   Invite,
+  CreatorApplication,
+  CreatorApplicationInviteResponse,
   ModelsResp,
   OutcomeAction,
   Outcomes,
@@ -582,6 +584,27 @@ export function revokeCreatorAccess(userId: string) {
   return api(`/api/v1/creator-access/${userId}/revoke`, { method: 'POST' })
 }
 
+// ── Creator Applications ─────────────────────────
+
+export function listCreatorApplications(status?: string) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : ''
+  return api<CreatorApplication[]>(`/api/v1/creator-applications${query}`)
+}
+
+export function inviteCreatorApplications(userIds: string[]) {
+  return api<CreatorApplicationInviteResponse>('/api/v1/creator-applications/invite', {
+    method: 'POST',
+    body: JSON.stringify({ user_ids: userIds }),
+  })
+}
+
+export function decideCreatorApplication(userId: string, status: 'approved' | 'rejected') {
+  return api<CreatorApplication>(`/api/v1/creator-applications/${encodeURIComponent(userId)}/decision`, {
+    method: 'POST',
+    body: JSON.stringify({ status }),
+  })
+}
+
 // ── HTML Imports ──────────────────────────────────
 
 export function listHtmlImports() {
@@ -725,6 +748,12 @@ export const invitesApi = {
   createInvites: createInvites,
   revokeInvites: revokeInvites,
   revokeCreatorAccess: revokeCreatorAccess,
+}
+
+export const creatorApplicationsApi = {
+  list: listCreatorApplications,
+  invite: inviteCreatorApplications,
+  decide: decideCreatorApplication,
 }
 
 export const htmlApi = {

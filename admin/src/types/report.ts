@@ -44,3 +44,44 @@ export const inviteStatusMeta: Record<InviteStatus, { label: string; color: stri
   redeemed: { label: '已兑换', color: 'blue' },
   revoked: { label: '已销毁', color: 'default' },
 }
+
+export type CreatorApplicationStatus = 'pending' | 'invited' | 'approved' | 'rejected'
+
+export type CreatorApplication = {
+  user_id: string
+  email: string
+  message: string
+  status: CreatorApplicationStatus
+  invite_id?: number | null
+  invite_code_hint: string
+  invite_status?: InviteStatus | null
+  invited_at?: string | null
+  email_sent_at?: string | null
+  last_error: string
+  created_at: string
+  updated_at: string
+}
+
+export type CreatorApplicationInviteResult = {
+  user_id: string
+  email: string
+  status: 'sent' | 'skipped' | 'failed'
+  application_status: string
+  invite_id?: number | null
+  invite_code_hint: string
+  error: string
+}
+
+export type CreatorApplicationInviteResponse = {
+  items: CreatorApplicationInviteResult[]
+  sent_count: number
+  skipped_count: number
+  failed_count: number
+}
+
+export const creatorApplicationStatusMeta: Record<CreatorApplicationStatus, { label: string; color: string }> = {
+  pending: { label: '待处理', color: 'gold' },
+  invited: { label: '已发码，待兑换', color: 'cyan' },
+  approved: { label: '已开通', color: 'green' },
+  rejected: { label: '已拒绝', color: 'default' },
+}
