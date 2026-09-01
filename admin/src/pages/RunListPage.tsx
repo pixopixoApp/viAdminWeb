@@ -139,7 +139,11 @@ export default function RunListPage() {
     try {
       const data = await engineApi.getModels()
       setDefaultModel(data.default)
-      setModels(data.default ? [data.default] : [])
+      // Use the full model list from the API (default first), so multiple
+      // gateways/models (e.g. qwen3.7-plus & qwen3.7-plus-us) are selectable.
+      const ids = (data.items || []).map((item) => item.id).filter(Boolean)
+      if (ids.indexOf(data.default) < 0) ids.unshift(data.default)
+      setModels(ids.length ? ids : data.default ? [data.default] : [])
     } catch (err) {
       messageApi.warning(err instanceof Error ? err.message : '模型列表加载失败')
       setModels([])

@@ -163,7 +163,15 @@ export function getEngineReady() {
 }
 
 export function getModels() {
-  return api<ModelsResp>('/api/v1/models')
+  // 支持本地 / 弗吉尼亚双模型；弗吉尼亚网关的 /models 接口有 IP 限制，
+  // 因此在前端直接提供静态模型列表，避免依赖 /api/v1/models。
+  return Promise.resolve<ModelsResp>({
+    default: 'qwen3.7-plus-us',
+    items: [
+      { id: 'qwen3.7-plus-us' },
+      { id: 'qwen3.7-plus' },
+    ],
+  })
 }
 
 // ── Runs (Video Management) ───────────────────────
