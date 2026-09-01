@@ -147,6 +147,23 @@ export default function RunTable({
         return name
       },
     },
+    ...(manageAll ? [{
+      title: 'SEO',
+      key: 'seo',
+      width: 100,
+      render: (_: unknown, row: Run) => {
+        const status = row.seo?.status || 'missing'
+        const meta = {
+          ready: { label: '可收录', color: 'green' },
+          generating: { label: '生成中', color: 'processing' },
+          pending: { label: '排队中', color: 'blue' },
+          stale: { label: '待更新', color: 'gold' },
+          failed: { label: '失败', color: 'red' },
+          missing: { label: '未生成', color: 'default' },
+        }[status]
+        return <Link to={`/content/${encodeURIComponent(row.id)}`}><Tag color={meta.color}>{meta.label}</Tag></Link>
+      },
+    } as ColumnsType<Run>[number]] : []),
     {
       title: '权重',
       dataIndex: 'feed_weight',
@@ -198,6 +215,9 @@ export default function RunTable({
         <Space wrap>
           <Link to={row.has_run === false ? `/content/${row.id}` : `/runs/${row.id}`}>
             <Button size="small">详情</Button>
+          </Link>
+          <Link to={`/content/${encodeURIComponent(row.id)}`}>
+            <Button size="small">SEO</Button>
           </Link>
           {row.preview_url ? <Button size="small" href={row.preview_url} target="_blank">预览</Button> : null}
           {onReanalyze && isRetryable(row) ? (

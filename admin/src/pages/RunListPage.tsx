@@ -1,7 +1,8 @@
-import { message, Modal } from 'antd'
+import { Alert, Button, message, Modal, Space, Tag } from 'antd'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
+import { api } from '../api'
 import { runsApi, engineApi, storiesApi } from '../services/api'
 import HtmlImportsPage from './HtmlImportsPage'
 import { Run } from '../types/run'
@@ -50,6 +51,8 @@ export default function RunListPage() {
   const [weightRun, setWeightRun] = useState<Run | null>(null)
   const [weightModalOpen, setWeightModalOpen] = useState(false)
   const [messageApi, contextHolder] = message.useMessage()
+  const [seoStatus, setSeoStatus] = useState<{ pending: number; running: number; ready: number; failed: number } | null>(null)
+  const [seoBackfilling, setSeoBackfilling] = useState(false)
 
   // 前端叠加过滤：关键字 + 处理（生成）状态。审核状态与来源由后端粗筛。
   const visibleRows = useMemo(() => {
@@ -122,12 +125,31 @@ export default function RunListPage() {
       setRows(data.items)
       setTotal(data.total)
       setEngineReady(settings.ready)
+      api<{ counts: { pending: number; running: number; ready: number; failed: number } }>('/api/v1/content-management/seo/status')
+        .then((result) => setSeoStatus(result.counts))
+        .catch(() => setSeoStatus(null))
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '加载失败')
     } finally {
       setLoading(false)
     }
   }, [manageAll, messageApi, statusFilter, ownStatusFilter, sourceFilter, page, pageSize])
+
+  const handleSeoBackfill = useCallback(async () => {
+    setSeoBackfilling(true)
+    try {
+      const result = await api<{ queued_count: number }>('/api/v1/content-management/seo/backfill', {
+        method: 'POST',
+        body: JSON.stringify({ force: false, limit: 2000 }),
+      })
+      messageApi.success(`已加入 ${result.queued_count} 条 SEO 生成任务`)
+      setSeoStatus((current) => current ? { ...current, pending: current.pending + result.queued_count } : current)
+    } catch (error) {
+      messageApi.error(error instanceof Error ? error.message : 'SEO 补全任务创建失败')
+    } finally {
+      setSeoBackfilling(false)
+    }
+  }, [messageApi])
 
   useEffect(() => {
     void load()
@@ -288,6 +310,24 @@ export default function RunListPage() {
         onCreateStory={handleCreateStory}
         onUpload={() => void openUpload()}
       />
+      {manageAll && seoStatus ? (
+        <Alert
+          style={{ marginBottom: 16 }}
+          type={seoStatus.failed ? 'warning' : 'info'}
+          showIcon
+          message={(
+            <Space wrap>
+              <span>Google SEO 状态</span>
+              <Tag color="green">可收录 {seoStatus.ready}</Tag>
+              <Tag color="blue">排队 {seoStatus.pending}</Tag>
+              <Tag color="processing">生成中 {seoStatus.running}</Tag>
+              <Tag color={seoStatus.failed ? 'red' : 'default'}>失败 {seoStatus.failed}</Tag>
+              <Button size="small" loading={seoBackfilling} onClick={() => void handleSeoBackfill()}>补全待生成作品</Button>
+            </Space>
+          )}
+          description="只有审核通过、分发开启、CDN 就绪且 SEO 元数据完整的作品才会进入 sitemap。"
+        />
+      ) : null}
       {manageAll && sourceFilter === 'manual_upload' ? (
         <HtmlImportsPage embedded />
       ) : (

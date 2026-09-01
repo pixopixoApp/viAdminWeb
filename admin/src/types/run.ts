@@ -33,6 +33,11 @@ export type Run = {
   preview_url?: string
   distribution_enabled?: boolean
   has_run?: boolean
+  seo?: {
+    status: 'missing' | 'pending' | 'generating' | 'ready' | 'failed' | 'stale'
+    slug?: string
+    last_error?: string
+  }
 }
 
 export type RunDetail = {
