@@ -1,5 +1,5 @@
 import { ArrowLeftOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Collapse, Descriptions, Input, Modal, Space, Table, Tag, Typography, message } from 'antd'
+import { Alert, Button, Card, Checkbox, Collapse, Descriptions, Input, Modal, Space, Table, Tag, Typography, message } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
@@ -29,6 +29,21 @@ type ContentDetail = {
   html_url?: string | null
   timeline?: Timeline | null
   preview_qr_url?: string | null
+  seo?: {
+    status: 'missing' | 'pending' | 'generating' | 'ready' | 'failed' | 'stale'
+    slug: string
+    page_title: string
+    page_description: string
+    meta_title: string
+    meta_description: string
+    tags: string[]
+    interaction_summary: string
+    attempts: number
+    last_error: string
+    title_locked: boolean
+    description_locked: boolean
+    generated_at?: string | null
+  }
 }
 
 const VISION_LABELS: Record<string, string> = {
@@ -86,6 +101,16 @@ export default function PublishedContentDetailPage() {
   const [titleDraft, setTitleDraft] = useState('')
   const [descriptionDraft, setDescriptionDraft] = useState('')
   const [timelineDraft, setTimelineDraft] = useState('')
+  const [seoSaving, setSeoSaving] = useState(false)
+  const [seoRegenerating, setSeoRegenerating] = useState(false)
+  const [seoPageTitle, setSeoPageTitle] = useState('')
+  const [seoPageDescription, setSeoPageDescription] = useState('')
+  const [seoMetaTitle, setSeoMetaTitle] = useState('')
+  const [seoMetaDescription, setSeoMetaDescription] = useState('')
+  const [seoTags, setSeoTags] = useState('')
+  const [seoSummary, setSeoSummary] = useState('')
+  const [titleLocked, setTitleLocked] = useState(false)
+  const [descriptionLocked, setDescriptionLocked] = useState(false)
   const [messageApi, holder] = message.useMessage()
 
   useEffect(() => {
@@ -98,6 +123,14 @@ export default function PublishedContentDetailPage() {
         setTitleDraft(result.title || '')
         setDescriptionDraft(result.description || '')
         setTimelineDraft(result.timeline ? JSON.stringify(result.timeline, null, 2) : '')
+        setSeoPageTitle(result.seo?.page_title || '')
+        setSeoPageDescription(result.seo?.page_description || '')
+        setSeoMetaTitle(result.seo?.meta_title || '')
+        setSeoMetaDescription(result.seo?.meta_description || '')
+        setSeoTags((result.seo?.tags || []).join(', '))
+        setSeoSummary(result.seo?.interaction_summary || '')
+        setTitleLocked(Boolean(result.seo?.title_locked))
+        setDescriptionLocked(Boolean(result.seo?.description_locked))
       })
       .catch((error) => { if (live) messageApi.error(error instanceof Error ? error.message : '加载详情失败') })
       .finally(() => { if (live) setLoading(false) })
@@ -136,6 +169,61 @@ export default function PublishedContentDetailPage() {
       messageApi.error(error instanceof Error ? error.message : '保存失败')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const regenerateSeo = async () => {
+    if (!data) return
+    setSeoRegenerating(true)
+    try {
+      await api(`/api/v1/content-management/${encodeURIComponent(data.id)}/seo/regenerate`, { method: 'POST' })
+      setData({ ...data, seo: { ...(data.seo || { slug: '', page_title: '', page_description: '', meta_title: '', meta_description: '', tags: [], interaction_summary: '', attempts: 0, last_error: '', title_locked: false, description_locked: false }), status: 'pending' } })
+      messageApi.success('已加入 SEO 生成队列，生成完成后会自动公开到搜索页')
+    } catch (error) {
+      messageApi.error(error instanceof Error ? error.message : '重新生成失败')
+    } finally {
+      setSeoRegenerating(false)
+    }
+  }
+
+  const saveSeo = async () => {
+    if (!data) return
+    setSeoSaving(true)
+    const tags = seoTags.split(',').map((item) => item.trim()).filter(Boolean).slice(0, 12)
+    try {
+      await api(`/api/v1/content-management/${encodeURIComponent(data.id)}/seo`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          page_title: seoPageTitle.trim(),
+          page_description: seoPageDescription.trim(),
+          meta_title: seoMetaTitle.trim(),
+          meta_description: seoMetaDescription.trim(),
+          tags,
+          interaction_summary: seoSummary.trim(),
+          title_locked: titleLocked,
+          description_locked: descriptionLocked,
+        }),
+      })
+      setData({
+        ...data,
+        seo: {
+          ...(data.seo || { slug: '', attempts: 0, last_error: '', generated_at: null }),
+          status: 'ready',
+          page_title: seoPageTitle.trim(),
+          page_description: seoPageDescription.trim(),
+          meta_title: seoMetaTitle.trim(),
+          meta_description: seoMetaDescription.trim(),
+          tags,
+          interaction_summary: seoSummary.trim(),
+          title_locked: titleLocked,
+          description_locked: descriptionLocked,
+        },
+      })
+      messageApi.success('SEO 信息已保存')
+    } catch (error) {
+      messageApi.error(error instanceof Error ? error.message : 'SEO 信息保存失败')
+    } finally {
+      setSeoSaving(false)
     }
   }
 
@@ -207,6 +295,37 @@ export default function PublishedContentDetailPage() {
           {data.content_type === 'runtime' ? <Collapse size="small" items={[{ key: 'timeline', label: '高级：编辑完整时间线 JSON（保存时会重新校验）', children: <Input.TextArea value={timelineDraft} rows={18} spellCheck={false} onChange={(event) => setTimelineDraft(event.target.value)} /> }]} /> : null}
           <Space><Button type="primary" loading={saving} onClick={() => void saveEdits()}>保存</Button><Button onClick={() => { setEditing(false); setTitleDraft(data.title || ''); setDescriptionDraft(data.description || ''); setTimelineDraft(data.timeline ? JSON.stringify(data.timeline, null, 2) : '') }}>取消</Button></Space>
         </Space> : <Typography.Paragraph style={{ marginBottom: 0 }}>{data.description || '暂无作品描述。'}</Typography.Paragraph>}
+      </Card>
+
+      <Card
+        className="page-card"
+        title="Google 搜索收录"
+        size="small"
+        extra={<Button loading={seoRegenerating} onClick={() => void regenerateSeo()}>AI 重新生成</Button>}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Alert
+            showIcon
+            type={data.seo?.status === 'ready' ? 'success' : data.seo?.status === 'failed' ? 'error' : 'info'}
+            message={{ ready: '已具备搜索收录条件', failed: '生成失败', stale: '作品已修改，等待重新生成', generating: 'AI 正在生成', pending: '等待生成', missing: '尚未创建 SEO 记录' }[data.seo?.status || 'missing']}
+            description={data.seo?.last_error || (data.seo?.status === 'ready' ? '页面会进入 sitemap；Google 是否以及何时收录由搜索引擎决定。' : '未就绪前作品仍可在 App 使用，但不会进入 sitemap。')}
+          />
+          <Descriptions column={{ xs: 1, sm: 2 }}>
+            <Descriptions.Item label="稳定路径">{data.seo?.slug ? `/experiences/${data.seo.slug}` : '-'}</Descriptions.Item>
+            <Descriptions.Item label="生成次数">{data.seo?.attempts || 0}</Descriptions.Item>
+          </Descriptions>
+          <Input value={seoPageTitle} maxLength={120} showCount onChange={(event) => setSeoPageTitle(event.target.value)} addonBefore="页面标题" placeholder="公开详情页的英文 H1，3–120 个字符" />
+          <Input.TextArea value={seoPageDescription} maxLength={1200} showCount rows={4} onChange={(event) => setSeoPageDescription(event.target.value)} placeholder="公开详情页正文摘要，20–1200 个英文字符" />
+          <Input value={seoMetaTitle} maxLength={70} showCount onChange={(event) => setSeoMetaTitle(event.target.value)} addonBefore="Google 标题" placeholder="搜索结果标题，10–70 个英文字符" />
+          <Input.TextArea value={seoMetaDescription} maxLength={180} showCount rows={3} onChange={(event) => setSeoMetaDescription(event.target.value)} placeholder="Google 搜索结果摘要，50–180 个英文字符" />
+          <Input value={seoTags} onChange={(event) => setSeoTags(event.target.value)} addonBefore="标签" placeholder="interactive video, tap（逗号分隔，最多 12 个）" />
+          <Input.TextArea value={seoSummary} maxLength={500} showCount rows={2} onChange={(event) => setSeoSummary(event.target.value)} placeholder="向访问者说明如何互动" />
+          <Space wrap>
+            <Checkbox checked={titleLocked} onChange={(event) => setTitleLocked(event.target.checked)}>锁定原始作品标题，不让 AI 补写</Checkbox>
+            <Checkbox checked={descriptionLocked} onChange={(event) => setDescriptionLocked(event.target.checked)}>锁定原始作品描述，不让 AI 补写</Checkbox>
+          </Space>
+          <Button type="primary" loading={seoSaving} disabled={!seoPageTitle.trim() || !seoPageDescription.trim() || !seoMetaTitle.trim() || !seoMetaDescription.trim() || !seoSummary.trim()} onClick={() => void saveSeo()}>保存 SEO 信息</Button>
+        </Space>
       </Card>
 
       <Modal title="扫码预览" open={qrOpen} onCancel={() => setQrOpen(false)} footer={null} destroyOnClose>
