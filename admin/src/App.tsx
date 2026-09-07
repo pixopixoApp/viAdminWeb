@@ -8,6 +8,7 @@ import ChangePasswordPage from './pages/ChangePasswordPage'
 import LoginPage from './pages/LoginPage'
 import RunDetailPage from './pages/RunDetailPage'
 import RunListPage from './pages/RunListPage'
+import OverviewPage from './pages/OverviewPage'
 import SettingsPage from './pages/SettingsPage'
 import AccountsPage from './pages/AccountsPage'
 import StaffPage from './pages/StaffPage'
@@ -86,6 +87,7 @@ function AppRoutes() {
         <Route path="stories/:id" element={<StoryRedirect />} />
         <Route path="stories/:id/:version" element={<StoryEditPage />} />
         <Route path="accounts" element={<AccountsPage />} />
+        <Route path="overview" element={<OverviewPage />} />
         <Route path="creator-applications" element={<OperationsGate page={<CreatorApplicationsPage />} />} />
         <Route path="creator-invites" element={<OperationsGate page={<CreatorInvitesPage />} />} />
         <Route path="moderation" element={<OperationsGate page={<ModerationPage />} />} />

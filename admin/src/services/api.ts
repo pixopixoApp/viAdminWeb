@@ -28,6 +28,7 @@ import type {
   SeedanceGenerateParams,
   SeedanceTask,
   SeedanceModel,
+  Overview,
 } from '../types'
 
 export type {
@@ -56,6 +57,7 @@ export type {
   SeedanceSettingsPatch,
   SeedanceGenerateParams,
   SeedanceTask,
+  Overview,
   SeedanceModel,
 }
 
@@ -664,6 +666,12 @@ export function publishHtmlImport(id: string) {
   return api(`/api/v1/html-imports/${id}/publish`, { method: 'POST' })
 }
 
+// ── Overview（概览页）──────────────────────────────
+
+export function getOverview() {
+  return api<Overview>('/api/v1/overview')
+}
+
 // ── Namespaced API objects ────────────────────────
 
 export const authApi = {
@@ -762,6 +770,10 @@ export const creatorApplicationsApi = {
   list: listCreatorApplications,
   invite: inviteCreatorApplications,
   decide: decideCreatorApplication,
+}
+
+export const overviewApi = {
+  get: getOverview,
 }
 
 export const htmlApi = {

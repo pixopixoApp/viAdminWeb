@@ -1,4 +1,5 @@
 import {
+  DashboardOutlined,
   IdcardOutlined,
   KeyOutlined,
   BulbOutlined,
@@ -23,6 +24,13 @@ export type MenuItemConfig = {
 }
 
 export const menuConfig: MenuItemConfig[] = [
+  {
+    key: '/overview',
+    path: '/overview',
+    label: '概览',
+    icon: <DashboardOutlined />,
+    permission: 'authenticated',
+  },
   {
     key: '/',
     path: '/',
