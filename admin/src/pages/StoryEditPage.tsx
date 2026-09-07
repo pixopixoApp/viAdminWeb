@@ -57,9 +57,9 @@ function serializeInteraction(row: Interaction) {
       : {}),
     ...(row.hint ? { hint: row.hint } : {}),
     ...(row.pause_video === false ? { pause_video: false } : { pause_video: true }),
-    ...(row.gesture === 'camera_motion'
+    ...(['camera_motion', 'camera_continuous'].includes(row.gesture)
       ? {
-          vision: normalizeVisionConfig(row.vision),
+          vision: normalizeVisionConfig(row.vision, row.gesture),
           vision_resolution: row.vision_resolution || { target_source: 'operator' as const },
         }
       : {}),

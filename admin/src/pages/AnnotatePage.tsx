@@ -18,6 +18,7 @@ import type { Interaction, SaveStatus } from '../types/interaction'
 import {
   enforceInteractionTypeRules,
   GESTURE_LABEL,
+  isCameraContinuous,
   isContinuousTap,
   isSustainedPlaybackInteraction,
   versionOptionLabel,
@@ -117,9 +118,9 @@ export default function AnnotatePage() {
           : {}),
         ...(r.hint ? { hint: r.hint } : {}),
         ...(r.pause_video === false ? { pause_video: false } : { pause_video: true }),
-        ...(r.gesture === 'camera_motion'
+        ...(['camera_motion', 'camera_continuous'].includes(r.gesture)
           ? {
-              vision: normalizeVisionConfig(r.vision),
+              vision: normalizeVisionConfig(r.vision, r.gesture),
               vision_resolution: r.vision_resolution || { target_source: 'operator' as const },
             }
           : {}),
@@ -474,17 +475,15 @@ export default function AnnotatePage() {
                         gesture: g.value,
                         custom_action: false,
                         action_description: undefined,
-                        ...(g.value === 'camera_motion' && !selected.vision
+                        ...(['camera_motion', 'camera_continuous'].includes(g.value)
                           ? {
-                              vision: {
-                                target: 'hand_victory',
-                                min_confidence: 0.82,
-                                stable_for_ms: 400,
-                                camera_facing: 'front',
-                                show_preview: true,
-                              },
+                              vision: normalizeVisionConfig(undefined, g.value),
                               vision_resolution: { target_source: 'operator' },
-                              hint: VISION_TARGET_HINTS.hand_victory,
+                              hint: VISION_TARGET_HINTS[
+                                g.value === 'camera_continuous'
+                                  ? 'hand_finger_snap'
+                                  : 'hand_victory'
+                              ],
                             }
                           : {}),
                       })
@@ -513,9 +512,10 @@ export default function AnnotatePage() {
                   placeholder="描述用户需要执行的动作，例如：摸一摸小猫"
                 />
               ) : null}
-              {!selected.custom_action && selected.gesture === 'camera_motion' ? (
+              {!selected.custom_action && ['camera_motion', 'camera_continuous'].includes(selected.gesture) ? (
                 <VisionInteractionFields
                   value={selected.vision}
+                  interactionType={selected.gesture as 'camera_motion' | 'camera_continuous'}
                   onChange={(vision) =>
                     updateSelected({
                       vision,
@@ -527,7 +527,9 @@ export default function AnnotatePage() {
               ) : null}
               {isSustainedPlaybackInteraction(selected) ? (
                 <Typography.Paragraph type="secondary" style={{ margin: '10px 0 0' }}>
-                  {isContinuousTap(selected)
+                  {isCameraContinuous(selected)
+                    ? '该类型固定暂停进入；点击预览里的「模拟弹指」开始或续播，停止 1100ms 后暂停。真机由前置摄像头端侧识别弹指。'
+                    : isContinuousTap(selected)
                     ? '该类型固定暂停进入、全画面识别；首次点击立即播放，每次点击续期 500ms，停止点击后暂停。'
                     : '该类型固定暂停进入、全画面识别；抬手立即暂停，停止移动 500ms 后暂停。'}
                 </Typography.Paragraph>
@@ -536,12 +538,12 @@ export default function AnnotatePage() {
 
             <div>
               <Typography.Text type="secondary">
-                Hint（{selected.gesture === 'camera_motion' ? '随识别目标自动生成' : '播放器提示，最多 40 字'}）
+                Hint（{['camera_motion', 'camera_continuous'].includes(selected.gesture) ? '随识别目标自动生成' : '播放器提示，最多 40 字'}）
               </Typography.Text>
               <Input
                 style={{ marginTop: 8 }}
                 disabled={
-                  selected.gesture === 'camera_motion' ||
+                  ['camera_motion', 'camera_continuous'].includes(selected.gesture) ||
                   isSustainedPlaybackInteraction(selected)
                 }
                 value={selected.hint || ''}

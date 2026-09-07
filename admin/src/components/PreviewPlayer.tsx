@@ -12,6 +12,7 @@ import {
 import type { Gate } from '../types/interaction'
 import {
   GESTURE_LABEL,
+  isCameraContinuous,
   isContinuousSwipe,
   isContinuousTap,
   isSustainedPlaybackInteraction,
@@ -38,6 +39,7 @@ const SECOND_MS = 1000
 const SLOW_MEDIA_LOAD_MS = 8_000
 const CONTINUOUS_MIN_TRAVEL_DP = 32 * 0.85
 const CONTINUOUS_IDLE_TIMEOUT_MS = 500
+const CAMERA_CONTINUOUS_IDLE_TIMEOUT_MS = 1100
 const CONTINUOUS_JITTER_DP = 3
 const CONTINUOUS_REVERSAL_COSINE = -0.5
 
@@ -105,6 +107,7 @@ export default function PreviewPlayer({
   const activeSustained = pausedAtGate && isSustainedPlaybackInteraction(active)
   const activeContinuousSwipe = activeSustained && isContinuousSwipe(active)
   const activeContinuousTap = activeSustained && isContinuousTap(active)
+  const activeCameraContinuous = activeSustained && isCameraContinuous(active)
   const totalMs =
     mediaDuration || durationMs || (sorted.length ? sorted[sorted.length - 1].gate_at_ms : 1)
 
@@ -401,7 +404,7 @@ export default function PreviewPlayer({
     }
   }
 
-  async function requestContinuousTapPlay(session: number) {
+  async function requestContinuousPulsePlay(session: number) {
     const video = videoRef.current
     if (!video) return
     setMediaError(null)
@@ -412,14 +415,18 @@ export default function PreviewPlayer({
       if (continuousSessionRef.current === session) {
         video.pause()
         setContinuousDriving(false)
-        setMediaError('视频暂时无法开始播放，请再次点击。')
+        setMediaError(
+          activeCameraContinuous
+            ? '视频暂时无法开始播放，请再次模拟弹指。'
+            : '视频暂时无法开始播放，请再次点击。',
+        )
       }
     }
   }
 
-  function renewContinuousTap() {
+  function renewContinuousPulse() {
     const video = videoRef.current
-    if (!video || !activeContinuousTap) return
+    if (!video || (!activeContinuousTap && !activeCameraContinuous)) return
     setStarted(true)
     setEnded(false)
     setContinuousDriving(true)
@@ -437,22 +444,24 @@ export default function PreviewPlayer({
       continuousSessionRef.current += 1
       video.pause()
       setContinuousDriving(false)
-    }, CONTINUOUS_IDLE_TIMEOUT_MS)
-    void requestContinuousTapPlay(session)
+    }, activeCameraContinuous
+      ? CAMERA_CONTINUOUS_IDLE_TIMEOUT_MS
+      : CONTINUOUS_IDLE_TIMEOUT_MS)
+    void requestContinuousPulsePlay(session)
   }
 
   function handleContinuousTapPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return
     event.preventDefault()
     event.stopPropagation()
-    renewContinuousTap()
+    renewContinuousPulse()
   }
 
   function handleContinuousTapKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
     event.stopPropagation()
-    renewContinuousTap()
+    renewContinuousPulse()
   }
 
   function start() {
@@ -641,18 +650,20 @@ export default function PreviewPlayer({
           ) : null}
           {activeSustained && active ? (
             <div
-              className={`preview-continuous-surface${continuousDriving ? ' is-driving' : ''}${activeContinuousTap ? ' is-tap' : ''}`}
-              role={activeContinuousTap ? 'button' : 'application'}
-              tabIndex={activeContinuousTap ? 0 : undefined}
+              className={`preview-continuous-surface${continuousDriving ? ' is-driving' : ''}${activeContinuousTap ? ' is-tap' : ''}${activeCameraContinuous ? ' is-camera' : ''}`}
+              role={activeContinuousTap || activeCameraContinuous ? 'button' : 'application'}
+              tabIndex={activeContinuousTap || activeCameraContinuous ? 0 : undefined}
               aria-label={
-                activeContinuousTap
+                activeCameraContinuous
+                  ? '模拟持续弹指以播放，停止弹指 1100 毫秒后暂停'
+                  : activeContinuousTap
                   ? '在画面任意位置持续点击以播放，停止点击 500 毫秒后暂停'
                   : '在画面任意位置持续往复滑动以播放'
               }
               onClick={(event) => event.stopPropagation()}
-              onKeyDown={activeContinuousTap ? handleContinuousTapKeyDown : undefined}
+              onKeyDown={activeContinuousTap || activeCameraContinuous ? handleContinuousTapKeyDown : undefined}
               onPointerDown={
-                activeContinuousTap
+                activeContinuousTap || activeCameraContinuous
                   ? handleContinuousTapPointerDown
                   : handleContinuousPointerDown
               }
@@ -661,8 +672,8 @@ export default function PreviewPlayer({
               onPointerCancel={activeContinuousSwipe ? handleContinuousPointerEnd : undefined}
             >
               <div className="preview-continuous-indicator" aria-hidden="true">
-                <span key={activeContinuousTap ? continuousTapPulse : undefined}>
-                  {activeContinuousTap ? '●' : '↔'}
+                <span key={activeContinuousTap || activeCameraContinuous ? continuousTapPulse : undefined}>
+                  {activeCameraContinuous ? '✦' : activeContinuousTap ? '●' : '↔'}
                 </span>
               </div>
               <div className="preview-gate preview-gate-continuous">
@@ -671,7 +682,11 @@ export default function PreviewPlayer({
                   <div className="preview-gate-action">动作：{actionLabel(active)}</div>
                   <strong className="preview-gate-hint">{hintLabel(active)}</strong>
                   <div className="preview-gate-sub">
-                    {activeContinuousTap
+                    {activeCameraContinuous
+                      ? continuousDriving
+                        ? '已识别弹指 · 视频播放中，停止 1100ms 后暂停'
+                        : '点击下方按钮模拟一次识别到的弹指'
+                      : activeContinuousTap
                       ? continuousDriving
                         ? '点击已续期 · 视频播放中，停止 500ms 后暂停'
                         : '点击画面开始播放，并持续点击以续播'
@@ -679,6 +694,19 @@ export default function PreviewPlayer({
                         ? '正在滑动 · 视频播放中，抬手即暂停'
                         : '在画面任意位置完成一次往复滑动'}
                   </div>
+                  {activeCameraContinuous ? (
+                    <Button
+                      type="primary"
+                      size="small"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        renewContinuousPulse()
+                      }}
+                    >
+                      模拟弹指
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             </div>

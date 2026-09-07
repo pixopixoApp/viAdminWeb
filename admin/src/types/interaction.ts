@@ -36,6 +36,8 @@ export const CONTINUOUS_SWIPE_TYPE = 'continuous_swipe'
 export const CONTINUOUS_SWIPE_HINT = '持续往复滑动以播放'
 export const CONTINUOUS_TAP_TYPE = 'continuous_tap'
 export const CONTINUOUS_TAP_HINT = '持续点击以播放'
+export const CAMERA_CONTINUOUS_TYPE = 'camera_continuous'
+export const CAMERA_CONTINUOUS_HINT = '持续弹指（拇指＋中指）以播放'
 
 export function isContinuousSwipe(value: { gesture?: string } | undefined | null) {
   return value?.gesture === CONTINUOUS_SWIPE_TYPE
@@ -45,10 +47,14 @@ export function isContinuousTap(value: { gesture?: string } | undefined | null) 
   return value?.gesture === CONTINUOUS_TAP_TYPE
 }
 
+export function isCameraContinuous(value: { gesture?: string } | undefined | null) {
+  return value?.gesture === CAMERA_CONTINUOUS_TYPE
+}
+
 export function isSustainedPlaybackInteraction(
   value: { gesture?: string } | undefined | null,
 ) {
-  return isContinuousSwipe(value) || isContinuousTap(value)
+  return isContinuousSwipe(value) || isContinuousTap(value) || isCameraContinuous(value)
 }
 
 export function enforceInteractionTypeRules(value: Interaction): Interaction {
@@ -56,7 +62,11 @@ export function enforceInteractionTypeRules(value: Interaction): Interaction {
   const next: Interaction = {
     ...value,
     pause_video: true,
-    hint: isContinuousTap(value) ? CONTINUOUS_TAP_HINT : CONTINUOUS_SWIPE_HINT,
+    hint: isContinuousTap(value)
+      ? CONTINUOUS_TAP_HINT
+      : isCameraContinuous(value)
+        ? CAMERA_CONTINUOUS_HINT
+        : CONTINUOUS_SWIPE_HINT,
   }
   delete next.gate_end_ms
   delete next.outcomes
@@ -76,6 +86,7 @@ export const GESTURE_LABEL: Record<string, string> = {
   drag_up: '上拖',
   drag_down: '下拖',
   camera_motion: '镜头动作',
+  camera_continuous: '摄像头持续动作',
   tilt_left: '左倾',
   tilt_right: '右倾',
   shake: '摇一摇',

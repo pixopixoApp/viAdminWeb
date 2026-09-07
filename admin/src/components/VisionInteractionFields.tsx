@@ -23,6 +23,7 @@ const FACE_TARGETS = [
   ['face_brow_furrow', '皱眉'],
   ['face_cheek_puff', '鼓腮'],
 ]
+const CONTINUOUS_TARGETS = [['hand_finger_snap', '持续弹指（拇指＋中指）']]
 
 export const VISION_TARGET_HINTS: Record<string, string> = {
   hand_victory: '对镜头比耶',
@@ -41,6 +42,7 @@ export const VISION_TARGET_HINTS: Record<string, string> = {
   face_brow_raise: '对镜头抬起眉毛',
   face_brow_furrow: '对镜头皱起眉头',
   face_cheek_puff: '对镜头鼓起双腮',
+  hand_finger_snap: '持续弹动拇指和中指以播放',
 }
 
 const TARGET_DEFAULTS: Record<string, Pick<Required<VisionConfig>, 'min_confidence' | 'stable_for_ms'>> = {
@@ -71,8 +73,26 @@ const DEFAULT_VISION: Required<VisionConfig> = {
   stable_for_ms: 400,
 }
 
-export function normalizeVisionConfig(value?: VisionConfig): Required<VisionConfig> {
-  const target = value?.target || DEFAULT_VISION.target
+const DEFAULT_CONTINUOUS_VISION: Required<VisionConfig> = {
+  registry_version: 'v1',
+  target: 'hand_finger_snap',
+  camera_facing: 'front',
+  show_preview: true,
+  min_confidence: 0,
+  stable_for_ms: 0,
+}
+
+export function normalizeVisionConfig(
+  value?: VisionConfig,
+  interactionType = 'camera_motion',
+): Required<VisionConfig> {
+  if (interactionType === 'camera_continuous') {
+    return { ...DEFAULT_CONTINUOUS_VISION, ...value, target: 'hand_finger_snap' }
+  }
+  const validTargets = new Set([...HAND_TARGETS, ...FACE_TARGETS].map(([target]) => target))
+  const target = value?.target && validTargets.has(value.target)
+    ? value.target
+    : DEFAULT_VISION.target
   const targetDefaults = TARGET_DEFAULTS[target] || TARGET_DEFAULTS[DEFAULT_VISION.target]
   return {
     ...DEFAULT_VISION,
@@ -86,26 +106,31 @@ export function normalizeVisionConfig(value?: VisionConfig): Required<VisionConf
 
 export default function VisionInteractionFields({
   value,
+  interactionType = 'camera_motion',
   disabled = false,
   onChange,
 }: {
   value?: VisionConfig
+  interactionType?: 'camera_motion' | 'camera_continuous'
   disabled?: boolean
   onChange: (next: Required<VisionConfig>) => void
 }) {
-  const current = normalizeVisionConfig(value)
-  const update = (patch: Partial<VisionConfig>) => onChange(normalizeVisionConfig({ ...current, ...patch }))
+  const continuous = interactionType === 'camera_continuous'
+  const current = normalizeVisionConfig(value, interactionType)
+  const update = (patch: Partial<VisionConfig>) => onChange(normalizeVisionConfig({ ...current, ...patch }, interactionType))
   const selectTarget = (target: string) => onChange(normalizeVisionConfig({
     ...current,
     target,
     ...(TARGET_DEFAULTS[target] || {}),
-  }))
+  }, interactionType))
   return (
     <div className="vision-interaction-fields">
       <Space direction="vertical" size={10} style={{ width: '100%' }}>
         <Typography.Text strong>第二步：选择具体识别目标（必选）</Typography.Text>
         <Typography.Text type="secondary">
-          `camera_motion` 只是镜头识别大类；请在下方选择具体手势或表情。Android 真机端侧识别，不上传或保存摄像头画面。
+          {continuous
+            ? '`camera_continuous` 是持续摄像头交互大类；识别脉冲会续播 1100ms。Android 真机端侧识别，不上传或保存摄像头画面。'
+            : '`camera_motion` 只是镜头识别大类；请在下方选择具体手势或表情。Android 真机端侧识别，不上传或保存摄像头画面。'}
         </Typography.Text>
         <Space wrap>
           <Typography.Text type="secondary">具体手势 / 表情</Typography.Text>
@@ -116,8 +141,12 @@ export default function VisionInteractionFields({
             value={current.target}
             onChange={selectTarget}
             options={[
-              { label: '手势', options: HAND_TARGETS.map(([value, label]) => ({ value, label })) },
-              { label: '表情', options: FACE_TARGETS.map(([value, label]) => ({ value, label })) },
+              ...(continuous
+                ? [{ label: '持续动作', options: CONTINUOUS_TARGETS.map(([value, label]) => ({ value, label })) }]
+                : [
+                    { label: '手势', options: HAND_TARGETS.map(([value, label]) => ({ value, label })) },
+                    { label: '表情', options: FACE_TARGETS.map(([value, label]) => ({ value, label })) },
+                  ]),
             ]}
           />
           <Typography.Text type="secondary">镜头</Typography.Text>
