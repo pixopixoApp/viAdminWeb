@@ -37,7 +37,49 @@ export const CONTINUOUS_SWIPE_HINT = '持续往复滑动以播放'
 export const CONTINUOUS_TAP_TYPE = 'continuous_tap'
 export const CONTINUOUS_TAP_HINT = '持续点击以播放'
 export const CAMERA_CONTINUOUS_TYPE = 'camera_continuous'
-export const CAMERA_CONTINUOUS_HINT = '持续弹指（拇指＋中指）以播放'
+export const CONTINUOUS_BLOW_TYPE = 'mic_blow_continuous'
+export const CONTINUOUS_BLOW_HINT = '持续吹气至目标音量以播放'
+export const CONTINUOUS_VOICE_TYPE = 'mic_level_continuous'
+export const CONTINUOUS_VOICE_HINT = '保持音调在目标范围内以播放'
+export const CAMERA_CONTINUOUS_DEFAULT_TARGET = 'hand_finger_snap'
+export const CAMERA_CONTINUOUS_TARGET_COPY: Record<string, {
+  label: string
+  hint: string
+  detected: string
+  simulate: string
+  retry: string
+  idlePrompt: string
+  ariaLabel: string
+  editorHelp: string
+}> = {
+  hand_finger_snap: {
+    label: '持续弹指（拇指＋中指）',
+    hint: '持续弹动拇指和中指以播放',
+    detected: '已识别弹指',
+    simulate: '模拟弹指',
+    retry: '请再次模拟弹指',
+    idlePrompt: '点击下方按钮模拟一次识别到的弹指',
+    ariaLabel: '模拟持续弹指以播放，停止弹指 1100 毫秒后暂停',
+    editorHelp: '真机由前置摄像头端侧识别弹指',
+  },
+  hand_finger_gun_recoil: {
+    label: '持续手枪后坐力（拇指＋食指）',
+    hint: '保持手枪手势并持续做后坐力动作以播放',
+    detected: '已识别手枪手型或后坐力',
+    simulate: '模拟后坐力',
+    retry: '请再次模拟手枪手型或后坐力',
+    idlePrompt: '点击下方按钮模拟一次手枪手型或后坐力识别',
+    ariaLabel: '模拟手枪手型或持续后坐力以播放，停止动作 1100 毫秒后暂停',
+    editorHelp: '真机由前置摄像头端侧识别手枪手型和后坐力',
+  },
+}
+
+export function cameraContinuousTargetCopy(target?: string) {
+  return CAMERA_CONTINUOUS_TARGET_COPY[target || CAMERA_CONTINUOUS_DEFAULT_TARGET]
+    || CAMERA_CONTINUOUS_TARGET_COPY[CAMERA_CONTINUOUS_DEFAULT_TARGET]
+}
+
+export const CAMERA_CONTINUOUS_HINT = cameraContinuousTargetCopy().hint
 
 export function isContinuousSwipe(value: { gesture?: string } | undefined | null) {
   return value?.gesture === CONTINUOUS_SWIPE_TYPE
@@ -51,10 +93,20 @@ export function isCameraContinuous(value: { gesture?: string } | undefined | nul
   return value?.gesture === CAMERA_CONTINUOUS_TYPE
 }
 
+export function isContinuousBlow(value: { gesture?: string } | undefined | null) {
+  return value?.gesture === CONTINUOUS_BLOW_TYPE
+}
+
+export function isContinuousVoice(value: { gesture?: string } | undefined | null) {
+  return value?.gesture === CONTINUOUS_VOICE_TYPE
+}
+
 export function isSustainedPlaybackInteraction(
   value: { gesture?: string } | undefined | null,
 ) {
-  return isContinuousSwipe(value) || isContinuousTap(value) || isCameraContinuous(value)
+  return isContinuousSwipe(value) || isContinuousTap(value)
+    || isCameraContinuous(value) || isContinuousBlow(value)
+    || isContinuousVoice(value)
 }
 
 export function enforceInteractionTypeRules(value: Interaction): Interaction {
@@ -62,11 +114,15 @@ export function enforceInteractionTypeRules(value: Interaction): Interaction {
   const next: Interaction = {
     ...value,
     pause_video: true,
-    hint: isContinuousTap(value)
-      ? CONTINUOUS_TAP_HINT
-      : isCameraContinuous(value)
-        ? CAMERA_CONTINUOUS_HINT
-        : CONTINUOUS_SWIPE_HINT,
+    hint: isContinuousBlow(value)
+      ? CONTINUOUS_BLOW_HINT
+      : isContinuousVoice(value)
+        ? CONTINUOUS_VOICE_HINT
+      : isContinuousTap(value)
+        ? CONTINUOUS_TAP_HINT
+        : isCameraContinuous(value)
+          ? cameraContinuousTargetCopy(value.vision?.target).hint
+          : CONTINUOUS_SWIPE_HINT,
   }
   delete next.gate_end_ms
   delete next.outcomes
@@ -91,7 +147,9 @@ export const GESTURE_LABEL: Record<string, string> = {
   tilt_right: 'Tilt Right',
   shake: 'Shake',
   mic_level: 'Sound',
+  mic_level_continuous: 'Continuous Voice',
   mic_blow: 'Blow',
+  mic_blow_continuous: 'Continuous Blow',
   mic_clap: 'Clap',
   mic_quiet: 'Quiet',
   rapid_tap: 'Rapid Tap',
@@ -109,6 +167,11 @@ export const GESTURE_LABEL: Record<string, string> = {
   continuous_tap: 'Continuous Tap',
 }
 
+export function gestureAuthoringLabel(value: string) {
+  const label = GESTURE_LABEL[value] || value
+  return value === CONTINUOUS_VOICE_TYPE ? `Sound › ${label}` : label
+}
+
 export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
 
 export function versionOptionLabel(label: string, version: string, published?: string | null) {
@@ -122,4 +185,5 @@ export type Gate = {
   cue?: string
   custom_action?: boolean
   action_description?: string
+  vision?: VisionConfig
 }

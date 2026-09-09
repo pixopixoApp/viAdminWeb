@@ -1,5 +1,9 @@
 import { Select, Space, Switch, Typography } from 'antd'
-import type { VisionConfig } from '../types/interaction'
+import {
+  CAMERA_CONTINUOUS_DEFAULT_TARGET,
+  CAMERA_CONTINUOUS_TARGET_COPY,
+  type VisionConfig,
+} from '../types/interaction'
 
 export type { VisionConfig } from '../types/interaction'
 
@@ -23,7 +27,8 @@ const FACE_TARGETS = [
   ['face_brow_furrow', '皱眉'],
   ['face_cheek_puff', '鼓腮'],
 ]
-const CONTINUOUS_TARGETS = [['hand_finger_snap', '持续弹指（拇指＋中指）']]
+const CONTINUOUS_TARGETS = Object.entries(CAMERA_CONTINUOUS_TARGET_COPY)
+  .map(([target, copy]) => [target, copy.label])
 
 export const VISION_TARGET_HINTS: Record<string, string> = {
   hand_victory: '对镜头比耶',
@@ -43,6 +48,7 @@ export const VISION_TARGET_HINTS: Record<string, string> = {
   face_brow_furrow: '对镜头皱起眉头',
   face_cheek_puff: '对镜头鼓起双腮',
   hand_finger_snap: '持续弹动拇指和中指以播放',
+  hand_finger_gun_recoil: '保持手枪手势并持续做后坐力动作以播放',
 }
 
 const TARGET_DEFAULTS: Record<string, Pick<Required<VisionConfig>, 'min_confidence' | 'stable_for_ms'>> = {
@@ -75,7 +81,7 @@ const DEFAULT_VISION: Required<VisionConfig> = {
 
 const DEFAULT_CONTINUOUS_VISION: Required<VisionConfig> = {
   registry_version: 'v1',
-  target: 'hand_finger_snap',
+  target: CAMERA_CONTINUOUS_DEFAULT_TARGET,
   camera_facing: 'front',
   show_preview: true,
   min_confidence: 0,
@@ -87,7 +93,10 @@ export function normalizeVisionConfig(
   interactionType = 'camera_motion',
 ): Required<VisionConfig> {
   if (interactionType === 'camera_continuous') {
-    return { ...DEFAULT_CONTINUOUS_VISION, ...value, target: 'hand_finger_snap' }
+    const target = value?.target && value.target in CAMERA_CONTINUOUS_TARGET_COPY
+      ? value.target
+      : CAMERA_CONTINUOUS_DEFAULT_TARGET
+    return { ...DEFAULT_CONTINUOUS_VISION, ...value, target }
   }
   const validTargets = new Set([...HAND_TARGETS, ...FACE_TARGETS].map(([target]) => target))
   const target = value?.target && validTargets.has(value.target)

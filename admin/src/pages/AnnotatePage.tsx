@@ -16,9 +16,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { annotateApi, runsApi } from '../services/api'
 import type { Interaction, SaveStatus } from '../types/interaction'
 import {
+  CAMERA_CONTINUOUS_DEFAULT_TARGET,
+  cameraContinuousTargetCopy,
   enforceInteractionTypeRules,
+  gestureAuthoringLabel,
   GESTURE_LABEL,
   isCameraContinuous,
+  isContinuousBlow,
+  isContinuousVoice,
   isContinuousTap,
   isSustainedPlaybackInteraction,
   versionOptionLabel,
@@ -32,7 +37,10 @@ import VisionInteractionFields, {
   VISION_TARGET_HINTS,
 } from '../components/VisionInteractionFields'
 
-const GESTURES = Object.entries(GESTURE_LABEL).map(([value, label]) => ({ value, label }))
+const GESTURES = Object.keys(GESTURE_LABEL).map((value) => ({
+  value,
+  label: gestureAuthoringLabel(value),
+}))
 
 export default function AnnotatePage() {
   const { id, version } = useParams()
@@ -481,7 +489,7 @@ export default function AnnotatePage() {
                               vision_resolution: { target_source: 'operator' },
                               hint: VISION_TARGET_HINTS[
                                 g.value === 'camera_continuous'
-                                  ? 'hand_finger_snap'
+                                  ? CAMERA_CONTINUOUS_DEFAULT_TARGET
                                   : 'hand_victory'
                               ],
                             }
@@ -528,7 +536,11 @@ export default function AnnotatePage() {
               {isSustainedPlaybackInteraction(selected) ? (
                 <Typography.Paragraph type="secondary" style={{ margin: '10px 0 0' }}>
                   {isCameraContinuous(selected)
-                    ? '该类型固定暂停进入；点击预览里的「模拟弹指」开始或续播，停止 1100ms 后暂停。真机由前置摄像头端侧识别弹指。'
+                    ? `该类型固定暂停进入；点击预览里的「${cameraContinuousTargetCopy(selected.vision?.target).simulate}」开始或续播，停止 1100ms 后暂停。${cameraContinuousTargetCopy(selected.vision?.target).editorHelp}。`
+                    : isContinuousBlow(selected)
+                    ? '该类型固定暂停进入；预览中按住画面模拟持续吹气，松开 450ms 后暂停。真机按麦克风音量识别。'
+                    : isContinuousVoice(selected)
+                    ? '声音一级交互下的持续发声二级项；预览中按住画面模拟发声，松开 450ms 后暂停。真机按人声音调与信噪比识别。'
                     : isContinuousTap(selected)
                     ? '该类型固定暂停进入、全画面识别；首次点击立即播放，每次点击续期 500ms，停止点击后暂停。'
                     : '该类型固定暂停进入、全画面识别；抬手立即暂停，停止移动 500ms 后暂停。'}

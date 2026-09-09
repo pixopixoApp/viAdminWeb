@@ -11,8 +11,11 @@ import {
 } from 'react'
 import type { Gate } from '../types/interaction'
 import {
+  cameraContinuousTargetCopy,
   GESTURE_LABEL,
   isCameraContinuous,
+  isContinuousBlow,
+  isContinuousVoice,
   isContinuousSwipe,
   isContinuousTap,
   isSustainedPlaybackInteraction,
@@ -40,6 +43,7 @@ const SLOW_MEDIA_LOAD_MS = 8_000
 const CONTINUOUS_MIN_TRAVEL_DP = 32 * 0.85
 const CONTINUOUS_IDLE_TIMEOUT_MS = 500
 const CAMERA_CONTINUOUS_IDLE_TIMEOUT_MS = 1100
+const CONTINUOUS_MICROPHONE_IDLE_TIMEOUT_MS = 450
 const CONTINUOUS_JITTER_DP = 3
 const CONTINUOUS_REVERSAL_COSINE = -0.5
 
@@ -96,6 +100,8 @@ export default function PreviewPlayer({
   const continuousIdleTimerRef = useRef<number | null>(null)
   const continuousSessionRef = useRef(0)
   const continuousTapRenewalRef = useRef(0)
+  const continuousMicrophonePointerRef = useRef<number | null>(null)
+  const continuousMicrophoneKeyboardRef = useRef(false)
   const onSelectGateRef = useRef(onSelectGate)
   onSelectGateRef.current = onSelectGate
 
@@ -108,6 +114,10 @@ export default function PreviewPlayer({
   const activeContinuousSwipe = activeSustained && isContinuousSwipe(active)
   const activeContinuousTap = activeSustained && isContinuousTap(active)
   const activeCameraContinuous = activeSustained && isCameraContinuous(active)
+  const activeContinuousBlow = activeSustained && isContinuousBlow(active)
+  const activeContinuousVoice = activeSustained && isContinuousVoice(active)
+  const activeContinuousMicrophone = activeContinuousBlow || activeContinuousVoice
+  const activeCameraCopy = cameraContinuousTargetCopy(active?.vision?.target)
   const totalMs =
     mediaDuration || durationMs || (sorted.length ? sorted[sorted.length - 1].gate_at_ms : 1)
 
@@ -280,6 +290,8 @@ export default function PreviewPlayer({
     clearContinuousIdleTimer()
     continuousSessionRef.current += 1
     continuousTapRenewalRef.current += 1
+    continuousMicrophonePointerRef.current = null
+    continuousMicrophoneKeyboardRef.current = false
     continuousPointerRef.current = null
     setContinuousDriving(false)
     if (pauseVideo) videoRef.current?.pause()
@@ -417,7 +429,11 @@ export default function PreviewPlayer({
         setContinuousDriving(false)
         setMediaError(
           activeCameraContinuous
-            ? '视频暂时无法开始播放，请再次模拟弹指。'
+            ? `视频暂时无法开始播放，${activeCameraCopy.retry}。`
+            : activeContinuousBlow
+              ? '视频暂时无法开始播放，请再次按住吹气模拟区。'
+            : activeContinuousVoice
+              ? '视频暂时无法开始播放，请再次按住发声模拟区。'
             : '视频暂时无法开始播放，请再次点击。',
         )
       }
@@ -462,6 +478,65 @@ export default function PreviewPlayer({
     event.preventDefault()
     event.stopPropagation()
     renewContinuousPulse()
+  }
+
+  function startContinuousMicrophone(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!activeContinuousMicrophone || !event.isPrimary || continuousMicrophonePointerRef.current != null) return
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    clearContinuousIdleTimer()
+    continuousMicrophonePointerRef.current = event.pointerId
+    setStarted(true)
+    setEnded(false)
+    setContinuousDriving(true)
+    void requestContinuousPulsePlay(continuousSessionRef.current)
+  }
+
+  function stopContinuousMicrophone(event: ReactPointerEvent<HTMLDivElement>) {
+    if (continuousMicrophonePointerRef.current !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+    continuousMicrophonePointerRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    const session = continuousSessionRef.current
+    clearContinuousIdleTimer()
+    continuousIdleTimerRef.current = window.setTimeout(() => {
+      continuousIdleTimerRef.current = null
+      if (continuousSessionRef.current !== session || continuousMicrophonePointerRef.current != null) return
+      videoRef.current?.pause()
+      setContinuousDriving(false)
+    }, CONTINUOUS_MICROPHONE_IDLE_TIMEOUT_MS)
+  }
+
+  function handleContinuousMicrophoneKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if ((event.key !== 'Enter' && event.key !== ' ') || event.repeat) return
+    event.preventDefault()
+    event.stopPropagation()
+    continuousMicrophoneKeyboardRef.current = true
+    clearContinuousIdleTimer()
+    setStarted(true)
+    setEnded(false)
+    setContinuousDriving(true)
+    void requestContinuousPulsePlay(continuousSessionRef.current)
+  }
+
+  function handleContinuousMicrophoneKeyUp(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if ((event.key !== 'Enter' && event.key !== ' ') || !continuousMicrophoneKeyboardRef.current) return
+    event.preventDefault()
+    event.stopPropagation()
+    continuousMicrophoneKeyboardRef.current = false
+    const session = continuousSessionRef.current
+    clearContinuousIdleTimer()
+    continuousIdleTimerRef.current = window.setTimeout(() => {
+      continuousIdleTimerRef.current = null
+      if (continuousSessionRef.current !== session || continuousMicrophoneKeyboardRef.current) return
+      videoRef.current?.pause()
+      setContinuousDriving(false)
+    }, CONTINUOUS_MICROPHONE_IDLE_TIMEOUT_MS)
   }
 
   function start() {
@@ -651,29 +726,50 @@ export default function PreviewPlayer({
           {activeSustained && active ? (
             <div
               className={`preview-continuous-surface${continuousDriving ? ' is-driving' : ''}${activeContinuousTap ? ' is-tap' : ''}${activeCameraContinuous ? ' is-camera' : ''}`}
-              role={activeContinuousTap || activeCameraContinuous ? 'button' : 'application'}
-              tabIndex={activeContinuousTap || activeCameraContinuous ? 0 : undefined}
+              role={activeContinuousTap || activeCameraContinuous || activeContinuousMicrophone ? 'button' : 'application'}
+              tabIndex={activeContinuousTap || activeCameraContinuous || activeContinuousMicrophone ? 0 : undefined}
               aria-label={
                 activeCameraContinuous
-                  ? '模拟持续弹指以播放，停止弹指 1100 毫秒后暂停'
+                  ? activeCameraCopy.ariaLabel
+                  : activeContinuousBlow
+                  ? '按住画面模拟持续吹动，松开 450 毫秒后暂停'
+                  : activeContinuousVoice
+                  ? '按住画面模拟持续发声，松开 450 毫秒后暂停'
                   : activeContinuousTap
                   ? '在画面任意位置持续点击以播放，停止点击 500 毫秒后暂停'
                   : '在画面任意位置持续往复滑动以播放'
               }
               onClick={(event) => event.stopPropagation()}
-              onKeyDown={activeContinuousTap || activeCameraContinuous ? handleContinuousTapKeyDown : undefined}
+              onKeyDown={activeContinuousMicrophone
+                ? handleContinuousMicrophoneKeyDown
+                : (activeContinuousTap || activeCameraContinuous
+                  ? handleContinuousTapKeyDown
+                  : undefined)}
+              onKeyUp={activeContinuousMicrophone ? handleContinuousMicrophoneKeyUp : undefined}
               onPointerDown={
-                activeContinuousTap || activeCameraContinuous
+                activeContinuousMicrophone
+                  ? startContinuousMicrophone
+                  : activeContinuousTap || activeCameraContinuous
                   ? handleContinuousTapPointerDown
                   : handleContinuousPointerDown
               }
               onPointerMove={activeContinuousSwipe ? handleContinuousPointerMove : undefined}
-              onPointerUp={activeContinuousSwipe ? handleContinuousPointerEnd : undefined}
-              onPointerCancel={activeContinuousSwipe ? handleContinuousPointerEnd : undefined}
+              onPointerUp={activeContinuousMicrophone
+                ? stopContinuousMicrophone
+                : (activeContinuousSwipe ? handleContinuousPointerEnd : undefined)}
+              onPointerCancel={activeContinuousMicrophone
+                ? stopContinuousMicrophone
+                : (activeContinuousSwipe ? handleContinuousPointerEnd : undefined)}
             >
               <div className="preview-continuous-indicator" aria-hidden="true">
                 <span key={activeContinuousTap || activeCameraContinuous ? continuousTapPulse : undefined}>
-                  {activeCameraContinuous ? '✦' : activeContinuousTap ? '●' : '↔'}
+                  {activeCameraContinuous
+                    ? '✦'
+                    : activeContinuousBlow
+                      ? '💨'
+                      : activeContinuousVoice
+                        ? '🎙'
+                      : activeContinuousTap ? '●' : '↔'}
                 </span>
               </div>
               <div className="preview-gate preview-gate-continuous">
@@ -684,12 +780,20 @@ export default function PreviewPlayer({
                   <div className="preview-gate-sub">
                     {activeCameraContinuous
                       ? continuousDriving
-                        ? '已识别弹指 · 视频播放中，停止 1100ms 后暂停'
-                        : '点击下方按钮模拟一次识别到的弹指'
+                        ? `${activeCameraCopy.detected} · 视频播放中，停止 1100ms 后暂停`
+                        : activeCameraCopy.idlePrompt
                       : activeContinuousTap
                       ? continuousDriving
                         ? '点击已续期 · 视频播放中，停止 500ms 后暂停'
                         : '点击画面开始播放，并持续点击以续播'
+                      : activeContinuousBlow
+                      ? continuousDriving
+                        ? '正在模拟吹动 · 松开 450ms 后暂停'
+                        : '按住画面模拟持续吹动'
+                      : activeContinuousVoice
+                      ? continuousDriving
+                        ? '正在模拟发声 · 松开 450ms 后暂停'
+                        : '按住画面模拟持续发声'
                       : continuousDriving
                         ? '正在滑动 · 视频播放中，抬手即暂停'
                         : '在画面任意位置完成一次往复滑动'}
@@ -704,7 +808,7 @@ export default function PreviewPlayer({
                         renewContinuousPulse()
                       }}
                     >
-                      模拟弹指
+                      {activeCameraCopy.simulate}
                     </Button>
                   ) : null}
                 </div>
