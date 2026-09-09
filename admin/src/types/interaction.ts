@@ -37,10 +37,32 @@ export const CONTINUOUS_SWIPE_HINT = '持续往复滑动以播放'
 export const CONTINUOUS_TAP_TYPE = 'continuous_tap'
 export const CONTINUOUS_TAP_HINT = '持续点击以播放'
 export const CAMERA_CONTINUOUS_TYPE = 'camera_continuous'
+export const CONTINUOUS_SOUND_AUTHORING_TYPE = 'mic_continuous'
 export const CONTINUOUS_BLOW_TYPE = 'mic_blow_continuous'
 export const CONTINUOUS_BLOW_HINT = '持续吹气至目标音量以播放'
 export const CONTINUOUS_VOICE_TYPE = 'mic_level_continuous'
 export const CONTINUOUS_VOICE_HINT = '保持音调在目标范围内以播放'
+export const CONTINUOUS_SOUND_DEFAULT_TARGET = 'blow_volume'
+export type ContinuousSoundTarget = 'blow_volume' | 'voice_pitch'
+export const CONTINUOUS_SOUND_TARGET_COPY: Record<ContinuousSoundTarget, {
+  label: string
+  gesture: typeof CONTINUOUS_BLOW_TYPE | typeof CONTINUOUS_VOICE_TYPE
+  hint: string
+  editorHelp: string
+}> = {
+  blow_volume: {
+    label: '持续吹气（识别音量）',
+    gesture: CONTINUOUS_BLOW_TYPE,
+    hint: CONTINUOUS_BLOW_HINT,
+    editorHelp: '真机按麦克风音量识别持续吹气',
+  },
+  voice_pitch: {
+    label: '持续发声（识别音调）',
+    gesture: CONTINUOUS_VOICE_TYPE,
+    hint: CONTINUOUS_VOICE_HINT,
+    editorHelp: '真机按人声音调与信噪比识别持续发声',
+  },
+}
 export const CAMERA_CONTINUOUS_DEFAULT_TARGET = 'hand_finger_snap'
 export const CAMERA_CONTINUOUS_TARGET_COPY: Record<string, {
   label: string
@@ -101,6 +123,33 @@ export function isContinuousVoice(value: { gesture?: string } | undefined | null
   return value?.gesture === CONTINUOUS_VOICE_TYPE
 }
 
+export function isContinuousSound(value: { gesture?: string } | undefined | null) {
+  return isContinuousBlow(value) || isContinuousVoice(value)
+}
+
+export function continuousSoundTarget(
+  value: { gesture?: string } | undefined | null,
+): ContinuousSoundTarget {
+  return isContinuousVoice(value) ? 'voice_pitch' : CONTINUOUS_SOUND_DEFAULT_TARGET
+}
+
+export function continuousSoundTargetCopy(target?: string) {
+  return CONTINUOUS_SOUND_TARGET_COPY[
+    target === 'voice_pitch' ? 'voice_pitch' : CONTINUOUS_SOUND_DEFAULT_TARGET
+  ]
+}
+
+export function continuousSoundInteractionPatch(
+  target?: string,
+): Pick<Interaction, 'gesture' | 'hint' | 'pause_video'> {
+  const copy = continuousSoundTargetCopy(target)
+  return {
+    gesture: copy.gesture,
+    hint: copy.hint,
+    pause_video: true,
+  }
+}
+
 export function isSustainedPlaybackInteraction(
   value: { gesture?: string } | undefined | null,
 ) {
@@ -147,9 +196,9 @@ export const GESTURE_LABEL: Record<string, string> = {
   tilt_right: 'Tilt Right',
   shake: 'Shake',
   mic_level: 'Sound',
-  mic_level_continuous: 'Continuous Voice',
+  mic_level_continuous: 'Continuous Sound · Voice (Pitch)',
   mic_blow: 'Blow',
-  mic_blow_continuous: 'Continuous Blow',
+  mic_blow_continuous: 'Continuous Sound · Blow (Volume)',
   mic_clap: 'Clap',
   mic_quiet: 'Quiet',
   rapid_tap: 'Rapid Tap',
@@ -167,9 +216,18 @@ export const GESTURE_LABEL: Record<string, string> = {
   continuous_tap: 'Continuous Tap',
 }
 
+export const AUTHORING_GESTURE_TYPES = Object.freeze(
+  Object.keys(GESTURE_LABEL).flatMap((value) => {
+    if (value === CONTINUOUS_VOICE_TYPE) return [CONTINUOUS_SOUND_AUTHORING_TYPE]
+    if (value === CONTINUOUS_BLOW_TYPE) return []
+    return [value]
+  }),
+)
+
 export function gestureAuthoringLabel(value: string) {
-  const label = GESTURE_LABEL[value] || value
-  return value === CONTINUOUS_VOICE_TYPE ? `Sound › ${label}` : label
+  return value === CONTINUOUS_SOUND_AUTHORING_TYPE
+    ? 'Continuous Sound'
+    : GESTURE_LABEL[value] || value
 }
 
 export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'

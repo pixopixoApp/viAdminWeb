@@ -1,25 +1,29 @@
 import { Button, Card, Empty, Input, InputNumber, Space, Tag, Typography } from 'antd'
 import type { Interaction } from '../../types/interaction'
 import {
+  AUTHORING_GESTURE_TYPES,
   CAMERA_CONTINUOUS_DEFAULT_TARGET,
+  CONTINUOUS_SOUND_AUTHORING_TYPE,
   cameraContinuousTargetCopy,
+  continuousSoundInteractionPatch,
+  continuousSoundTarget,
+  continuousSoundTargetCopy,
   gestureAuthoringLabel,
-  GESTURE_LABEL,
   isCameraContinuous,
-  isContinuousBlow,
-  isContinuousVoice,
+  isContinuousSound,
   isContinuousTap,
   isSustainedPlaybackInteraction,
 } from '../../types/interaction'
 import type { ClipMeta } from '../../types/run'
 import ClipOutcomesEditor from '../ClipOutcomesEditor'
 import PreviewPlayer from '../PreviewPlayer'
+import SoundInteractionFields from '../SoundInteractionFields'
 import VisionInteractionFields, {
   normalizeVisionConfig,
   VISION_TARGET_HINTS,
 } from '../VisionInteractionFields'
 
-const GESTURES = Object.keys(GESTURE_LABEL).map((value) => ({
+const GESTURES = AUTHORING_GESTURE_TYPES.map((value) => ({
   value,
   label: gestureAuthoringLabel(value),
 }))
@@ -163,11 +167,17 @@ export default function ClipEditor({
                     type="button"
                     disabled={!editing}
                     className={
-                      !selected.custom_action && selected.gesture === g.value ? 'on' : undefined
+                      !selected.custom_action && (
+                        g.value === CONTINUOUS_SOUND_AUTHORING_TYPE
+                          ? isContinuousSound(selected)
+                          : selected.gesture === g.value
+                      ) ? 'on' : undefined
                     }
                     onClick={() =>
                       onUpdateSelected({
-                        gesture: g.value,
+                        ...(g.value === CONTINUOUS_SOUND_AUTHORING_TYPE
+                          ? continuousSoundInteractionPatch(continuousSoundTarget(selected))
+                          : { gesture: g.value }),
                         custom_action: false,
                         action_description: undefined,
                         ...(['camera_motion', 'camera_continuous'].includes(g.value)
@@ -221,14 +231,19 @@ export default function ClipEditor({
                   }
                 />
               ) : null}
+              {!selected.custom_action && isContinuousSound(selected) ? (
+                <SoundInteractionFields
+                  value={selected}
+                  disabled={!editing}
+                  onChange={onUpdateSelected}
+                />
+              ) : null}
               {isSustainedPlaybackInteraction(selected) ? (
                 <Typography.Paragraph type="secondary" style={{ margin: '10px 0 0' }}>
                   {isCameraContinuous(selected)
                     ? `该类型固定暂停进入；点击预览里的「${cameraContinuousTargetCopy(selected.vision?.target).simulate}」开始或续播，停止 1100ms 后暂停。${cameraContinuousTargetCopy(selected.vision?.target).editorHelp}。`
-                    : isContinuousBlow(selected)
-                    ? '该类型固定暂停进入；预览中按住画面模拟持续吹气，松开 450ms 后暂停。真机按麦克风音量识别。'
-                    : isContinuousVoice(selected)
-                    ? '声音一级交互下的持续发声二级项；预览中按住画面模拟发声，松开 450ms 后暂停。真机按人声音调与信噪比识别。'
+                    : isContinuousSound(selected)
+                    ? `该类型固定暂停进入；预览中按住画面模拟声音，松开 450ms 后暂停。${continuousSoundTargetCopy(continuousSoundTarget(selected)).editorHelp}。`
                     : isContinuousTap(selected)
                     ? '该类型固定暂停进入、全画面识别；首次点击立即播放，每次点击续期 500ms，停止点击后暂停。'
                     : '该类型固定暂停进入、全画面识别；抬手立即暂停，停止移动 500ms 后暂停。'}
@@ -238,13 +253,14 @@ export default function ClipEditor({
 
             <div>
               <Typography.Text type="secondary">
-                Hint{['camera_motion', 'camera_continuous'].includes(selected.gesture) ? '（随识别目标自动生成）' : ''}
+                Hint{['camera_motion', 'camera_continuous'].includes(selected.gesture) || isContinuousSound(selected) ? '（随识别目标自动生成）' : ''}
               </Typography.Text>
               <Input
                 style={{ marginTop: 8 }}
                 disabled={
                   !editing ||
                   ['camera_motion', 'camera_continuous'].includes(selected.gesture) ||
+                  isContinuousSound(selected) ||
                   isSustainedPlaybackInteraction(selected)
                 }
                 value={selected.hint || ''}
