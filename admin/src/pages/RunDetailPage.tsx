@@ -376,7 +376,7 @@ export default function RunDetailPage() {
   if (loadUnavailable && !data) return <ServiceBusyCard onRetry={load} />
   if (!data) return <Empty />
 
-  const busy = data.run.status === 'running' || data.run.status === 'queued'
+  const busy = ['normalizing', 'running', 'queued'].includes(data.run.status)
   const currentMeta = data.current_meta || {}
   const versionInfos = data.version_infos || []
   const isManual = currentMeta.kind === 'manual'
@@ -394,6 +394,7 @@ export default function RunDetailPage() {
   const businessStatusColor = published ? 'green' : 'blue'
   const generationStatus = {
     queued: { label: '排队中', color: 'default' },
+    normalizing: { label: '视频处理中', color: 'processing' },
     running: { label: '分析中', color: 'processing' },
     ready: { label: '分析完成', color: 'green' },
     failed: { label: '分析失败', color: 'red' },
