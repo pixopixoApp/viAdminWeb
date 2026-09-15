@@ -28,7 +28,12 @@ import {
   isCameraContinuous,
   isContinuousSound,
   isContinuousTap,
+  isRotate,
+  isPinch,
+  normalizePinchDirection,
+  pinchDirectionCopy,
   isSustainedPlaybackInteraction,
+  normalizeRotationDirection,
   versionOptionLabel,
 } from '../types/interaction'
 import type { AnnotateState, VersionInfo } from '../types/run'
@@ -40,6 +45,8 @@ import VisionInteractionFields, {
   normalizeVisionConfig,
   VISION_TARGET_HINTS,
 } from '../components/VisionInteractionFields'
+import RotationDirectionFields from '../components/RotationDirectionFields'
+import PinchDirectionFields from '../components/PinchDirectionFields'
 
 const GESTURES = AUTHORING_GESTURE_TYPES.map((value) => ({
   value,
@@ -130,6 +137,10 @@ export default function AnnotatePage() {
           : {}),
         ...(r.hint ? { hint: r.hint } : {}),
         ...(r.pause_video === false ? { pause_video: false } : { pause_video: true }),
+        ...(isRotate(r)
+          ? { rotation_direction: normalizeRotationDirection(r.rotation_direction) }
+          : {}),
+        ...(isPinch(r) ? { pinch_direction: normalizePinchDirection(r.pinch_direction) } : {}),
         ...(['camera_motion', 'camera_continuous'].includes(r.gesture)
           ? {
               vision: normalizeVisionConfig(r.vision, r.gesture),
@@ -155,7 +166,9 @@ export default function AnnotatePage() {
       if (gen !== saveGen.current) return
       skipAutosave.current = true
       setState(data)
-      const nextRows = [...(data.timeline?.interactions || [])].sort(
+      const nextRows = [...(data.timeline?.interactions || [])].map(
+        enforceInteractionTypeRules,
+      ).sort(
         (a, b) => a.gate_at_ms - b.gate_at_ms,
       )
       setRows(nextRows)
@@ -547,6 +560,16 @@ export default function AnnotatePage() {
               ) : null}
               {!selected.custom_action && isContinuousSound(selected) ? (
                 <SoundInteractionFields value={selected} onChange={updateSelected} />
+              ) : null}
+              {!selected.custom_action && isRotate(selected) ? (
+                <RotationDirectionFields
+                  value={selected.rotation_direction}
+                  onChange={(rotation_direction) => updateSelected({ rotation_direction })}
+                />
+              ) : null}
+              {!selected.custom_action && isPinch(selected) ? (
+                <PinchDirectionFields value={selected.pinch_direction}
+                  onChange={(pinch_direction) => updateSelected({ pinch_direction, hint: pinchDirectionCopy(pinch_direction).hint })} />
               ) : null}
               {isSustainedPlaybackInteraction(selected) ? (
                 <Typography.Paragraph type="secondary" style={{ margin: '10px 0 0' }}>

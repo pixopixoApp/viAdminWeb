@@ -69,6 +69,8 @@ let holdChargeJudge = null;
 let holdChargeTimer = null;
 let holdChargePointerId = null;
 let pinchJudge = null;
+let pinchCandidateAt = null;
+let pinchMatched = false;
 const pinchPointers = new Map();
 let circleJudge = null;
 let circlePointerId = null;
@@ -639,6 +641,8 @@ function resetGate() {
   clearInterval(holdChargeTimer);
   holdChargeTimer = null;
   pinchJudge = null;
+  pinchCandidateAt = null;
+  pinchMatched = false;
   pinchPointers.clear();
   circleJudge = null;
   circlePointerId = null;
@@ -736,7 +740,7 @@ function expose(interaction) {
     cueDetail.hidden = false;
   }
   if (interaction.primary.signal === 'pointer.pinch') {
-    pinchJudge = createPinchJudge();
+    pinchJudge = createPinchJudge({ direction: interaction.primary.pinch_direction || 'inward' });
   }
   if (interaction.primary.signal === 'pointer.draw_circle') {
     circleJudge = createCircleJudge();
@@ -792,6 +796,7 @@ surface.addEventListener('pointerdown', (event) => {
     return;
   }
   if (pinchJudge !== null) {
+    if (pinchPointers.size >= 2) return;
     pinchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     surface.setPointerCapture(event.pointerId);
     if (pinchPointers.size === 2) {
@@ -868,7 +873,9 @@ surface.addEventListener('pointermove', (event) => {
     if (pinchPointers.size === 2) {
       const [a, b] = [...pinchPointers.values()];
       const state = pinchJudge.update(Math.hypot(a.x - b.x, a.y - b.y));
-      if (state.done) resolveActive(stagePoint(event));
+      if (state.done) {
+        if (pinchCandidateAt === null) pinchCandidateAt = performance.now();
+      } else if (!pinchMatched) pinchCandidateAt = null;
     }
     return;
   }
@@ -931,8 +938,15 @@ surface.addEventListener('pointerup', (event) => {
     return;
   }
   if (pinchPointers.has(event.pointerId)) {
+    if (pinchCandidateAt !== null && performance.now() - pinchCandidateAt >= 40) pinchMatched = true;
     pinchPointers.delete(event.pointerId);
-    pinchJudge?.reset();
+    if (pinchPointers.size === 0) {
+      const matched = pinchMatched;
+      pinchJudge?.reset();
+      pinchCandidateAt = null;
+      pinchMatched = false;
+      if (matched) resolveActive(stagePoint(event));
+    }
     return;
   }
   if (circlePointerId === event.pointerId) {
@@ -978,6 +992,10 @@ surface.addEventListener('pointerup', (event) => {
 });
 
 surface.addEventListener('pointercancel', () => {
+  pinchPointers.clear();
+  pinchJudge?.reset();
+  pinchCandidateAt = null;
+  pinchMatched = false;
   pointerStart = null;
   scrubbingPointerId = null;
   scrubController?.end();

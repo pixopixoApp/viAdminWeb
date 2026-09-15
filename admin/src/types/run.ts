@@ -140,6 +140,7 @@ export type SimpleStoryPlacement =
 export type SimpleStoryInteraction = Pick<
   import('./interaction').Interaction,
   | 'gesture'
+  | 'pinch_direction'
   | 'hint'
   | 'custom_action'
   | 'action_description'

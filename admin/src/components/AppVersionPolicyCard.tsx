@@ -128,7 +128,7 @@ function PolicyEditor({ platform }: { platform: Platform }) {
             },
           ] : []}
         >
-          <Input placeholder="https://cdn.pixopixo.cn/apps/pixo-v1.0.13.apk" />
+          <Input placeholder="https://media.pixopixo.com/ivapp-media/v1/public/app-releases/android/pixo.apk" />
         </Form.Item>
         <Space size={16} align="start" wrap style={{ width: '100%' }}>
           <Form.Item

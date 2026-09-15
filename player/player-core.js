@@ -143,7 +143,11 @@ export function describeCue(interaction, ordinal) {
   const signal = interaction?.primary?.signal;
   const direction = interaction?.primary?.direction ?? null;
   const directionLabel = DIRECTION_LABELS[direction] ?? '';
-  const hint = SIGNAL_HINTS[signal] ?? null;
+  const hint = signal === 'pointer.pinch'
+    ? (interaction?.primary?.pinch_direction === 'outward'
+      ? { title: '双指向外张开', detail: '两指向外分开' }
+      : { title: '双指向内捏合', detail: '两指向中间收拢' })
+    : SIGNAL_HINTS[signal] ?? null;
   const fill = (text) => text.replaceAll('{dir}', directionLabel);
   const cue = typeof interaction?.cue === 'string' && interaction.cue.trim() !== ''
     ? interaction.cue
@@ -385,11 +389,12 @@ export function createHoldChargeJudge({ chargeMs = HOLD_CHARGE_MS } = {}) {
   });
 }
 
-/** Two-finger pinch: done when the finger distance shrinks to the target ratio. */
-export function createPinchJudge({ targetRatio = 0.6 } = {}) {
+/** Two-finger pinch: only signed travel in the selected direction passes. */
+export function createPinchJudge({ targetRatio = 0.949, direction = 'inward' } = {}) {
   if (!Number.isFinite(targetRatio) || targetRatio <= 0 || targetRatio >= 1) {
     throw new TypeError('targetRatio must be in (0, 1)');
   }
+  if (!['inward', 'outward'].includes(direction)) throw new TypeError('Invalid pinch_direction');
   let startDistance = null;
   return Object.freeze({
     begin(distance) {
@@ -404,7 +409,9 @@ export function createPinchJudge({ targetRatio = 0.6 } = {}) {
         throw new TypeError('distance must be positive');
       }
       const ratio = distance / startDistance;
-      return { ratio, done: ratio <= targetRatio };
+      const travel = (direction === 'outward' ? -1 : 1) * (startDistance - distance);
+      const requiredTravel = Math.max(1.5, Math.min(startDistance * (1 - targetRatio), 5.1));
+      return { ratio, done: travel >= requiredTravel };
     },
     reset() {
       startDistance = null;

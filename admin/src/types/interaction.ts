@@ -15,6 +15,9 @@ export type VisionResolution = {
   evidence?: string
 }
 
+export type RotationDirection = 'clockwise' | 'counterclockwise'
+export type PinchDirection = 'inward' | 'outward'
+
 export type Interaction = {
   gate_at_ms: number
   gate_end_ms?: number
@@ -30,6 +33,8 @@ export type Interaction = {
   pause_video?: boolean
   vision?: VisionConfig
   vision_resolution?: VisionResolution
+  rotation_direction?: RotationDirection
+  pinch_direction?: PinchDirection
 }
 
 export const CONTINUOUS_SWIPE_TYPE = 'continuous_swipe'
@@ -43,6 +48,7 @@ export const CONTINUOUS_BLOW_HINT = '持续吹气至目标音量以播放'
 export const CONTINUOUS_VOICE_TYPE = 'mic_level_continuous'
 export const CONTINUOUS_VOICE_HINT = '保持音调在目标范围内以播放'
 export const CONTINUOUS_SOUND_DEFAULT_TARGET = 'blow_volume'
+export const DEFAULT_ROTATION_DIRECTION: RotationDirection = 'counterclockwise'
 export type ContinuousSoundTarget = 'blow_volume' | 'voice_pitch'
 export const CONTINUOUS_SOUND_TARGET_COPY: Record<ContinuousSoundTarget, {
   label: string
@@ -127,6 +133,28 @@ export function isContinuousSound(value: { gesture?: string } | undefined | null
   return isContinuousBlow(value) || isContinuousVoice(value)
 }
 
+export function isRotate(value: { gesture?: string } | undefined | null) {
+  return value?.gesture === 'rotate'
+}
+
+export function normalizeRotationDirection(value?: string): RotationDirection {
+  return value === 'clockwise' ? 'clockwise' : DEFAULT_ROTATION_DIRECTION
+}
+
+export function isPinch(value: { gesture?: string } | undefined | null) {
+  return value?.gesture === 'pinch'
+}
+
+export function normalizePinchDirection(value?: string): PinchDirection {
+  return value === 'outward' ? 'outward' : 'inward'
+}
+
+export function pinchDirectionCopy(value?: string) {
+  return normalizePinchDirection(value) === 'outward'
+    ? { label: 'Pinch-out · 双指向外张开', hint: '双指向外张开' }
+    : { label: 'Pinch-in · 双指向内捏合', hint: '双指向内捏合' }
+}
+
 export function continuousSoundTarget(
   value: { gesture?: string } | undefined | null,
 ): ContinuousSoundTarget {
@@ -159,18 +187,29 @@ export function isSustainedPlaybackInteraction(
 }
 
 export function enforceInteractionTypeRules(value: Interaction): Interaction {
-  if (!isSustainedPlaybackInteraction(value)) return value
+  const typed: Interaction = { ...value }
+  if (isPinch(typed)) {
+    typed.pinch_direction = normalizePinchDirection(typed.pinch_direction)
+  } else {
+    delete typed.pinch_direction
+  }
+  if (isRotate(typed)) {
+    typed.rotation_direction = normalizeRotationDirection(typed.rotation_direction)
+  } else {
+    delete typed.rotation_direction
+  }
+  if (!isSustainedPlaybackInteraction(typed)) return typed
   const next: Interaction = {
-    ...value,
+    ...typed,
     pause_video: true,
-    hint: isContinuousBlow(value)
+    hint: isContinuousBlow(typed)
       ? CONTINUOUS_BLOW_HINT
-      : isContinuousVoice(value)
+      : isContinuousVoice(typed)
         ? CONTINUOUS_VOICE_HINT
-      : isContinuousTap(value)
+      : isContinuousTap(typed)
         ? CONTINUOUS_TAP_HINT
-        : isCameraContinuous(value)
-          ? cameraContinuousTargetCopy(value.vision?.target).hint
+        : isCameraContinuous(typed)
+          ? cameraContinuousTargetCopy(typed.vision?.target).hint
           : CONTINUOUS_SWIPE_HINT,
   }
   delete next.gate_end_ms
@@ -244,4 +283,5 @@ export type Gate = {
   custom_action?: boolean
   action_description?: string
   vision?: VisionConfig
+  pinch_direction?: PinchDirection
 }

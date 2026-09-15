@@ -12,6 +12,9 @@ import {
   isCameraContinuous,
   isContinuousSound,
   isContinuousTap,
+  isRotate,
+  isPinch,
+  pinchDirectionCopy,
   isSustainedPlaybackInteraction,
 } from '../../types/interaction'
 import type { ClipMeta } from '../../types/run'
@@ -22,6 +25,8 @@ import VisionInteractionFields, {
   normalizeVisionConfig,
   VISION_TARGET_HINTS,
 } from '../VisionInteractionFields'
+import RotationDirectionFields from '../RotationDirectionFields'
+import PinchDirectionFields from '../PinchDirectionFields'
 
 const GESTURES = AUTHORING_GESTURE_TYPES.map((value) => ({
   value,
@@ -236,6 +241,17 @@ export default function ClipEditor({
                   value={selected}
                   disabled={!editing}
                   onChange={onUpdateSelected}
+                />
+              ) : null}
+              {!selected.custom_action && isPinch(selected) ? (
+                <PinchDirectionFields value={selected.pinch_direction} disabled={!editing}
+                  onChange={(pinch_direction) => onUpdateSelected({ pinch_direction, hint: pinchDirectionCopy(pinch_direction).hint })} />
+              ) : null}
+              {!selected.custom_action && isRotate(selected) ? (
+                <RotationDirectionFields
+                  value={selected.rotation_direction}
+                  disabled={!editing}
+                  onChange={(rotation_direction) => onUpdateSelected({ rotation_direction })}
                 />
               ) : null}
               {isSustainedPlaybackInteraction(selected) ? (

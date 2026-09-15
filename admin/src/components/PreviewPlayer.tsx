@@ -19,7 +19,10 @@ import {
   isContinuousSwipe,
   isContinuousTap,
   isSustainedPlaybackInteraction,
+  isPinch,
+  pinchDirectionCopy,
 } from '../types/interaction'
+import { PinchDirectionGuide } from './PinchDirectionFields'
 export { GESTURE_LABEL }
 
 type Props = {
@@ -62,11 +65,13 @@ type ContinuousPointerState = {
 
 function actionLabel(gate: Gate) {
   if (gate.custom_action && gate.action_description) return gate.action_description
+  if (isPinch(gate)) return pinchDirectionCopy(gate.pinch_direction).label
   if (gate.gesture && GESTURE_LABEL[gate.gesture]) return GESTURE_LABEL[gate.gesture]
   return gate.gesture || '互动'
 }
 
 function hintLabel(gate: Gate) {
+  if (isPinch(gate) && (!gate.hint || gate.hint === 'Pinch' || gate.hint === '双指捏合')) return pinchDirectionCopy(gate.pinch_direction).hint
   return gate.hint || gate.cue || actionLabel(gate)
 }
 
@@ -841,9 +846,10 @@ export default function PreviewPlayer({
                   <div className="preview-gate-body">
                     <div className="preview-gate-action">动作：{actionLabel(active)}</div>
                     <strong className="preview-gate-hint">{hintLabel(active)}</strong>
+                    {isPinch(active) ? <PinchDirectionGuide value={active.pinch_direction} /> : null}
                     <div className="preview-gate-sub">点击画面任意处继续</div>
                   </div>
-                  <Button type="primary" size="small" onClick={advance}>继续</Button>
+                  <Button type="primary" size="small" onClick={advance}>{isPinch(active) ? `模拟${pinchDirectionCopy(active.pinch_direction).hint}` : '继续'}</Button>
                 </div>
               ) : null}
             </>

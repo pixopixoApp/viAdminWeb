@@ -9,7 +9,11 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { storiesApi, runsApi, accountsApi } from '../services/api'
 import {
   enforceInteractionTypeRules,
+  isRotate,
+  isPinch,
+  normalizePinchDirection,
   isSustainedPlaybackInteraction,
+  normalizeRotationDirection,
   type Interaction,
   type SaveStatus,
 } from '../types/interaction'
@@ -57,6 +61,10 @@ function serializeInteraction(row: Interaction) {
       : {}),
     ...(row.hint ? { hint: row.hint } : {}),
     ...(row.pause_video === false ? { pause_video: false } : { pause_video: true }),
+    ...(isRotate(row)
+      ? { rotation_direction: normalizeRotationDirection(row.rotation_direction) }
+      : {}),
+    ...(isPinch(row) ? { pinch_direction: normalizePinchDirection(row.pinch_direction) } : {}),
     ...(['camera_motion', 'camera_continuous'].includes(row.gesture)
       ? {
           vision: normalizeVisionConfig(row.vision, row.gesture),
