@@ -24,15 +24,7 @@ export default function VersionManager({
   if (versionInfos.length === 0) return null
 
   return (
-    <div
-      style={{
-        marginBottom: 16,
-        padding: '10px 14px',
-        background: '#fff',
-        border: '1px solid #f0f0f0',
-        borderRadius: 8,
-      }}
-    >
+    <div className="editor-version-bar version-result-bar">
       <Space size="middle" wrap>
         <Typography.Text strong>版本</Typography.Text>
         <Select

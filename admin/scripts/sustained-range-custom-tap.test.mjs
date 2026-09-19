@@ -12,10 +12,22 @@ const transformed = await transformWithEsbuild(interactionSource, interactionUrl
 const encoded = Buffer.from(transformed.code).toString('base64')
 const interaction = await import(`data:text/javascript;base64,${encoded}`)
 
-const editorSources = await Promise.all([
+const entrySources = await Promise.all([
   readFile(new URL('../src/pages/AnnotatePage.tsx', import.meta.url), 'utf8'),
   readFile(new URL('../src/components/story-edit/ClipEditor.tsx', import.meta.url), 'utf8'),
 ])
+const inspectorSource = await readFile(
+  new URL('../src/components/editor/InteractionInspector.tsx', import.meta.url),
+  'utf8',
+)
+const workspaceSource = await readFile(
+  new URL('../src/components/editor/InteractionEditorWorkspace.tsx', import.meta.url),
+  'utf8',
+)
+const playerSource = await readFile(
+  new URL('../src/components/PreviewPlayer.tsx', import.meta.url),
+  'utf8',
+)
 
 test('sustained ranges end at the earliest configured boundary', () => {
   const gate = { gesture: 'continuous_tap', gate_at_ms: 0, gate_end_ms: 8000 }
@@ -35,12 +47,26 @@ test('custom tap count is operator-authored and clamped to one through ninety-ni
   assert.equal(interaction.enforceInteractionTypeRules({ gesture: 'tap', tap_count: 7 }).tap_count, undefined)
 })
 
-test('both editors expose optional end time and custom tap count', () => {
-  for (const source of editorSources) {
-    assert.match(source, /可选结束 \(s\)/)
-    assert.match(source, /实际结束：/)
-    assert.match(source, /目标点击次数/)
-    assert.match(source, /gate_end_ms/)
-    assert.match(source, /tap_count/)
+test('both authoring entries use the shared professional editor', () => {
+  for (const source of entrySources) {
+    assert.match(source, /InteractionEditorWorkspace/)
+    assert.match(source, /InteractionInspector/)
   }
+})
+
+test('shared inspector distinguishes configured and effective ranges', () => {
+  assert.match(inspectorSource, /期望结束/)
+  assert.match(inspectorSource, /响应结束/)
+  assert.match(inspectorSource, /实际结束：/)
+  assert.match(inspectorSource, /目标点击次数/)
+  assert.match(inspectorSource, /gate_end_ms/)
+  assert.match(inspectorSource, /tap_count/)
+})
+
+test('workspace supports click and drag authoring with clipped range feedback', () => {
+  assert.match(workspaceSource, /draggable=\{editing\}/)
+  assert.match(workspaceSource, /application\/x-pixo-interaction/)
+  assert.match(playerSource, /editor-interaction-overflow/)
+  assert.match(playerSource, /beginGateDrag/)
+  assert.match(playerSource, /onAddInteractionAt/)
 })

@@ -38,6 +38,10 @@ export type Interaction = {
   pinch_direction?: PinchDirection
 }
 
+export type InteractionPatch = Omit<Partial<Interaction>, 'gate_end_ms'> & {
+  gate_end_ms?: number | null
+}
+
 export const CONTINUOUS_SWIPE_TYPE = 'continuous_swipe'
 export const CONTINUOUS_SWIPE_HINT = '持续往复滑动以播放'
 export const CONTINUOUS_TAP_TYPE = 'continuous_tap'

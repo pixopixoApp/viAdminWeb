@@ -37,6 +37,8 @@ export default function AppLayout() {
   const { mode, toggle } = useTheme()
   const dark = mode === 'dark'
   const selected = selectedMenuKey(location.pathname)
+  const immersiveEditor = location.pathname.startsWith('/stories/')
+    || /^\/runs\/[^/]+\/annotate\//.test(location.pathname)
 
   const menuItems = getAccessibleMenu(me?.role).map((item) => ({
     key: item.key,
@@ -45,8 +47,8 @@ export default function AppLayout() {
   }))
 
   return (
-    <Layout className="app-shell" style={{ minHeight: '100vh' }}>
-      <Sider className="app-sider" width={232} breakpoint="lg" collapsedWidth={64}>
+    <Layout className={`app-shell${immersiveEditor ? ' app-shell-editor' : ''}`} style={{ minHeight: '100vh' }}>
+      {!immersiveEditor ? <Sider className="app-sider" width={232} breakpoint="lg" collapsedWidth={64}>
         <div className="sider-brand">
           <Link to="/" className="sider-brand-link" title="pixopixo 管理后台">
             <BrandMark size={30} variant={dark ? 'dark' : 'light'} className="sider-brand-mark" />
@@ -57,9 +59,9 @@ export default function AppLayout() {
           </Link>
         </div>
         <Menu className="app-nav" theme={dark ? 'dark' : 'light'} mode="inline" selectedKeys={[selected]} items={menuItems} />
-      </Sider>
+      </Sider> : null}
       <Layout className="app-main">
-        <Header
+        {!immersiveEditor ? <Header
           className="app-header"
           style={{ borderBottom: `1px solid ${token.colorBorderSecondary}` }}
         >
@@ -100,8 +102,8 @@ export default function AppLayout() {
               退出
             </Button>
           </div>
-        </Header>
-        <Content className="app-content">
+        </Header> : null}
+        <Content className={`app-content${immersiveEditor ? ' app-content-editor' : ''}`}>
           <Outlet />
         </Content>
       </Layout>

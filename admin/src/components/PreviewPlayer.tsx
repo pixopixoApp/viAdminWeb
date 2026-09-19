@@ -28,6 +28,10 @@ import {
 import { PinchDirectionGuide } from './PinchDirectionFields'
 export { GESTURE_LABEL }
 
+type GatePatch = Omit<Partial<Gate>, 'gate_end_ms'> & {
+  gate_end_ms?: number | null
+}
+
 type Props = {
   runId: string
   /** Browser-loadable media for a published item that has no Run workspace. */
@@ -41,6 +45,9 @@ type Props = {
   onSelectGate?: (index: number) => void
   onPlayheadChange?: (ms: number) => void
   onAddAtPlayhead?: () => void
+  workspace?: boolean
+  onAddInteractionAt?: (gestureValue: string, ms: number) => void
+  onUpdateGate?: (index: number, patch: GatePatch) => void
 }
 
 const FRAME_MS = 33
@@ -89,6 +96,9 @@ export default function PreviewPlayer({
   onSelectGate,
   onPlayheadChange,
   onAddAtPlayhead,
+  workspace = false,
+  onAddInteractionAt,
+  onUpdateGate,
 }: Props) {
   const annotate = mode === 'annotate'
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -105,6 +115,12 @@ export default function PreviewPlayer({
   const [continuousDriving, setContinuousDriving] = useState(false)
   const [continuousTapPulse, setContinuousTapPulse] = useState(0)
   const [multiTapProgress, setMultiTapProgress] = useState(0)
+  const [timelineZoom, setTimelineZoom] = useState(1)
+  const [timelineDraft, setTimelineDraft] = useState<{
+    index: number
+    gate_at_ms: number
+    gate_end_ms?: number
+  } | null>(null)
   const continuousPointerRef = useRef<ContinuousPointerState | null>(null)
   const continuousIdleTimerRef = useRef<number | null>(null)
   const continuousSessionRef = useRef(0)
@@ -117,6 +133,20 @@ export default function PreviewPlayer({
   const sorted = useMemo(
     () => [...gates].sort((a, b) => a.gate_at_ms - b.gate_at_ms),
     [gates],
+  )
+  const timelineRows = useMemo(
+    () => sorted.map((gate, gateIndex) => (
+      timelineDraft?.index === gateIndex
+        ? {
+            ...gate,
+            gate_at_ms: timelineDraft.gate_at_ms,
+            ...(timelineDraft.gate_end_ms === undefined
+              ? { gate_end_ms: undefined }
+              : { gate_end_ms: timelineDraft.gate_end_ms }),
+          }
+        : gate
+    )),
+    [sorted, timelineDraft],
   )
   const active = pausedAtGate ? sorted[index] : null
   const activeSustained = pausedAtGate && isSustainedPlaybackInteraction(active)
@@ -131,6 +161,47 @@ export default function PreviewPlayer({
   const activeCameraCopy = cameraContinuousTargetCopy(active?.vision?.target)
   const totalMs =
     mediaDuration || durationMs || (sorted.length ? sorted[sorted.length - 1].gate_at_ms : 1)
+  const selectedGateAtMs = selectedIndex == null ? undefined : sorted[selectedIndex]?.gate_at_ms
+
+  useEffect(() => {
+    if (!workspace || selectedIndex == null || selectedGateAtMs == null) return
+    const video = videoRef.current
+    if (!video) return
+    const gate = sorted[selectedIndex]
+    if (!gate) return
+    resetContinuousControl(true)
+    setStarted(true)
+    setEnded(false)
+    setIndex(selectedIndex)
+    setPausedAtGate(true)
+    video.currentTime = gate.gate_at_ms / 1000
+    setProgress(gate.gate_at_ms)
+    onPlayheadChange?.(gate.gate_at_ms)
+    // Selecting a row is an explicit editor navigation action.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace, selectedIndex, selectedGateAtMs])
+
+  useEffect(() => {
+    if (!workspace) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      if (event.key === ' ') {
+        event.preventDefault()
+        togglePlay()
+        return
+      }
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault()
+        const direction = event.key === 'ArrowLeft' ? -1 : 1
+        stepBy(direction * (event.shiftKey ? SECOND_MS : FRAME_MS))
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+    // Playback helpers are function declarations bound to the latest render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspace, progress, playing, activeSustained])
 
   useEffect(() => {
     setMultiTapProgress(0)
@@ -697,8 +768,7 @@ export default function PreviewPlayer({
     else video.pause()
   }
 
-  function seekToGate(gateIndex: number, event: MouseEvent) {
-    event.stopPropagation()
+  function selectGate(gateIndex: number) {
     const video = videoRef.current
     const gate = sorted[gateIndex]
     if (!video || !gate) return
@@ -714,10 +784,125 @@ export default function PreviewPlayer({
     if (annotate) onSelectGate?.(gateIndex)
   }
 
+  function seekToGate(gateIndex: number, event: MouseEvent) {
+    event.stopPropagation()
+    selectGate(gateIndex)
+  }
+
   function msFromRailEvent(event: MouseEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect()
     const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(rect.width, 1)))
     return ratio * totalMs
+  }
+
+  function timelineMsFromClient(clientX: number, rail: HTMLElement) {
+    const rect = rail.getBoundingClientRect()
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / Math.max(rect.width, 1)))
+    return ratio * totalMs
+  }
+
+  function snapTimelineMs(
+    rawMs: number,
+    rail: HTMLElement,
+    gateIndex: number,
+    disableSnap: boolean,
+  ) {
+    const clamped = Math.max(0, Math.min(totalMs, rawMs))
+    if (disableSnap) return Math.round(clamped)
+    const threshold = (totalMs / Math.max(rail.getBoundingClientRect().width, 1)) * 7
+    const candidates = [0, totalMs, progress]
+    timelineRows.forEach((gate, index) => {
+      if (index !== gateIndex) candidates.push(gate.gate_at_ms)
+      if (index !== gateIndex && typeof gate.gate_end_ms === 'number') {
+        candidates.push(gate.gate_end_ms)
+      }
+    })
+    const nearest = candidates.reduce((best, candidate) => (
+      Math.abs(candidate - clamped) < Math.abs(best - clamped) ? candidate : best
+    ), candidates[0] ?? clamped)
+    if (Math.abs(nearest - clamped) <= threshold) return Math.round(nearest)
+    return Math.round(clamped / FRAME_MS) * FRAME_MS
+  }
+
+  function beginGateDrag(
+    event: ReactPointerEvent<HTMLElement>,
+    gateIndex: number,
+    kind: 'start' | 'end' | 'body',
+  ) {
+    if (!workspace || !onUpdateGate || event.button !== 0) return
+    const rail = event.currentTarget.closest('.preview-rail') as HTMLElement | null
+    const gate = timelineRows[gateIndex]
+    if (!rail || !gate) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (annotate) onSelectGate?.(gateIndex)
+
+    const sustained = isSustainedPlaybackInteraction(gate)
+    const minimumSpan = sustained ? 1 : 0
+    const automaticEnd = sustainedPlaybackEndMs(
+      gate,
+      timelineRows[gateIndex + 1]?.gate_at_ms,
+      totalMs,
+    ) ?? totalMs
+    const originalStart = gate.gate_at_ms
+    const originalExplicitEnd = gate.gate_end_ms
+    const visualEnd = originalExplicitEnd ?? automaticEnd
+    const pointerStartMs = timelineMsFromClient(event.clientX, rail)
+
+    setTimelineDraft({
+      index: gateIndex,
+      gate_at_ms: originalStart,
+      ...(originalExplicitEnd === undefined ? {} : { gate_end_ms: originalExplicitEnd }),
+    })
+
+    let finalStart = originalStart
+    let finalEnd = originalExplicitEnd
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const pointerMs = snapTimelineMs(
+        timelineMsFromClient(moveEvent.clientX, rail),
+        rail,
+        gateIndex,
+        moveEvent.altKey,
+      )
+      if (kind === 'start') {
+        const maximum = (originalExplicitEnd ?? visualEnd) - minimumSpan
+        finalStart = Math.max(0, Math.min(maximum, pointerMs))
+        finalEnd = originalExplicitEnd
+      } else if (kind === 'end') {
+        finalStart = originalStart
+        finalEnd = Math.max(originalStart + minimumSpan, Math.min(totalMs, pointerMs))
+      } else {
+        const delta = pointerMs - pointerStartMs
+        const span = originalExplicitEnd == null ? 0 : originalExplicitEnd - originalStart
+        finalStart = Math.max(0, Math.min(totalMs - span, originalStart + delta))
+        finalEnd = originalExplicitEnd == null ? undefined : finalStart + span
+      }
+      setTimelineDraft({
+        index: gateIndex,
+        gate_at_ms: Math.round(finalStart),
+        ...(finalEnd === undefined ? {} : { gate_end_ms: Math.round(finalEnd) }),
+      })
+    }
+
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      const conflicts = sorted.some((candidate, index) => (
+        index !== gateIndex && candidate.gate_at_ms === Math.round(finalStart)
+      ))
+      setTimelineDraft(null)
+      if (conflicts) return
+      onUpdateGate(gateIndex, {
+        gate_at_ms: Math.round(finalStart),
+        ...(kind === 'end' || originalExplicitEnd !== undefined
+          ? { gate_end_ms: finalEnd == null ? null : Math.round(finalEnd) }
+          : {}),
+      })
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
   }
 
   function onRailPointerDown(event: MouseEvent<HTMLDivElement>) {
@@ -761,7 +946,7 @@ export default function PreviewPlayer({
   }
 
   return (
-    <div className="preview-wrap">
+    <div className={`preview-wrap${workspace ? ' preview-wrap-workspace' : ''}`}>
       <div className="preview-stage" onClick={togglePlay} role="button" tabIndex={0}>
         <div className="preview-phone">
           <video
@@ -854,9 +1039,9 @@ export default function PreviewPlayer({
                   {activeCameraContinuous
                     ? '✦'
                     : activeContinuousBlow
-                      ? '💨'
+                      ? '≈'
                       : activeContinuousVoice
-                        ? '🎙'
+                        ? '◉'
                       : activeContinuousHold
                         ? '●'
                       : activeContinuousTap ? '●' : '↔'}
@@ -990,6 +1175,193 @@ export default function PreviewPlayer({
         ) : null}
       </div>
 
+      {workspace ? (
+        <div className="preview-timeline preview-timeline-workspace" onClick={(e) => e.stopPropagation()}>
+          <div className="editor-timeline-toolbar">
+            <div>
+              <strong>时间轴</strong>
+              <span>视频轨 + 互动轨</span>
+            </div>
+            <div className="editor-timeline-zoom">
+              <span>适应</span>
+              <input
+                type="range"
+                aria-label="时间轴缩放"
+                min={1}
+                max={4}
+                step={0.25}
+                value={timelineZoom}
+                onChange={(event) => setTimelineZoom(Number(event.target.value))}
+              />
+              <span>{Math.round(timelineZoom * 100)}%</span>
+            </div>
+          </div>
+          <div className="editor-timeline-scroll">
+            <div className="editor-timeline-canvas" style={{ width: `${timelineZoom * 100}%` }}>
+              <div className="editor-time-ruler" aria-hidden="true">
+                {Array.from({ length: Math.max(10, Math.ceil(timelineZoom * 10)) + 1 }, (_, tick) => {
+                  const count = Math.max(10, Math.ceil(timelineZoom * 10))
+                  const tickMs = totalMs * (tick / count)
+                  return (
+                    <span key={tick} style={{ left: `${(tick / count) * 100}%` }}>
+                      {(tickMs / 1000).toFixed(timelineZoom >= 2 ? 1 : 0)}s
+                    </span>
+                  )
+                })}
+              </div>
+              <div className="editor-video-track">
+                <span className="editor-track-label">视频</span>
+                <div className="editor-video-clip">
+                  <span>{clipId ? '当前片段' : '主视频'}</span>
+                  <small>{(totalMs / 1000).toFixed(2)}s</small>
+                </div>
+              </div>
+              <div
+                className="preview-rail editor-interaction-track"
+                onPointerDown={onRailPointerDown}
+                onDragOver={(event) => {
+                  if (!onAddInteractionAt) return
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'copy'
+                }}
+                onDrop={(event) => {
+                  if (!onAddInteractionAt) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  const gestureValue = event.dataTransfer.getData('application/x-pixo-interaction')
+                    || event.dataTransfer.getData('text/plain')
+                  if (!gestureValue) return
+                  const raw = timelineMsFromClient(event.clientX, event.currentTarget)
+                  onAddInteractionAt(
+                    gestureValue,
+                    snapTimelineMs(raw, event.currentTarget, -1, event.altKey),
+                  )
+                }}
+                role="slider"
+                aria-label="互动时间轴与播放进度"
+                aria-valuemin={0}
+                aria-valuemax={totalMs}
+                aria-valuenow={Math.round(progress)}
+              >
+                <span className="editor-track-label">互动</span>
+                <div
+                  className="editor-playhead"
+                  style={{ left: `${Math.min(100, (progress / Math.max(totalMs, 1)) * 100)}%` }}
+                  aria-hidden="true"
+                />
+                {timelineRows.map((gate, gateIndex) => {
+                  const sustained = isSustainedPlaybackInteraction(gate)
+                  const effectiveEnd = sustained
+                    ? sustainedPlaybackEndMs(
+                        gate,
+                        timelineRows[gateIndex + 1]?.gate_at_ms,
+                        totalMs,
+                      ) ?? totalMs
+                    : gate.gate_end_ms
+                  if (typeof effectiveEnd !== 'number' || effectiveEnd <= gate.gate_at_ms) return null
+                  const left = (gate.gate_at_ms / Math.max(totalMs, 1)) * 100
+                  const right = (Math.min(totalMs, effectiveEnd) / Math.max(totalMs, 1)) * 100
+                  const selected = selectedIndex === gateIndex
+                  const automatic = sustained && typeof gate.gate_end_ms !== 'number'
+                  return (
+                    <div
+                      key={`editor-range-${gate.gate_at_ms}-${gateIndex}`}
+                      className={`editor-interaction-range${sustained ? ' is-sustained' : ' is-response'}${automatic ? ' is-automatic' : ''}${selected ? ' is-selected' : ''}`}
+                      style={{ left: `${left}%`, width: `${Math.max(0, right - left)}%` }}
+                      title={`${actionLabel(gate)} · ${(gate.gate_at_ms / 1000).toFixed(3)}s → ${(effectiveEnd / 1000).toFixed(3)}s`}
+                      onPointerDown={(event) => beginGateDrag(event, gateIndex, 'body')}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        selectGate(gateIndex)
+                      }}
+                    >
+                      <span>{actionLabel(gate)}</span>
+                      {automatic ? <small>自动</small> : null}
+                      {selected ? (
+                        <>
+                          <button
+                            type="button"
+                            className="editor-range-handle is-start"
+                            aria-label="拖动互动开始时间"
+                            onPointerDown={(event) => beginGateDrag(event, gateIndex, 'start')}
+                          />
+                          <button
+                            type="button"
+                            className="editor-range-handle is-end"
+                            aria-label="拖动互动结束时间"
+                            onPointerDown={(event) => beginGateDrag(event, gateIndex, 'end')}
+                          />
+                        </>
+                      ) : null}
+                    </div>
+                  )
+                })}
+                {timelineRows.map((gate, gateIndex) => {
+                  if (!isSustainedPlaybackInteraction(gate)) return null
+                  const effectiveEnd = sustainedPlaybackEndMs(
+                    gate,
+                    timelineRows[gateIndex + 1]?.gate_at_ms,
+                    totalMs,
+                  ) ?? totalMs
+                  if (typeof gate.gate_end_ms !== 'number' || gate.gate_end_ms <= effectiveEnd) return null
+                  const left = (effectiveEnd / Math.max(totalMs, 1)) * 100
+                  const right = (Math.min(totalMs, gate.gate_end_ms) / Math.max(totalMs, 1)) * 100
+                  if (right <= left) return null
+                  return (
+                    <div
+                      key={`editor-overflow-${gate.gate_at_ms}-${gateIndex}`}
+                      className="editor-interaction-overflow"
+                      style={{ left: `${left}%`, width: `${right - left}%` }}
+                      title={`期望结束 ${(gate.gate_end_ms / 1000).toFixed(3)}s，实际在 ${(effectiveEnd / 1000).toFixed(3)}s 截断`}
+                    >
+                      <span>已截断</span>
+                    </div>
+                  )
+                })}
+                {timelineRows.map((gate, gateIndex) => {
+                  const left = `${Math.min(100, (gate.gate_at_ms / Math.max(totalMs, 1)) * 100)}%`
+                  const state = nodeState(gateIndex)
+                  const selected = selectedIndex === gateIndex
+                  return (
+                    <span
+                      key={`editor-node-${gate.gate_at_ms}-${gateIndex}`}
+                      className="editor-node-anchor"
+                      style={{ left }}
+                    >
+                      <button
+                        type="button"
+                        className={`preview-node editor-interaction-node preview-node-${state}`}
+                        title={`${actionLabel(gate)} · ${(gate.gate_at_ms / 1000).toFixed(3)}s`}
+                        onPointerDown={(event) => beginGateDrag(event, gateIndex, 'start')}
+                        onClick={(event) => seekToGate(gateIndex, event)}
+                      >
+                        <span>{String(gateIndex + 1).padStart(2, '0')}</span>
+                      </button>
+                      {selected
+                        && !isSustainedPlaybackInteraction(gate)
+                        && typeof gate.gate_end_ms !== 'number' ? (
+                          <button
+                            type="button"
+                            className="editor-create-end-handle"
+                            title="拖动创建响应结束时间"
+                            aria-label="拖动创建响应结束时间"
+                            onPointerDown={(event) => beginGateDrag(event, gateIndex, 'end')}
+                          />
+                        ) : null}
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+          <div className="editor-timeline-legend">
+            <span><i className="is-sustained" />持续区间</span>
+            <span><i className="is-response" />响应窗口</span>
+            <span><i className="is-overflow" />超出但不生效</span>
+            <span>拖动时按 Alt 关闭吸附</span>
+          </div>
+        </div>
+      ) : (
       <div className="preview-timeline" onClick={(e) => e.stopPropagation()}>
         <div className="preview-timeline-head">
           <span>时间轴 · {sorted.length} 个节点</span>
@@ -1076,6 +1448,7 @@ export default function PreviewPlayer({
           })}
         </ol>
       </div>
+      )}
     </div>
   )
 }

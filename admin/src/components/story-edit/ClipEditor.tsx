@@ -1,40 +1,10 @@
-import { Button, Card, Empty, Input, InputNumber, Space, Tag, Typography } from 'antd'
-import type { Interaction } from '../../types/interaction'
-import {
-  AUTHORING_GESTURE_TYPES,
-  CAMERA_CONTINUOUS_DEFAULT_TARGET,
-  CONTINUOUS_SOUND_AUTHORING_TYPE,
-  cameraContinuousTargetCopy,
-  continuousSoundInteractionPatch,
-  continuousSoundTarget,
-  continuousSoundTargetCopy,
-  gestureAuthoringLabel,
-  isCameraContinuous,
-  isContinuousSound,
-  isContinuousTap,
-  isContinuousHold,
-  isMultiTap,
-  isRotate,
-  isPinch,
-  pinchDirectionCopy,
-  isSustainedPlaybackInteraction,
-  sustainedPlaybackEndMs,
-} from '../../types/interaction'
+import { Card, Empty, Input, Typography } from 'antd'
+import type { ReactNode } from 'react'
+import type { Interaction, InteractionPatch } from '../../types/interaction'
+import { isSustainedPlaybackInteraction } from '../../types/interaction'
 import type { ClipMeta } from '../../types/run'
-import ClipOutcomesEditor from '../ClipOutcomesEditor'
-import PreviewPlayer from '../PreviewPlayer'
-import SoundInteractionFields from '../SoundInteractionFields'
-import VisionInteractionFields, {
-  normalizeVisionConfig,
-  VISION_TARGET_HINTS,
-} from '../VisionInteractionFields'
-import RotationDirectionFields from '../RotationDirectionFields'
-import PinchDirectionFields from '../PinchDirectionFields'
-
-const GESTURES = AUTHORING_GESTURE_TYPES.map((value) => ({
-  value,
-  label: gestureAuthoringLabel(value),
-}))
+import InteractionEditorWorkspace from '../editor/InteractionEditorWorkspace'
+import InteractionInspector from '../editor/InteractionInspector'
 
 type Props = {
   runId: string
@@ -43,18 +13,27 @@ type Props = {
   durationMs: number | undefined
   editing: boolean
   selectedIndex: number | null
-  onSelectIndex: (i: number | null) => void
+  playheadMs: number
+  onSelectIndex: (index: number | null) => void
   onPlayheadChange: (ms: number) => void
-  onAddAtPlayhead: () => void
-  onUpdateSelected: (patch: Partial<Interaction> & { gate_end_ms?: number | null }) => void
+  onAddInteractionAt: (gestureValue: string, ms: number) => void
+  onUpdateInteractionAt: (
+    index: number,
+    patch: InteractionPatch,
+  ) => void
+  onUpdateSelected: (patch: InteractionPatch) => void
   onRemoveSelected: () => void
   clipMeta: ClipMeta[]
   note: string
-  onNoteChange: (v: string) => void
+  onNoteChange: (value: string) => void
   showOutcomes?: boolean
   branchInteractionIndex?: number | null
-  previewTitle?: string
-  editorTitle?: string
+  contextTitle?: string
+  contextPanel?: ReactNode
+  canUndo?: boolean
+  canRedo?: boolean
+  onUndo?: () => void
+  onRedo?: () => void
 }
 
 export default function ClipEditor({
@@ -64,9 +43,11 @@ export default function ClipEditor({
   durationMs,
   editing,
   selectedIndex,
+  playheadMs,
   onSelectIndex,
   onPlayheadChange,
-  onAddAtPlayhead,
+  onAddInteractionAt,
+  onUpdateInteractionAt,
   onUpdateSelected,
   onRemoveSelected,
   clipMeta,
@@ -74,292 +55,80 @@ export default function ClipEditor({
   onNoteChange,
   showOutcomes = true,
   branchInteractionIndex = null,
-  previewTitle = '标注预览',
-  editorTitle = '选中互动',
+  contextTitle = '片段 / 流程',
+  contextPanel,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
 }: Props) {
-  const selected = selectedIndex != null ? rows[selectedIndex] : null
-  const selectedIsBranch =
-    selectedIndex != null &&
-    selectedIndex === branchInteractionIndex &&
-    !isSustainedPlaybackInteraction(selected)
-  const selectedNextGate = selectedIndex != null ? rows[selectedIndex + 1]?.gate_at_ms : undefined
-  const selectedEffectiveEnd = selected && isSustainedPlaybackInteraction(selected)
-    ? sustainedPlaybackEndMs(selected, selectedNextGate, durationMs)
-    : undefined
-  const selectedEndClipped = selected && typeof selected.gate_end_ms === 'number'
-    && typeof selectedEffectiveEnd === 'number'
-    && selected.gate_end_ms > selectedEffectiveEnd
+  const selected = selectedIndex == null ? null : rows[selectedIndex] || null
+  const selectedIsBranch = selectedIndex != null
+    && selectedIndex === branchInteractionIndex
+    && !isSustainedPlaybackInteraction(selected)
+  const selectedNextGate = selectedIndex == null ? undefined : rows[selectedIndex + 1]?.gate_at_ms
 
   if (!activeClipId) {
-    return <Card className="page-card"><Empty description="请先点击上方主片段 A 卡片上传视频" /></Card>
+    return <Card className="page-card"><Empty description="请先上传或选择一个视频片段" /></Card>
   }
 
-  return (
+  const context = (
     <>
-      <Card className="page-card" title={previewTitle} size="small">
-        <PreviewPlayer
-          runId={runId}
-          clipId={activeClipId}
-          gates={rows}
-          durationMs={durationMs}
-          mode={editing ? 'annotate' : 'preview'}
-          selectedIndex={selectedIndex}
-          onSelectGate={onSelectIndex}
-          onPlayheadChange={onPlayheadChange}
-          onAddAtPlayhead={editing ? onAddAtPlayhead : undefined}
-        />
-      </Card>
-
-      <Card
-        className="page-card"
-        title={editorTitle}
-        size="small"
-        extra={selectedIsBranch ? <Tag color="success">当前分支挑战</Tag> : null}
-      >
-        {!selected ? (
-          <Empty description="先在进度条加点或选中一个互动点" />
-        ) : (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Space wrap>
-              <Typography.Text type="secondary">时刻 (s)</Typography.Text>
-              <InputNumber
-                min={0}
-                step={0.033}
-                precision={3}
-                disabled={!editing}
-                value={Number((selected.gate_at_ms / 1000).toFixed(3))}
-                onChange={(n) =>
-                  onUpdateSelected({ gate_at_ms: Math.max(0, Math.round(Number(n || 0) * 1000)) })
-                }
-              />
-              {isSustainedPlaybackInteraction(selected) ? (
-                <>
-                  <Typography.Text type="secondary">可选结束 (s)</Typography.Text>
-                  <InputNumber
-                    min={Number(((selected.gate_at_ms + 1) / 1000).toFixed(3))}
-                    step={0.033}
-                    precision={3}
-                    disabled={!editing}
-                    value={typeof selected.gate_end_ms === 'number'
-                      ? Number((selected.gate_end_ms / 1000).toFixed(3))
-                      : null}
-                    placeholder="下一节点/片尾"
-                    onChange={(n) => onUpdateSelected({
-                      gate_end_ms: n == null
-                        ? undefined
-                        : Math.max(selected.gate_at_ms + 1, Math.round(Number(n) * 1000)),
-                    })}
-                  />
-                  <Typography.Text type={selectedEndClipped ? 'warning' : 'secondary'}>
-                    实际结束：{typeof selectedEffectiveEnd === 'number'
-                      ? `${(selectedEffectiveEnd / 1000).toFixed(3)}s`
-                      : '视频结束'}{selectedEndClipped ? '（已被下一节点或片尾截断）' : ''}
-                  </Typography.Text>
-                </>
-              ) : selectedIsBranch ? (
-                <Typography.Text type="secondary">
-                  响应时间由上方分支挑战右侧统一设置
-                </Typography.Text>
-              ) : (
-                <>
-                  <Typography.Text type="secondary">结束 (s)</Typography.Text>
-                  <InputNumber
-                    min={Number((selected.gate_at_ms / 1000).toFixed(3))}
-                    step={0.033}
-                    precision={3}
-                    disabled={!editing}
-                    value={
-                      typeof selected.gate_end_ms === 'number'
-                        ? Number((selected.gate_end_ms / 1000).toFixed(3))
-                        : null
-                    }
-                    onChange={(n) =>
-                      onUpdateSelected({
-                        gate_end_ms:
-                          n == null
-                            ? undefined
-                            : Math.max(selected.gate_at_ms, Math.round(Number(n) * 1000)),
-                      })
-                    }
-                  />
-                </>
-              )}
-              {editing ? (
-                <Button size="small" danger onClick={onRemoveSelected}>
-                  删除此点
-                </Button>
-              ) : null}
-            </Space>
-
-            <div>
-              <Typography.Text type="secondary">互动动作</Typography.Text>
-              <div className="gesture-grid" style={{ marginTop: 8 }}>
-                {GESTURES.map((g) => (
-                  <button
-                    key={g.value}
-                    type="button"
-                    disabled={!editing}
-                    className={
-                      !selected.custom_action && (
-                        g.value === CONTINUOUS_SOUND_AUTHORING_TYPE
-                          ? isContinuousSound(selected)
-                          : selected.gesture === g.value
-                      ) ? 'on' : undefined
-                    }
-                    onClick={() =>
-                      onUpdateSelected({
-                        ...(g.value === CONTINUOUS_SOUND_AUTHORING_TYPE
-                          ? continuousSoundInteractionPatch(continuousSoundTarget(selected))
-                          : { gesture: g.value }),
-                        custom_action: false,
-                        action_description: undefined,
-                        ...(['camera_motion', 'camera_continuous'].includes(g.value)
-                          ? {
-                              vision: normalizeVisionConfig(undefined, g.value),
-                              vision_resolution: { target_source: 'operator' },
-                              hint: VISION_TARGET_HINTS[
-                                g.value === 'camera_continuous'
-                                  ? CAMERA_CONTINUOUS_DEFAULT_TARGET
-                                  : 'hand_victory'
-                              ],
-                            }
-                          : {}),
-                      })
-                    }
-                  >
-                    {g.label} <span className="gesture-code">{g.value}</span>
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  disabled={!editing}
-                  className={selected.custom_action ? 'on custom-action' : 'custom-action'}
-                  onClick={() => onUpdateSelected({ gesture: 'tap', custom_action: true })}
-                >
-                  自定义动作 <span className="gesture-code">按点击处理</span>
-                </button>
-              </div>
-              {selected.custom_action ? (
-                <Input
-                  style={{ marginTop: 10 }}
-                  disabled={!editing}
-                  value={selected.action_description || ''}
-                  maxLength={80}
-                  showCount
-                  onChange={(e) => onUpdateSelected({ action_description: e.target.value })}
-                  placeholder="描述用户需要执行的动作"
-                />
-              ) : null}
-              {!selected.custom_action && ['camera_motion', 'camera_continuous'].includes(selected.gesture) ? (
-                <VisionInteractionFields
-                  value={selected.vision}
-                  interactionType={selected.gesture as 'camera_motion' | 'camera_continuous'}
-                  disabled={!editing}
-                  onChange={(vision) =>
-                    onUpdateSelected({
-                      vision,
-                      vision_resolution: { target_source: 'operator' },
-                      hint: VISION_TARGET_HINTS[vision.target],
-                    })
-                  }
-                />
-              ) : null}
-              {!selected.custom_action && isContinuousSound(selected) ? (
-                <SoundInteractionFields
-                  value={selected}
-                  disabled={!editing}
-                  onChange={onUpdateSelected}
-                />
-              ) : null}
-              {!selected.custom_action && isMultiTap(selected) ? (
-                <Space wrap style={{ marginTop: 10 }}>
-                  <Typography.Text type="secondary">目标点击次数</Typography.Text>
-                  <InputNumber min={1} max={99} precision={0} disabled={!editing}
-                    value={selected.tap_count ?? 3}
-                    onChange={(value) => onUpdateSelected({ tap_count: Math.min(99, Math.max(1, Math.round(Number(value ?? 3)))) })} />
-                </Space>
-              ) : null}
-              {!selected.custom_action && isPinch(selected) ? (
-                <PinchDirectionFields value={selected.pinch_direction} disabled={!editing}
-                  onChange={(pinch_direction) => onUpdateSelected({ pinch_direction, hint: pinchDirectionCopy(pinch_direction).hint })} />
-              ) : null}
-              {!selected.custom_action && isRotate(selected) ? (
-                <RotationDirectionFields
-                  value={selected.rotation_direction}
-                  disabled={!editing}
-                  onChange={(rotation_direction) => onUpdateSelected({ rotation_direction })}
-                />
-              ) : null}
-              {isSustainedPlaybackInteraction(selected) ? (
-                <Typography.Paragraph type="secondary" style={{ margin: '10px 0 0' }}>
-                  {isCameraContinuous(selected)
-                    ? `该类型固定暂停进入；点击预览里的「${cameraContinuousTargetCopy(selected.vision?.target).simulate}」开始或续播，停止 1100ms 后暂停。${cameraContinuousTargetCopy(selected.vision?.target).editorHelp}。`
-                    : isContinuousSound(selected)
-                    ? `该类型固定暂停进入；预览中按住画面模拟声音，松开 450ms 后暂停。${continuousSoundTargetCopy(continuousSoundTarget(selected)).editorHelp}。`
-                    : isContinuousTap(selected)
-                    ? '该类型固定暂停进入、全画面识别；首次点击立即播放，每次点击续期 500ms，停止点击后暂停。'
-                    : isContinuousHold(selected)
-                    ? '该类型固定暂停进入、全画面识别；按住时播放，松开立即暂停。'
-                    : '该类型固定暂停进入、全画面识别；抬手立即暂停，停止移动 500ms 后暂停。'}
-                </Typography.Paragraph>
-              ) : null}
-            </div>
-
-            <div>
-              <Typography.Text type="secondary">
-                Hint{['camera_motion', 'camera_continuous'].includes(selected.gesture) || isContinuousSound(selected) ? '（随识别目标自动生成）' : ''}
-              </Typography.Text>
-              <Input
-                style={{ marginTop: 8 }}
-                disabled={
-                  !editing ||
-                  ['camera_motion', 'camera_continuous'].includes(selected.gesture) ||
-                  isContinuousSound(selected) ||
-                  isSustainedPlaybackInteraction(selected)
-                }
-                value={selected.hint || ''}
-                maxLength={40}
-                showCount
-                onChange={(e) => onUpdateSelected({ hint: e.target.value })}
-              />
-            </div>
-
-            {isSustainedPlaybackInteraction(selected) ? (
-              <Typography.Text type="secondary">
-                区间结束固定继续，不配置成功或失败分支。
-              </Typography.Text>
-            ) : showOutcomes ? (
-              <ClipOutcomesEditor
-                value={selected.outcomes}
-                clips={clipMeta}
-                currentClipId={activeClipId}
-                disabled={!editing}
-                onChange={(outcomes) => onUpdateSelected({ outcomes })}
-              />
-            ) : selectedIsBranch ? (
-              <Typography.Text type="secondary">
-                这是分支挑战：成功播放 B，失败播放 C，去向由上方流程统一管理。
-              </Typography.Text>
-            ) : (
-              <Typography.Text type="secondary">
-                这是普通互动：成功或失败后都继续播放主片段 A。
-              </Typography.Text>
-            )}
-          </Space>
-        )}
-      </Card>
-
-      <Card className="page-card" title="版本备注" size="small">
+      {contextPanel}
+      <section className="editor-note-panel">
+        <Typography.Text strong>版本备注</Typography.Text>
+        <Typography.Paragraph type="secondary">
+          备注只用于运营协作，不会进入播放器玩法协议。
+        </Typography.Paragraph>
         <Input.TextArea
-          rows={2}
+          rows={5}
           disabled={!editing}
           value={note}
-          onChange={(e) => onNoteChange(e.target.value)}
+          onChange={(event) => onNoteChange(event.target.value)}
           maxLength={500}
           showCount
-          placeholder="可选"
+          placeholder="可选，自动保存"
         />
-      </Card>
+      </section>
     </>
+  )
+
+  return (
+    <InteractionEditorWorkspace
+      runId={runId}
+      clipId={activeClipId}
+      rows={rows}
+      durationMs={durationMs}
+      editing={editing}
+      selectedIndex={selectedIndex}
+      playheadMs={playheadMs}
+      onSelectIndex={onSelectIndex}
+      onPlayheadChange={onPlayheadChange}
+      onAddInteractionAt={onAddInteractionAt}
+      onUpdateInteractionAt={onUpdateInteractionAt}
+      onRemoveSelected={onRemoveSelected}
+      inspector={(
+        <InteractionInspector
+          selected={selected}
+          selectedIndex={selectedIndex}
+          nextGateAtMs={selectedNextGate}
+          durationMs={durationMs}
+          playheadMs={playheadMs}
+          editing={editing}
+          onUpdate={onUpdateSelected}
+          onRemove={onRemoveSelected}
+          clipMeta={clipMeta}
+          activeClipId={activeClipId}
+          showOutcomes={showOutcomes}
+          selectedIsBranch={selectedIsBranch}
+        />
+      )}
+      contextTitle={contextTitle}
+      contextPanel={context}
+      canUndo={canUndo}
+      canRedo={canRedo}
+      onUndo={onUndo}
+      onRedo={onRedo}
+    />
   )
 }

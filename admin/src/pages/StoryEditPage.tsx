@@ -2,6 +2,7 @@ import {
   Card,
   Empty,
   Modal,
+  Typography,
   message,
 } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -15,6 +16,7 @@ import {
   isSustainedPlaybackInteraction,
   normalizeRotationDirection,
   type Interaction,
+  type InteractionPatch,
   type SaveStatus,
 } from '../types/interaction'
 import type {
@@ -38,6 +40,8 @@ import {
 import { normalizeVisionConfig } from '../components/VisionInteractionFields'
 import ServiceBusyCard from '../components/ServiceBusyCard'
 import { isServiceUnavailableError } from '../apiError'
+import { patchForGesture } from '../components/editor/InteractionInspector'
+import useInteractionHistory from '../components/editor/useInteractionHistory'
 
 type UploadStage = 'preparing' | 'uploading' | 'processing'
 
@@ -173,6 +177,27 @@ export default function StoryEditPage() {
   const saveGen = useRef(0)
   const uploadStartedAt = useRef<number | null>(null)
   const selectedIndexRef = useRef<number | null>(null)
+  const restoreSelection = useCallback((nextRows: Interaction[]) => {
+    if (nextRows.length === 0) {
+      setSelectedIndex(null)
+      return
+    }
+    const nearest = nextRows.reduce((best, row, index) => (
+      Math.abs(row.gate_at_ms - playheadMs)
+        < Math.abs(nextRows[best].gate_at_ms - playheadMs)
+        ? index
+        : best
+    ), 0)
+    setSelectedIndex(nearest)
+  }, [playheadMs])
+  const {
+    commitRows,
+    undo,
+    redo,
+    resetHistory,
+    canUndo,
+    canRedo,
+  } = useInteractionHistory(setRows, restoreSelection)
 
   const uploading = uploadStage !== null
 
@@ -197,6 +222,7 @@ export default function StoryEditPage() {
     data: StoryState,
     preferClip?: string,
     preferInteractionIndex?: number | null,
+    resetEditorHistory = true,
   ) => {
     setStory(data)
     if (data.editor_mode) setStoryEditorMode(data.editor_mode)
@@ -216,13 +242,14 @@ export default function StoryEditPage() {
       (a, b) => a.gate_at_ms - b.gate_at_ms,
     )
     setRows(interactions)
+    if (resetEditorHistory) resetHistory()
     setClipOnEnd(parseClipOnEnd(data.clips[clip]?.on_end))
     setSelectedIndex(
       interactions.length
         ? Math.min(preferInteractionIndex ?? 0, interactions.length - 1)
         : null,
     )
-  }, [])
+  }, [resetHistory])
 
   const load = useCallback(async () => {
     if (!id || !version) return
@@ -297,7 +324,7 @@ export default function StoryEditPage() {
       })
       if (gen !== saveGen.current) return
       skipAutosave.current = true
-      applyStory(resp.story, activeClipId)
+      applyStory(resp.story, activeClipId, selectedIndexRef.current, false)
       setSaveStatus('saved')
       return true
     } catch (err) {
@@ -323,7 +350,7 @@ export default function StoryEditPage() {
       })
       if (gen !== saveGen.current) return false
       skipAutosave.current = true
-      applyStory(resp.story, resp.story.entry_clip_id, selectedIndexRef.current)
+      applyStory(resp.story, resp.story.entry_clip_id, selectedIndexRef.current, false)
       setSaveStatus('saved')
       return true
     } catch (err) {
@@ -662,66 +689,75 @@ export default function StoryEditPage() {
     }
   }
 
-  function updateSelected(patch: Partial<Interaction> & { gate_end_ms?: number | null }) {
-    if (selectedIndex == null) return
-    const cur = rows[selectedIndex]
-    if (!cur) return
-    const branchRow = simpleConfig.branch_interaction_index == null
-      ? null
-      : rows[simpleConfig.branch_interaction_index] || null
-    const gate_at_ms = Math.round(Number(patch.gate_at_ms ?? cur.gate_at_ms) || 0)
-    let gate_end_ms: number | undefined
-    if ('gate_end_ms' in patch) {
-      gate_end_ms =
-        patch.gate_end_ms == null ? undefined : Math.round(Number(patch.gate_end_ms) || 0)
-    } else {
-      gate_end_ms = cur.gate_end_ms
-    }
-    let updated: Interaction = {
-      ...cur,
-      ...patch,
-      gate_at_ms,
-      ...(gate_end_ms !== undefined ? { gate_end_ms } : { gate_end_ms: undefined }),
-    }
-    updated = enforceInteractionTypeRules(updated)
-    if (typeof gate_end_ms === 'number' && (
-      isSustainedPlaybackInteraction(updated)
-        ? gate_end_ms <= gate_at_ms
-        : gate_end_ms < gate_at_ms
-    )) {
-      gate_end_ms = undefined
-    }
-    if (gate_end_ms === undefined) {
-      delete updated.gate_end_ms
-    } else {
-      updated.gate_end_ms = gate_end_ms
-    }
-    const next = rows.map((row, index) => (index === selectedIndex ? updated : row)).sort(
-      (a, b) => a.gate_at_ms - b.gate_at_ms,
-    )
-    const nextBranchRow = branchRow === cur ? updated : branchRow
-    const branchWasInvalidated =
-      nextBranchRow != null && isSustainedPlaybackInteraction(nextBranchRow)
-    setRows(next)
-    setSelectedIndex(next.indexOf(updated))
-    setSimpleConfig((previous) => ({
-      ...previous,
-      branch_interaction_index:
-        nextBranchRow && !branchWasInvalidated ? next.indexOf(nextBranchRow) : null,
-      complete: false,
-    }))
-    if (branchWasInvalidated) {
-      messageApi.warning('持续播放类互动不能作为分支挑战，请在上方重新选择挑战节点')
-    }
+  function updateInteractionAt(
+    targetIndex: number,
+    patch: InteractionPatch,
+  ) {
+    commitRows((previousRows) => {
+      const current = previousRows[targetIndex]
+      if (!current) return previousRows
+      const branchRow = simpleConfig.branch_interaction_index == null
+        ? null
+        : previousRows[simpleConfig.branch_interaction_index] || null
+      const hasPatchedEnd = 'gate_end_ms' in patch
+      const { gate_end_ms: patchEnd, ...patchWithoutEnd } = patch
+      const gateAtMs = Math.round(Number(patch.gate_at_ms ?? current.gate_at_ms) || 0)
+      const patchedEnd = hasPatchedEnd
+        ? patchEnd == null
+          ? undefined
+          : Math.round(Number(patchEnd) || 0)
+        : current.gate_end_ms
+      let updated = enforceInteractionTypeRules({
+        ...current,
+        ...patchWithoutEnd,
+        gate_at_ms: gateAtMs,
+        ...(patchedEnd === undefined ? {} : { gate_end_ms: patchedEnd }),
+      })
+      if (patchedEnd === undefined) delete updated.gate_end_ms
+      else {
+        const minimum = isSustainedPlaybackInteraction(updated) ? gateAtMs + 1 : gateAtMs
+        if (patchedEnd < minimum) return previousRows
+        updated = { ...updated, gate_end_ms: patchedEnd }
+      }
+      if (previousRows.some((row, index) => (
+        index !== targetIndex && row.gate_at_ms === gateAtMs
+      ))) {
+        messageApi.warning('该时刻已有互动点')
+        return previousRows
+      }
+      const next = previousRows
+        .map((row, index) => (index === targetIndex ? updated : row))
+        .sort((left, right) => left.gate_at_ms - right.gate_at_ms)
+      const nextBranchRow = branchRow === current ? updated : branchRow
+      const branchWasInvalidated = nextBranchRow != null
+        && isSustainedPlaybackInteraction(nextBranchRow)
+      setSelectedIndex(next.indexOf(updated))
+      setSimpleConfig((previous) => ({
+        ...previous,
+        branch_interaction_index:
+          nextBranchRow && !branchWasInvalidated ? next.indexOf(nextBranchRow) : null,
+        complete: false,
+      }))
+      if (branchWasInvalidated) {
+        messageApi.warning('持续播放类互动不能作为分支挑战，请重新选择挑战节点')
+      }
+      return next
+    })
   }
 
-  function addAtPlayhead() {
-    const ms = Math.max(0, Math.round(playheadMs))
-    if (rows.some((r) => r.gate_at_ms === ms)) {
+  function updateSelected(patch: InteractionPatch) {
+    if (selectedIndex != null) updateInteractionAt(selectedIndex, patch)
+  }
+
+  function addInteractionAt(gestureValue: string, atMs: number) {
+    const ms = Math.max(0, Math.round(atMs))
+    const existingIndex = rows.findIndex((row) => row.gate_at_ms === ms)
+    if (existingIndex >= 0) {
       messageApi.warning('该时刻已有互动点')
+      setSelectedIndex(existingIndex)
       return
     }
-    const item: Interaction = {
+    const item = enforceInteractionTypeRules({
       gate_at_ms: ms,
       gesture: 'tap',
       hint: '',
@@ -729,20 +765,24 @@ export default function StoryEditPage() {
         success: { action: 'continue' },
         fail: { action: 'continue' },
       },
-    }
+      ...patchForGesture(gestureValue),
+    } as Interaction)
     const branchRow = simpleConfig.branch_interaction_index == null
       ? null
       : rows[simpleConfig.branch_interaction_index] || null
-    const next = [...rows, item].sort((a, b) => a.gate_at_ms - b.gate_at_ms)
-    setRows(next)
-    setSelectedIndex(next.indexOf(item))
-    if (branchRow) {
-      setSimpleConfig((previous) => ({
-        ...previous,
-        branch_interaction_index: next.indexOf(branchRow),
-        complete: false,
-      }))
-    }
+    commitRows((previousRows) => {
+      const next = [...previousRows, item]
+        .sort((left, right) => left.gate_at_ms - right.gate_at_ms)
+      setSelectedIndex(next.indexOf(item))
+      if (branchRow) {
+        setSimpleConfig((previous) => ({
+          ...previous,
+          branch_interaction_index: next.indexOf(branchRow),
+          complete: false,
+        }))
+      }
+      return next
+    })
   }
 
   function removeSelected() {
@@ -751,15 +791,17 @@ export default function StoryEditPage() {
     const branchRow = simpleConfig.branch_interaction_index == null
       ? null
       : rows[simpleConfig.branch_interaction_index] || null
-    const next = rows.filter((_, index) => index !== selectedIndex)
-    setRows(next)
-    setSelectedIndex(next.length === 0 ? null : Math.min(selectedIndex, next.length - 1))
-    setSimpleConfig((previous) => ({
-      ...previous,
-      branch_interaction_index:
-        branchRow && branchRow !== removed ? next.indexOf(branchRow) : null,
-      complete: false,
-    }))
+    commitRows((previousRows) => {
+      const next = previousRows.filter((_, index) => index !== selectedIndex)
+      setSelectedIndex(next.length === 0 ? null : Math.min(selectedIndex, next.length - 1))
+      setSimpleConfig((previous) => ({
+        ...previous,
+        branch_interaction_index:
+          branchRow && branchRow !== removed ? next.indexOf(branchRow) : null,
+        complete: false,
+      }))
+      return next
+    })
   }
 
   if (loading && !story) return <Card loading />
@@ -796,7 +838,7 @@ export default function StoryEditPage() {
           : ''
 
   return (
-    <>
+    <div className="interaction-editor-page">
       {contextHolder}
       <StoryHeader
         title={title}
@@ -874,9 +916,11 @@ export default function StoryEditPage() {
             durationMs={durationMs}
             editing={editing}
             selectedIndex={selectedIndex}
+            playheadMs={playheadMs}
             onSelectIndex={setSelectedIndex}
             onPlayheadChange={setPlayheadMs}
-            onAddAtPlayhead={addAtPlayhead}
+            onAddInteractionAt={addInteractionAt}
+            onUpdateInteractionAt={updateInteractionAt}
             onUpdateSelected={updateSelected}
             onRemoveSelected={removeSelected}
             clipMeta={clipMeta}
@@ -884,31 +928,20 @@ export default function StoryEditPage() {
             onNoteChange={setNote}
             showOutcomes={false}
             branchInteractionIndex={simpleConfig.branch_interaction_index}
-            previewTitle="主片段 A · 添加互动节点"
-            editorTitle="选中 A 片段互动"
+            contextTitle="故事流程"
+            contextPanel={(
+              <Typography.Paragraph type="secondary">
+                A/B/C 片段和分支挑战由上方故事流程管理；此处专注编辑主片段 A 的互动。
+              </Typography.Paragraph>
+            )}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={undo}
+            onRedo={redo}
           />
         </>
       ) : (
         <>
-          <ClipList
-            clipMeta={clipMeta}
-            activeClipId={activeClipId}
-            entryClipId={entryClipId}
-            editing={editing}
-            uploading={uploading}
-            uploadStatusText={uploadStatusText}
-            onUploadClip={onUploadClip}
-            onSwitchClip={switchClip}
-            onSetEntryClip={() => {
-              setEntryClipId(activeClipId)
-              setStory((prev) =>
-                prev ? { ...prev, entry_clip_id: activeClipId } : prev,
-              )
-            }}
-            clipOnEnd={clipOnEnd}
-            onClipOnEndChange={setClipOnEnd}
-          />
-
           <ClipEditor
             runId={id}
             activeClipId={activeClipId}
@@ -916,15 +949,41 @@ export default function StoryEditPage() {
             durationMs={durationMs}
             editing={editing}
             selectedIndex={selectedIndex}
+            playheadMs={playheadMs}
             onSelectIndex={setSelectedIndex}
             onPlayheadChange={setPlayheadMs}
-            onAddAtPlayhead={addAtPlayhead}
+            onAddInteractionAt={addInteractionAt}
+            onUpdateInteractionAt={updateInteractionAt}
             onUpdateSelected={updateSelected}
             onRemoveSelected={removeSelected}
             clipMeta={clipMeta}
             note={note}
             onNoteChange={setNote}
             showOutcomes
+            contextPanel={(
+              <ClipList
+                clipMeta={clipMeta}
+                activeClipId={activeClipId}
+                entryClipId={entryClipId}
+                editing={editing}
+                uploading={uploading}
+                uploadStatusText={uploadStatusText}
+                onUploadClip={onUploadClip}
+                onSwitchClip={switchClip}
+                onSetEntryClip={() => {
+                  setEntryClipId(activeClipId)
+                  setStory((previous) => (
+                    previous ? { ...previous, entry_clip_id: activeClipId } : previous
+                  ))
+                }}
+                clipOnEnd={clipOnEnd}
+                onClipOnEndChange={setClipOnEnd}
+              />
+            )}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            onUndo={undo}
+            onRedo={redo}
           />
         </>
       )}
@@ -947,6 +1006,6 @@ export default function StoryEditPage() {
         isTutorial={isTutorial}
         published={published}
       />
-    </>
+    </div>
   )
 }
