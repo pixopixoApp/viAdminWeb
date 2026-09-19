@@ -56,9 +56,10 @@ function serializeInteraction(row: Interaction) {
   return {
     gesture: row.gesture,
     gate_at_ms: Math.round(row.gate_at_ms),
-    ...(!isSustainedPlaybackInteraction(row) && typeof row.gate_end_ms === 'number'
+    ...(typeof row.gate_end_ms === 'number'
       ? { gate_end_ms: Math.round(row.gate_end_ms) }
       : {}),
+    ...(row.gesture === 'multi_tap' ? { tap_count: row.tap_count ?? 3 } : {}),
     ...(row.hint ? { hint: row.hint } : {}),
     ...(row.pause_video === false ? { pause_video: false } : { pause_video: true }),
     ...(isRotate(row)
@@ -676,9 +677,6 @@ export default function StoryEditPage() {
     } else {
       gate_end_ms = cur.gate_end_ms
     }
-    if (typeof gate_end_ms === 'number' && gate_end_ms < gate_at_ms) {
-      gate_end_ms = undefined
-    }
     let updated: Interaction = {
       ...cur,
       ...patch,
@@ -686,8 +684,17 @@ export default function StoryEditPage() {
       ...(gate_end_ms !== undefined ? { gate_end_ms } : { gate_end_ms: undefined }),
     }
     updated = enforceInteractionTypeRules(updated)
-    if (gate_end_ms === undefined || isSustainedPlaybackInteraction(updated)) {
+    if (typeof gate_end_ms === 'number' && (
+      isSustainedPlaybackInteraction(updated)
+        ? gate_end_ms <= gate_at_ms
+        : gate_end_ms < gate_at_ms
+    )) {
+      gate_end_ms = undefined
+    }
+    if (gate_end_ms === undefined) {
       delete updated.gate_end_ms
+    } else {
+      updated.gate_end_ms = gate_end_ms
     }
     const next = rows.map((row, index) => (index === selectedIndex ? updated : row)).sort(
       (a, b) => a.gate_at_ms - b.gate_at_ms,

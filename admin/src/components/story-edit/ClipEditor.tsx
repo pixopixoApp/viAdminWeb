@@ -12,10 +12,13 @@ import {
   isCameraContinuous,
   isContinuousSound,
   isContinuousTap,
+  isContinuousHold,
+  isMultiTap,
   isRotate,
   isPinch,
   pinchDirectionCopy,
   isSustainedPlaybackInteraction,
+  sustainedPlaybackEndMs,
 } from '../../types/interaction'
 import type { ClipMeta } from '../../types/run'
 import ClipOutcomesEditor from '../ClipOutcomesEditor'
@@ -79,6 +82,13 @@ export default function ClipEditor({
     selectedIndex != null &&
     selectedIndex === branchInteractionIndex &&
     !isSustainedPlaybackInteraction(selected)
+  const selectedNextGate = selectedIndex != null ? rows[selectedIndex + 1]?.gate_at_ms : undefined
+  const selectedEffectiveEnd = selected && isSustainedPlaybackInteraction(selected)
+    ? sustainedPlaybackEndMs(selected, selectedNextGate, durationMs)
+    : undefined
+  const selectedEndClipped = selected && typeof selected.gate_end_ms === 'number'
+    && typeof selectedEffectiveEnd === 'number'
+    && selected.gate_end_ms > selectedEffectiveEnd
 
   if (!activeClipId) {
     return <Card className="page-card"><Empty description="请先点击上方主片段 A 卡片上传视频" /></Card>
@@ -123,11 +133,29 @@ export default function ClipEditor({
                 }
               />
               {isSustainedPlaybackInteraction(selected) ? (
-                <Typography.Text type="secondary">
-                  作用区间：当前节点 → {rows[(selectedIndex ?? -1) + 1]
-                    ? `${(rows[(selectedIndex ?? -1) + 1].gate_at_ms / 1000).toFixed(2)}s 的下一节点`
-                    : '视频结束'}
-                </Typography.Text>
+                <>
+                  <Typography.Text type="secondary">可选结束 (s)</Typography.Text>
+                  <InputNumber
+                    min={Number(((selected.gate_at_ms + 1) / 1000).toFixed(3))}
+                    step={0.033}
+                    precision={3}
+                    disabled={!editing}
+                    value={typeof selected.gate_end_ms === 'number'
+                      ? Number((selected.gate_end_ms / 1000).toFixed(3))
+                      : null}
+                    placeholder="下一节点/片尾"
+                    onChange={(n) => onUpdateSelected({
+                      gate_end_ms: n == null
+                        ? undefined
+                        : Math.max(selected.gate_at_ms + 1, Math.round(Number(n) * 1000)),
+                    })}
+                  />
+                  <Typography.Text type={selectedEndClipped ? 'warning' : 'secondary'}>
+                    实际结束：{typeof selectedEffectiveEnd === 'number'
+                      ? `${(selectedEffectiveEnd / 1000).toFixed(3)}s`
+                      : '视频结束'}{selectedEndClipped ? '（已被下一节点或片尾截断）' : ''}
+                  </Typography.Text>
+                </>
               ) : selectedIsBranch ? (
                 <Typography.Text type="secondary">
                   响应时间由上方分支挑战右侧统一设置
@@ -243,6 +271,14 @@ export default function ClipEditor({
                   onChange={onUpdateSelected}
                 />
               ) : null}
+              {!selected.custom_action && isMultiTap(selected) ? (
+                <Space wrap style={{ marginTop: 10 }}>
+                  <Typography.Text type="secondary">目标点击次数</Typography.Text>
+                  <InputNumber min={1} max={99} precision={0} disabled={!editing}
+                    value={selected.tap_count ?? 3}
+                    onChange={(value) => onUpdateSelected({ tap_count: Math.min(99, Math.max(1, Math.round(Number(value ?? 3)))) })} />
+                </Space>
+              ) : null}
               {!selected.custom_action && isPinch(selected) ? (
                 <PinchDirectionFields value={selected.pinch_direction} disabled={!editing}
                   onChange={(pinch_direction) => onUpdateSelected({ pinch_direction, hint: pinchDirectionCopy(pinch_direction).hint })} />
@@ -262,6 +298,8 @@ export default function ClipEditor({
                     ? `该类型固定暂停进入；预览中按住画面模拟声音，松开 450ms 后暂停。${continuousSoundTargetCopy(continuousSoundTarget(selected)).editorHelp}。`
                     : isContinuousTap(selected)
                     ? '该类型固定暂停进入、全画面识别；首次点击立即播放，每次点击续期 500ms，停止点击后暂停。'
+                    : isContinuousHold(selected)
+                    ? '该类型固定暂停进入、全画面识别；按住时播放，松开立即暂停。'
                     : '该类型固定暂停进入、全画面识别；抬手立即暂停，停止移动 500ms 后暂停。'}
                 </Typography.Paragraph>
               ) : null}

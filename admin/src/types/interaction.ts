@@ -21,6 +21,7 @@ export type PinchDirection = 'inward' | 'outward'
 export type Interaction = {
   gate_at_ms: number
   gate_end_ms?: number
+  tap_count?: number
   gesture: string
   hint?: string
   custom_action?: boolean
@@ -41,6 +42,9 @@ export const CONTINUOUS_SWIPE_TYPE = 'continuous_swipe'
 export const CONTINUOUS_SWIPE_HINT = '持续往复滑动以播放'
 export const CONTINUOUS_TAP_TYPE = 'continuous_tap'
 export const CONTINUOUS_TAP_HINT = '持续点击以播放'
+export const CONTINUOUS_HOLD_TYPE = 'continuous_hold'
+export const CONTINUOUS_HOLD_HINT = '按住屏幕以播放'
+export const MULTI_TAP_TYPE = 'multi_tap'
 export const CAMERA_CONTINUOUS_TYPE = 'camera_continuous'
 export const CONTINUOUS_SOUND_AUTHORING_TYPE = 'mic_continuous'
 export const CONTINUOUS_BLOW_TYPE = 'mic_blow_continuous'
@@ -117,6 +121,14 @@ export function isContinuousTap(value: { gesture?: string } | undefined | null) 
   return value?.gesture === CONTINUOUS_TAP_TYPE
 }
 
+export function isContinuousHold(value: { gesture?: string } | undefined | null) {
+  return value?.gesture === CONTINUOUS_HOLD_TYPE
+}
+
+export function isMultiTap(value: { gesture?: string } | undefined | null) {
+  return value?.gesture === MULTI_TAP_TYPE
+}
+
 export function isCameraContinuous(value: { gesture?: string } | undefined | null) {
   return value?.gesture === CAMERA_CONTINUOUS_TYPE
 }
@@ -181,13 +193,32 @@ export function continuousSoundInteractionPatch(
 export function isSustainedPlaybackInteraction(
   value: { gesture?: string } | undefined | null,
 ) {
-  return isContinuousSwipe(value) || isContinuousTap(value)
+  return isContinuousSwipe(value) || isContinuousTap(value) || isContinuousHold(value)
     || isCameraContinuous(value) || isContinuousBlow(value)
     || isContinuousVoice(value)
 }
 
+export function sustainedPlaybackEndMs(
+  value: { gate_at_ms: number; gate_end_ms?: number },
+  nextGateAtMs?: number,
+  durationMs?: number,
+) {
+  const boundaries = [value.gate_end_ms, nextGateAtMs, durationMs]
+    .filter((candidate): candidate is number => typeof candidate === 'number' && Number.isFinite(candidate))
+  return boundaries.length ? Math.min(...boundaries) : undefined
+}
+
 export function enforceInteractionTypeRules(value: Interaction): Interaction {
   const typed: Interaction = { ...value }
+  if (isMultiTap(typed)) {
+    const numericCount = Number(typed.tap_count)
+    const count = typed.tap_count == null || !Number.isFinite(numericCount)
+      ? 3
+      : Math.round(numericCount)
+    typed.tap_count = Math.min(99, Math.max(1, count))
+  } else {
+    delete typed.tap_count
+  }
   if (isPinch(typed)) {
     typed.pinch_direction = normalizePinchDirection(typed.pinch_direction)
   } else {
@@ -208,11 +239,12 @@ export function enforceInteractionTypeRules(value: Interaction): Interaction {
         ? CONTINUOUS_VOICE_HINT
       : isContinuousTap(typed)
         ? CONTINUOUS_TAP_HINT
+        : isContinuousHold(typed)
+          ? CONTINUOUS_HOLD_HINT
         : isCameraContinuous(typed)
           ? cameraContinuousTargetCopy(typed.vision?.target).hint
           : CONTINUOUS_SWIPE_HINT,
   }
-  delete next.gate_end_ms
   delete next.outcomes
   return next
 }
@@ -253,6 +285,8 @@ export const GESTURE_LABEL: Record<string, string> = {
   scrub_down: 'Scrub Down',
   continuous_swipe: 'Continuous Swipe',
   continuous_tap: 'Continuous Tap',
+  continuous_hold: 'Continuous Hold',
+  multi_tap: 'Custom Tap Count',
 }
 
 export const AUTHORING_GESTURE_TYPES = Object.freeze(
@@ -277,6 +311,8 @@ export function versionOptionLabel(label: string, version: string, published?: s
 
 export type Gate = {
   gate_at_ms: number
+  gate_end_ms?: number
+  tap_count?: number
   gesture?: string
   hint?: string
   cue?: string

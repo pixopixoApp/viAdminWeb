@@ -18,7 +18,10 @@ import {
   isContinuousVoice,
   isContinuousSwipe,
   isContinuousTap,
+  isContinuousHold,
+  isMultiTap,
   isSustainedPlaybackInteraction,
+  sustainedPlaybackEndMs,
   isPinch,
   pinchDirectionCopy,
 } from '../types/interaction'
@@ -101,6 +104,7 @@ export default function PreviewPlayer({
   const [mediaError, setMediaError] = useState<string | null>(null)
   const [continuousDriving, setContinuousDriving] = useState(false)
   const [continuousTapPulse, setContinuousTapPulse] = useState(0)
+  const [multiTapProgress, setMultiTapProgress] = useState(0)
   const continuousPointerRef = useRef<ContinuousPointerState | null>(null)
   const continuousIdleTimerRef = useRef<number | null>(null)
   const continuousSessionRef = useRef(0)
@@ -118,6 +122,8 @@ export default function PreviewPlayer({
   const activeSustained = pausedAtGate && isSustainedPlaybackInteraction(active)
   const activeContinuousSwipe = activeSustained && isContinuousSwipe(active)
   const activeContinuousTap = activeSustained && isContinuousTap(active)
+  const activeContinuousHold = activeSustained && isContinuousHold(active)
+  const activeMultiTap = pausedAtGate && isMultiTap(active)
   const activeCameraContinuous = activeSustained && isCameraContinuous(active)
   const activeContinuousBlow = activeSustained && isContinuousBlow(active)
   const activeContinuousVoice = activeSustained && isContinuousVoice(active)
@@ -125,6 +131,10 @@ export default function PreviewPlayer({
   const activeCameraCopy = cameraContinuousTargetCopy(active?.vision?.target)
   const totalMs =
     mediaDuration || durationMs || (sorted.length ? sorted[sorted.length - 1].gate_at_ms : 1)
+
+  useEffect(() => {
+    setMultiTapProgress(0)
+  }, [index, pausedAtGate, active?.gesture])
 
   // Remounted video (clip switch) must not keep play/gate state from the previous clip.
   useEffect(() => {
@@ -213,15 +223,21 @@ export default function PreviewPlayer({
       setProgress(ms)
       onPlayheadChange?.(Math.round(ms))
       if (pausedAtGate) {
-        if (isSustainedPlaybackInteraction(active) && index + 1 < sorted.length) {
+        if (active && isSustainedPlaybackInteraction(active)) {
           const next = sorted[index + 1]
-          if (ms >= next.gate_at_ms) {
+          const boundary = sustainedPlaybackEndMs(active, next?.gate_at_ms, totalMs)
+          if (typeof boundary === 'number' && ms >= boundary) {
             resetContinuousControl(true)
-            video.currentTime = next.gate_at_ms / 1000
-            setProgress(next.gate_at_ms)
+            video.currentTime = boundary / 1000
+            setProgress(boundary)
+            const handsOffToNext = next && boundary === next.gate_at_ms
             setIndex(index + 1)
-            setPausedAtGate(true)
-            if (annotate) onSelectGateRef.current?.(index + 1)
+            setPausedAtGate(Boolean(handsOffToNext))
+            if (handsOffToNext) {
+              if (annotate) onSelectGateRef.current?.(index + 1)
+            } else if (boundary < totalMs) {
+              void requestPlay(video)
+            }
           }
         }
         return
@@ -439,6 +455,8 @@ export default function PreviewPlayer({
               ? '视频暂时无法开始播放，请再次按住吹气模拟区。'
             : activeContinuousVoice
               ? '视频暂时无法开始播放，请再次按住发声模拟区。'
+            : activeContinuousHold
+              ? '视频暂时无法开始播放，请再次按住画面。'
             : '视频暂时无法开始播放，请再次点击。',
         )
       }
@@ -544,6 +562,52 @@ export default function PreviewPlayer({
     }, CONTINUOUS_MICROPHONE_IDLE_TIMEOUT_MS)
   }
 
+  function startContinuousHold(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!activeContinuousHold || !event.isPrimary || continuousMicrophonePointerRef.current != null) return
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    continuousMicrophonePointerRef.current = event.pointerId
+    clearContinuousIdleTimer()
+    setStarted(true)
+    setEnded(false)
+    setContinuousDriving(true)
+    void requestContinuousPulsePlay(continuousSessionRef.current)
+  }
+
+  function stopContinuousHold(event: ReactPointerEvent<HTMLDivElement>) {
+    if (continuousMicrophonePointerRef.current !== event.pointerId) return
+    event.preventDefault()
+    event.stopPropagation()
+    continuousMicrophonePointerRef.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    videoRef.current?.pause()
+    setContinuousDriving(false)
+  }
+
+  function handleContinuousHoldKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if ((event.key !== 'Enter' && event.key !== ' ') || event.repeat) return
+    event.preventDefault()
+    event.stopPropagation()
+    continuousMicrophoneKeyboardRef.current = true
+    setStarted(true)
+    setEnded(false)
+    setContinuousDriving(true)
+    void requestContinuousPulsePlay(continuousSessionRef.current)
+  }
+
+  function handleContinuousHoldKeyUp(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if ((event.key !== 'Enter' && event.key !== ' ') || !continuousMicrophoneKeyboardRef.current) return
+    event.preventDefault()
+    event.stopPropagation()
+    continuousMicrophoneKeyboardRef.current = false
+    videoRef.current?.pause()
+    setContinuousDriving(false)
+  }
+
   function start() {
     const video = videoRef.current
     if (!video) return
@@ -567,6 +631,12 @@ export default function PreviewPlayer({
     }
     if (!pausedAtGate) return
     if (activeSustained) return
+    if (activeMultiTap) {
+      const required = Math.min(99, Math.max(1, Math.round(Number(active?.tap_count) || 3)))
+      const nextCount = multiTapProgress + 1
+      setMultiTapProgress(nextCount)
+      if (nextCount < required) return
+    }
     setPausedAtGate(false)
     setIndex((value) => value + 1)
     void requestPlay(video)
@@ -581,10 +651,7 @@ export default function PreviewPlayer({
     }
     if (activeSustained) return
     if (pausedAtGate) {
-      setPausedAtGate(false)
-      setIndex((value) => value + 1)
-      setStarted(true)
-      void requestPlay(video)
+      advance()
       return
     }
     setStarted(true)
@@ -610,7 +677,11 @@ export default function PreviewPlayer({
     const clamped = Math.max(0, Math.min(ms, totalMs))
     const continuousIndex = sorted.findIndex((gate, gateIndex) => {
       if (!isSustainedPlaybackInteraction(gate)) return false
-      const end = sorted[gateIndex + 1]?.gate_at_ms ?? totalMs
+      const end = sustainedPlaybackEndMs(
+        gate,
+        sorted[gateIndex + 1]?.gate_at_ms,
+        totalMs,
+      ) ?? totalMs
       return clamped >= gate.gate_at_ms && clamped < end
     })
     const nextIndex = sorted.findIndex((gate) => gate.gate_at_ms > clamped + 1)
@@ -731,8 +802,8 @@ export default function PreviewPlayer({
           {activeSustained && active ? (
             <div
               className={`preview-continuous-surface${continuousDriving ? ' is-driving' : ''}${activeContinuousTap ? ' is-tap' : ''}${activeCameraContinuous ? ' is-camera' : ''}`}
-              role={activeContinuousTap || activeCameraContinuous || activeContinuousMicrophone ? 'button' : 'application'}
-              tabIndex={activeContinuousTap || activeCameraContinuous || activeContinuousMicrophone ? 0 : undefined}
+              role={activeContinuousTap || activeContinuousHold || activeCameraContinuous || activeContinuousMicrophone ? 'button' : 'application'}
+              tabIndex={activeContinuousTap || activeContinuousHold || activeCameraContinuous || activeContinuousMicrophone ? 0 : undefined}
               aria-label={
                 activeCameraContinuous
                   ? activeCameraCopy.ariaLabel
@@ -742,27 +813,39 @@ export default function PreviewPlayer({
                   ? '按住画面模拟持续发声，松开 450 毫秒后暂停'
                   : activeContinuousTap
                   ? '在画面任意位置持续点击以播放，停止点击 500 毫秒后暂停'
+                  : activeContinuousHold
+                  ? '按住画面时播放，松开立即暂停'
                   : '在画面任意位置持续往复滑动以播放'
               }
               onClick={(event) => event.stopPropagation()}
-              onKeyDown={activeContinuousMicrophone
+              onKeyDown={activeContinuousHold
+                ? handleContinuousHoldKeyDown
+                : activeContinuousMicrophone
                 ? handleContinuousMicrophoneKeyDown
                 : (activeContinuousTap || activeCameraContinuous
                   ? handleContinuousTapKeyDown
                   : undefined)}
-              onKeyUp={activeContinuousMicrophone ? handleContinuousMicrophoneKeyUp : undefined}
+              onKeyUp={activeContinuousHold
+                ? handleContinuousHoldKeyUp
+                : activeContinuousMicrophone ? handleContinuousMicrophoneKeyUp : undefined}
               onPointerDown={
-                activeContinuousMicrophone
+                activeContinuousHold
+                  ? startContinuousHold
+                  : activeContinuousMicrophone
                   ? startContinuousMicrophone
                   : activeContinuousTap || activeCameraContinuous
                   ? handleContinuousTapPointerDown
                   : handleContinuousPointerDown
               }
               onPointerMove={activeContinuousSwipe ? handleContinuousPointerMove : undefined}
-              onPointerUp={activeContinuousMicrophone
+              onPointerUp={activeContinuousHold
+                ? stopContinuousHold
+                : activeContinuousMicrophone
                 ? stopContinuousMicrophone
                 : (activeContinuousSwipe ? handleContinuousPointerEnd : undefined)}
-              onPointerCancel={activeContinuousMicrophone
+              onPointerCancel={activeContinuousHold
+                ? stopContinuousHold
+                : activeContinuousMicrophone
                 ? stopContinuousMicrophone
                 : (activeContinuousSwipe ? handleContinuousPointerEnd : undefined)}
             >
@@ -774,6 +857,8 @@ export default function PreviewPlayer({
                       ? '💨'
                       : activeContinuousVoice
                         ? '🎙'
+                      : activeContinuousHold
+                        ? '●'
                       : activeContinuousTap ? '●' : '↔'}
                 </span>
               </div>
@@ -799,6 +884,10 @@ export default function PreviewPlayer({
                       ? continuousDriving
                         ? '正在模拟发声 · 松开 450ms 后暂停'
                         : '按住画面模拟持续发声'
+                      : activeContinuousHold
+                      ? continuousDriving
+                        ? '正在按住 · 视频播放中，松开立即暂停'
+                        : '按住画面以播放'
                       : continuousDriving
                         ? '正在滑动 · 视频播放中，抬手即暂停'
                         : '在画面任意位置完成一次往复滑动'}
@@ -847,9 +936,17 @@ export default function PreviewPlayer({
                     <div className="preview-gate-action">动作：{actionLabel(active)}</div>
                     <strong className="preview-gate-hint">{hintLabel(active)}</strong>
                     {isPinch(active) ? <PinchDirectionGuide value={active.pinch_direction} /> : null}
-                    <div className="preview-gate-sub">点击画面任意处继续</div>
+                    <div className="preview-gate-sub">
+                      {activeMultiTap
+                        ? `点击进度 ${multiTapProgress} / ${Math.min(99, Math.max(1, Math.round(Number(active.tap_count) || 3)))}`
+                        : '点击画面任意处继续'}
+                    </div>
                   </div>
-                  <Button type="primary" size="small" onClick={advance}>{isPinch(active) ? `模拟${pinchDirectionCopy(active.pinch_direction).hint}` : '继续'}</Button>
+                  <Button type="primary" size="small" onClick={advance}>
+                    {activeMultiTap
+                      ? `点击 (${multiTapProgress}/${Math.min(99, Math.max(1, Math.round(Number(active.tap_count) || 3)))})`
+                      : isPinch(active) ? `模拟${pinchDirectionCopy(active.pinch_direction).hint}` : '继续'}
+                  </Button>
                 </div>
               ) : null}
             </>
@@ -918,7 +1015,11 @@ export default function PreviewPlayer({
           />
           {sorted.map((gate, gateIndex) => {
             if (!isSustainedPlaybackInteraction(gate)) return null
-            const endMs = sorted[gateIndex + 1]?.gate_at_ms ?? totalMs
+            const endMs = sustainedPlaybackEndMs(
+              gate,
+              sorted[gateIndex + 1]?.gate_at_ms,
+              totalMs,
+            ) ?? totalMs
             const left = (gate.gate_at_ms / Math.max(totalMs, 1)) * 100
             const right = (endMs / Math.max(totalMs, 1)) * 100
             return (

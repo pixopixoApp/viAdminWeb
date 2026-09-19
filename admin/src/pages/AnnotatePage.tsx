@@ -28,11 +28,14 @@ import {
   isCameraContinuous,
   isContinuousSound,
   isContinuousTap,
+  isContinuousHold,
+  isMultiTap,
   isRotate,
   isPinch,
   normalizePinchDirection,
   pinchDirectionCopy,
   isSustainedPlaybackInteraction,
+  sustainedPlaybackEndMs,
   normalizeRotationDirection,
   versionOptionLabel,
 } from '../types/interaction'
@@ -132,9 +135,10 @@ export default function AnnotatePage() {
       interactions: rows.map((r) => ({
         gesture: r.gesture,
         gate_at_ms: Math.round(r.gate_at_ms),
-        ...(!isSustainedPlaybackInteraction(r) && typeof r.gate_end_ms === 'number'
+        ...(typeof r.gate_end_ms === 'number'
           ? { gate_end_ms: Math.round(r.gate_end_ms) }
           : {}),
+        ...(r.gesture === 'multi_tap' ? { tap_count: r.tap_count ?? 3 } : {}),
         ...(r.hint ? { hint: r.hint } : {}),
         ...(r.pause_video === false ? { pause_video: false } : { pause_video: true }),
         ...(isRotate(r)
@@ -259,9 +263,6 @@ export default function AnnotatePage() {
       } else {
         gate_end_ms = cur.gate_end_ms
       }
-      if (typeof gate_end_ms === 'number' && gate_end_ms < gate_at_ms) {
-        gate_end_ms = undefined
-      }
       let updated: Interaction = {
         ...cur,
         ...patch,
@@ -269,7 +270,15 @@ export default function AnnotatePage() {
         ...(gate_end_ms !== undefined ? { gate_end_ms } : { gate_end_ms: undefined }),
       }
       updated = enforceInteractionTypeRules(updated)
+      if (typeof gate_end_ms === 'number' && (
+        isSustainedPlaybackInteraction(updated)
+          ? gate_end_ms <= gate_at_ms
+          : gate_end_ms < gate_at_ms
+      )) {
+        gate_end_ms = undefined
+      }
       if (gate_end_ms === undefined) delete updated.gate_end_ms
+      else updated.gate_end_ms = gate_end_ms
       const next = prev.map((r, i) => (i === selectedIndex ? updated : r)).sort(
         (a, b) => a.gate_at_ms - b.gate_at_ms,
       )
@@ -312,6 +321,13 @@ export default function AnnotatePage() {
 
   const selected = selectedIndex != null ? rows[selectedIndex] : null
   const durationMs = Number(state.timeline?.media?.duration_ms || 0) || undefined
+  const selectedNextGate = selectedIndex != null ? rows[selectedIndex + 1]?.gate_at_ms : undefined
+  const selectedEffectiveEnd = selected && isSustainedPlaybackInteraction(selected)
+    ? sustainedPlaybackEndMs(selected, selectedNextGate, durationMs)
+    : undefined
+  const selectedEndClipped = selected && typeof selected.gate_end_ms === 'number'
+    && typeof selectedEffectiveEnd === 'number'
+    && selected.gate_end_ms > selectedEffectiveEnd
   const saveLabel =
     saveStatus === 'saving'
       ? '保存中…'
@@ -451,11 +467,28 @@ export default function AnnotatePage() {
                 }
               />
               {isSustainedPlaybackInteraction(selected) ? (
-                <Typography.Text type="secondary">
-                  作用区间：当前节点 → {rows[(selectedIndex ?? -1) + 1]
-                    ? `${(rows[(selectedIndex ?? -1) + 1].gate_at_ms / 1000).toFixed(2)}s 的下一节点`
-                    : '视频结束'}
-                </Typography.Text>
+                <>
+                  <Typography.Text type="secondary">可选结束 (s)</Typography.Text>
+                  <InputNumber
+                    min={Number(((selected.gate_at_ms + 1) / 1000).toFixed(3))}
+                    step={0.033}
+                    precision={3}
+                    value={typeof selected.gate_end_ms === 'number'
+                      ? Number((selected.gate_end_ms / 1000).toFixed(3))
+                      : null}
+                    placeholder="下一节点/片尾"
+                    onChange={(n) => updateSelected({
+                      gate_end_ms: n == null
+                        ? undefined
+                        : Math.max(selected.gate_at_ms + 1, Math.round(Number(n) * 1000)),
+                    })}
+                  />
+                  <Typography.Text type={selectedEndClipped ? 'warning' : 'secondary'}>
+                    实际结束：{typeof selectedEffectiveEnd === 'number'
+                      ? `${(selectedEffectiveEnd / 1000).toFixed(3)}s`
+                      : '视频结束'}{selectedEndClipped ? '（已被下一节点或片尾截断）' : ''}
+                  </Typography.Text>
+                </>
               ) : (
                 <>
                   <Typography.Text type="secondary">结束 (s)</Typography.Text>
@@ -561,6 +594,14 @@ export default function AnnotatePage() {
               {!selected.custom_action && isContinuousSound(selected) ? (
                 <SoundInteractionFields value={selected} onChange={updateSelected} />
               ) : null}
+              {!selected.custom_action && isMultiTap(selected) ? (
+                <Space wrap style={{ marginTop: 10 }}>
+                  <Typography.Text type="secondary">目标点击次数</Typography.Text>
+                  <InputNumber min={1} max={99} precision={0}
+                    value={selected.tap_count ?? 3}
+                    onChange={(value) => updateSelected({ tap_count: Math.min(99, Math.max(1, Math.round(Number(value ?? 3)))) })} />
+                </Space>
+              ) : null}
               {!selected.custom_action && isRotate(selected) ? (
                 <RotationDirectionFields
                   value={selected.rotation_direction}
@@ -579,6 +620,8 @@ export default function AnnotatePage() {
                     ? `该类型固定暂停进入；预览中按住画面模拟声音，松开 450ms 后暂停。${continuousSoundTargetCopy(continuousSoundTarget(selected)).editorHelp}。`
                     : isContinuousTap(selected)
                     ? '该类型固定暂停进入、全画面识别；首次点击立即播放，每次点击续期 500ms，停止点击后暂停。'
+                    : isContinuousHold(selected)
+                    ? '该类型固定暂停进入、全画面识别；按住时播放，松开立即暂停。'
                     : '该类型固定暂停进入、全画面识别；抬手立即暂停，停止移动 500ms 后暂停。'}
                 </Typography.Paragraph>
               ) : null}
