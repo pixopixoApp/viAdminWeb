@@ -25,7 +25,7 @@ import {
   isPinch,
   pinchDirectionCopy,
 } from '../types/interaction'
-import { PinchDirectionGuide } from './PinchDirectionFields'
+import { EDITOR_FRAME_MS, snapToEditorFrame } from './editor/timelineUtils'
 export { GESTURE_LABEL }
 
 type GatePatch = Omit<Partial<Gate>, 'gate_end_ms'> & {
@@ -50,7 +50,6 @@ type Props = {
   onUpdateGate?: (index: number, patch: GatePatch) => void
 }
 
-const FRAME_MS = 33
 const SECOND_MS = 1000
 const SLOW_MEDIA_LOAD_MS = 8_000
 const CONTINUOUS_MIN_TRAVEL_DP = 32 * 0.85
@@ -85,6 +84,67 @@ function hintLabel(gate: Gate) {
   return gate.hint || gate.cue || actionLabel(gate)
 }
 
+const GESTURE_INSTRUCTION_ZH: Record<string, string> = {
+  tap: '点按画面一次',
+  double_tap: '快速点按画面两次',
+  multi_tap: '按设定次数连续点击画面',
+  rapid_tap: '快速连续点击画面',
+  hold: '按住画面完成互动',
+  hold_charge: '按住画面完成蓄力',
+  swipe_left: '向左滑动',
+  swipe_right: '向右滑动',
+  swipe_up: '向上滑动',
+  swipe_down: '向下滑动',
+  drag_left: '按住并向左拖动',
+  drag_right: '按住并向右拖动',
+  drag_up: '按住并向上拖动',
+  drag_down: '按住并向下拖动',
+  scrub_left: '向左反复擦动',
+  scrub_right: '向右反复擦动',
+  scrub_up: '向上反复擦动',
+  scrub_down: '向下反复擦动',
+  continuous_swipe: '持续往复滑动以播放',
+  continuous_tap: '持续点击画面以播放',
+  continuous_hold: '按住画面以播放',
+  pinch: '按指定方向完成双指捏合',
+  draw_circle: '在画面上画圆',
+  erase: '擦除指定区域',
+  tilt_left: '向左倾斜设备',
+  tilt_right: '向右倾斜设备',
+  shake: '摇动设备',
+  rotate: '按指定方向旋转设备',
+  hold_still: '保持设备静止',
+  camera_motion: '在镜头前完成指定动作',
+  camera_continuous: '持续完成镜头动作以播放',
+  mic_level: '声音达到目标条件',
+  mic_blow: '对麦克风吹气',
+  mic_clap: '拍手触发互动',
+  mic_quiet: '保持环境安静',
+  mic_blow_continuous: '持续吹气以播放',
+  mic_level_continuous: '持续发声以播放',
+}
+
+function gestureEnumLabel(gate: Gate) {
+  if (gate.custom_action) return 'CUSTOM_ACTION'
+  return String(gate.gesture || 'interaction').toUpperCase()
+}
+
+function compactInstruction(gate: Gate) {
+  if (gate.custom_action) {
+    return gate.action_description || gate.hint || gate.cue || '完成自定义动作'
+  }
+  if (isPinch(gate)) return pinchDirectionCopy(gate.pinch_direction).hint
+  return gate.hint || gate.cue || GESTURE_INSTRUCTION_ZH[gate.gesture || ''] || '完成当前互动'
+}
+
+function formatFrameTime(ms: number) {
+  const totalSeconds = Math.max(0, ms) / 1000
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = Math.floor(totalSeconds % 60)
+  const millis = Math.round((totalSeconds - Math.floor(totalSeconds)) * 1000)
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(millis).padStart(3, '0')}`
+}
+
 export default function PreviewPlayer({
   runId,
   videoUrl,
@@ -116,6 +176,7 @@ export default function PreviewPlayer({
   const [continuousTapPulse, setContinuousTapPulse] = useState(0)
   const [multiTapProgress, setMultiTapProgress] = useState(0)
   const [timelineZoom, setTimelineZoom] = useState(1)
+  const [timelineScrubbing, setTimelineScrubbing] = useState(false)
   const [timelineDraft, setTimelineDraft] = useState<{
     index: number
     gate_at_ms: number
@@ -159,6 +220,23 @@ export default function PreviewPlayer({
   const activeContinuousVoice = activeSustained && isContinuousVoice(active)
   const activeContinuousMicrophone = activeContinuousBlow || activeContinuousVoice
   const activeCameraCopy = cameraContinuousTargetCopy(active?.vision?.target)
+  const activeOverlayInstruction = active
+    ? activeSustained
+      ? activeCameraContinuous
+        ? continuousDriving ? `${activeCameraCopy.detected} · 播放中` : activeCameraCopy.idlePrompt
+        : activeContinuousTap
+          ? continuousDriving ? '持续点击中 · 播放中' : compactInstruction(active)
+          : activeContinuousBlow
+            ? continuousDriving ? '吹气识别中 · 播放中' : compactInstruction(active)
+            : activeContinuousVoice
+              ? continuousDriving ? '发声识别中 · 播放中' : compactInstruction(active)
+              : activeContinuousHold
+                ? continuousDriving ? '按住播放中 · 松开暂停' : compactInstruction(active)
+                : continuousDriving ? '滑动控制中 · 抬手暂停' : compactInstruction(active)
+      : activeMultiTap
+        ? `点击进度 ${multiTapProgress} / ${Math.min(99, Math.max(1, Math.round(Number(active.tap_count) || 3)))}`
+        : compactInstruction(active)
+    : ''
   const totalMs =
     mediaDuration || durationMs || (sorted.length ? sorted[sorted.length - 1].gate_at_ms : 1)
   const selectedGateAtMs = selectedIndex == null ? undefined : sorted[selectedIndex]?.gate_at_ms
@@ -194,7 +272,7 @@ export default function PreviewPlayer({
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
         event.preventDefault()
         const direction = event.key === 'ArrowLeft' ? -1 : 1
-        stepBy(direction * (event.shiftKey ? SECOND_MS : FRAME_MS))
+        stepBy(direction * (event.shiftKey ? SECOND_MS : EDITOR_FRAME_MS))
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -291,8 +369,11 @@ export default function PreviewPlayer({
 
     const onTime = () => {
       const ms = video.currentTime * 1000
-      setProgress(ms)
-      onPlayheadChange?.(Math.round(ms))
+      const displayMs = workspace && video.paused
+        ? snapToEditorFrame(ms, totalMs)
+        : ms
+      setProgress(displayMs)
+      onPlayheadChange?.(Math.round(displayMs))
       if (pausedAtGate) {
         if (active && isSustainedPlaybackInteraction(active)) {
           const next = sorted[index + 1]
@@ -348,7 +429,7 @@ export default function PreviewPlayer({
       video.removeEventListener('play', onPlay)
       video.removeEventListener('pause', onPause)
     }
-  }, [active?.gesture, annotate, index, pausedAtGate, ended, started, sorted, totalMs, onPlayheadChange])
+  }, [active?.gesture, annotate, index, pausedAtGate, ended, started, sorted, totalMs, onPlayheadChange, workspace])
 
   useEffect(() => {
     if (!activeSustained) resetContinuousControl(false)
@@ -789,12 +870,6 @@ export default function PreviewPlayer({
     selectGate(gateIndex)
   }
 
-  function msFromRailEvent(event: MouseEvent<HTMLDivElement>) {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(rect.width, 1)))
-    return ratio * totalMs
-  }
-
   function timelineMsFromClient(clientX: number, rail: HTMLElement) {
     const rect = rail.getBoundingClientRect()
     const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / Math.max(rect.width, 1)))
@@ -821,7 +896,7 @@ export default function PreviewPlayer({
       Math.abs(candidate - clamped) < Math.abs(best - clamped) ? candidate : best
     ), candidates[0] ?? clamped)
     if (Math.abs(nearest - clamped) <= threshold) return Math.round(nearest)
-    return Math.round(clamped / FRAME_MS) * FRAME_MS
+    return snapToEditorFrame(clamped, totalMs)
   }
 
   function beginGateDrag(
@@ -905,26 +980,35 @@ export default function PreviewPlayer({
     window.addEventListener('pointerup', onUp)
   }
 
-  function onRailPointerDown(event: MouseEvent<HTMLDivElement>) {
+  function onRailPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return
     event.stopPropagation()
     event.preventDefault()
     const rail = event.currentTarget
-    seekToMs(msFromRailEvent(event), { play: false })
+    const seekFromClient = (clientX: number) => {
+      const raw = timelineMsFromClient(clientX, rail)
+      seekToMs(workspace ? snapToEditorFrame(raw, totalMs) : raw, { play: false })
+    }
+    setTimelineScrubbing(true)
+    seekFromClient(event.clientX)
 
     const onMove = (moveEvent: PointerEvent) => {
-      const rect = rail.getBoundingClientRect()
-      const ratio = Math.min(1, Math.max(0, (moveEvent.clientX - rect.left) / Math.max(rect.width, 1)))
-      seekToMs(ratio * totalMs, { play: false })
+      seekFromClient(moveEvent.clientX)
     }
-    const onUp = (upEvent: PointerEvent) => {
+    const cleanup = () => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
-      const rect = rail.getBoundingClientRect()
-      const ratio = Math.min(1, Math.max(0, (upEvent.clientX - rect.left) / Math.max(rect.width, 1)))
-      seekToMs(ratio * totalMs, { play: false })
+      window.removeEventListener('pointercancel', onCancel)
+      setTimelineScrubbing(false)
     }
+    const onUp = (upEvent: PointerEvent) => {
+      seekFromClient(upEvent.clientX)
+      cleanup()
+    }
+    const onCancel = () => cleanup()
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
   }
 
   function stepBy(deltaMs: number) {
@@ -1050,33 +1134,8 @@ export default function PreviewPlayer({
               <div className="preview-gate preview-gate-continuous">
                 <span className="preview-gate-index">{String(index + 1).padStart(2, '0')}</span>
                 <div className="preview-gate-body">
-                  <div className="preview-gate-action">动作：{actionLabel(active)}</div>
-                  <strong className="preview-gate-hint">{hintLabel(active)}</strong>
-                  <div className="preview-gate-sub">
-                    {activeCameraContinuous
-                      ? continuousDriving
-                        ? `${activeCameraCopy.detected} · 视频播放中，停止 1100ms 后暂停`
-                        : activeCameraCopy.idlePrompt
-                      : activeContinuousTap
-                      ? continuousDriving
-                        ? '点击已续期 · 视频播放中，停止 500ms 后暂停'
-                        : '点击画面开始播放，并持续点击以续播'
-                      : activeContinuousBlow
-                      ? continuousDriving
-                        ? '正在模拟吹动 · 松开 450ms 后暂停'
-                        : '按住画面模拟持续吹动'
-                      : activeContinuousVoice
-                      ? continuousDriving
-                        ? '正在模拟发声 · 松开 450ms 后暂停'
-                        : '按住画面模拟持续发声'
-                      : activeContinuousHold
-                      ? continuousDriving
-                        ? '正在按住 · 视频播放中，松开立即暂停'
-                        : '按住画面以播放'
-                      : continuousDriving
-                        ? '正在滑动 · 视频播放中，抬手即暂停'
-                        : '在画面任意位置完成一次往复滑动'}
-                  </div>
+                  <strong className="preview-gate-enum">{gestureEnumLabel(active)}</strong>
+                  <small className="preview-gate-description">{activeOverlayInstruction}</small>
                   {activeCameraContinuous ? (
                     <Button
                       type="primary"
@@ -1118,14 +1177,8 @@ export default function PreviewPlayer({
                 <div className="preview-gate" onClick={(e) => e.stopPropagation()}>
                   <span className="preview-gate-index">{String(index + 1).padStart(2, '0')}</span>
                   <div className="preview-gate-body">
-                    <div className="preview-gate-action">动作：{actionLabel(active)}</div>
-                    <strong className="preview-gate-hint">{hintLabel(active)}</strong>
-                    {isPinch(active) ? <PinchDirectionGuide value={active.pinch_direction} /> : null}
-                    <div className="preview-gate-sub">
-                      {activeMultiTap
-                        ? `点击进度 ${multiTapProgress} / ${Math.min(99, Math.max(1, Math.round(Number(active.tap_count) || 3)))}`
-                        : '点击画面任意处继续'}
-                    </div>
+                    <strong className="preview-gate-enum">{gestureEnumLabel(active)}</strong>
+                    <small className="preview-gate-description">{activeOverlayInstruction}</small>
                   </div>
                   <Button type="primary" size="small" onClick={advance}>
                     {activeMultiTap
@@ -1146,9 +1199,9 @@ export default function PreviewPlayer({
             <Button size="small" onClick={() => stepBy(-SECOND_MS)}>
               -1s
             </Button>
-            <Button size="small" onClick={() => stepBy(-FRAME_MS)}>
-              -1帧
-            </Button>
+            {!workspace ? (
+              <Button size="small" onClick={() => stepBy(-EDITOR_FRAME_MS)}>-1帧</Button>
+            ) : null}
             <Button
               size="small"
               type="primary"
@@ -1159,9 +1212,9 @@ export default function PreviewPlayer({
             >
               {playing ? '暂停' : '播放'}
             </Button>
-            <Button size="small" onClick={() => stepBy(FRAME_MS)}>
-              +1帧
-            </Button>
+            {!workspace ? (
+              <Button size="small" onClick={() => stepBy(EDITOR_FRAME_MS)}>+1帧</Button>
+            ) : null}
             <Button size="small" onClick={() => stepBy(SECOND_MS)}>
               +1s
             </Button>
@@ -1171,6 +1224,11 @@ export default function PreviewPlayer({
               </Button>
             ) : null}
             <span className="preview-annotate-time">{(progress / 1000).toFixed(2)}s</span>
+            {workspace ? (
+              <span className="preview-frame-hint" title="方向键逐帧，Shift + 方向键跳转 1 秒">
+                ←/→ 逐帧
+              </span>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -1180,7 +1238,7 @@ export default function PreviewPlayer({
           <div className="editor-timeline-toolbar">
             <div>
               <strong>时间轴</strong>
-              <span>视频轨 + 互动轨</span>
+              <span>单击定位 · 按住左右拖动逐帧</span>
             </div>
             <div className="editor-timeline-zoom">
               <span>适应</span>
@@ -1198,7 +1256,16 @@ export default function PreviewPlayer({
           </div>
           <div className="editor-timeline-scroll">
             <div className="editor-timeline-canvas" style={{ width: `${timelineZoom * 100}%` }}>
-              <div className="editor-time-ruler" aria-hidden="true">
+              <div
+                className={`editor-time-ruler${timelineScrubbing ? ' is-scrubbing' : ''}`}
+                onPointerDown={onRailPointerDown}
+                role="slider"
+                tabIndex={0}
+                aria-label="时间刻度，点击定位，按住并左右拖动逐帧预览"
+                aria-valuemin={0}
+                aria-valuemax={totalMs}
+                aria-valuenow={Math.round(progress)}
+              >
                 {Array.from({ length: Math.max(10, Math.ceil(timelineZoom * 10)) + 1 }, (_, tick) => {
                   const count = Math.max(10, Math.ceil(timelineZoom * 10))
                   const tickMs = totalMs * (tick / count)
@@ -1217,7 +1284,7 @@ export default function PreviewPlayer({
                 </div>
               </div>
               <div
-                className="preview-rail editor-interaction-track"
+                className={`preview-rail editor-interaction-track${timelineScrubbing ? ' is-scrubbing' : ''}`}
                 onPointerDown={onRailPointerDown}
                 onDragOver={(event) => {
                   if (!onAddInteractionAt) return
@@ -1248,7 +1315,11 @@ export default function PreviewPlayer({
                   className="editor-playhead"
                   style={{ left: `${Math.min(100, (progress / Math.max(totalMs, 1)) * 100)}%` }}
                   aria-hidden="true"
-                />
+                >
+                  {timelineScrubbing ? (
+                    <span className="editor-playhead-time">{formatFrameTime(progress)}</span>
+                  ) : null}
+                </div>
                 {timelineRows.map((gate, gateIndex) => {
                   const sustained = isSustainedPlaybackInteraction(gate)
                   const effectiveEnd = sustained

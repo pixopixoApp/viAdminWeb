@@ -4,6 +4,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { isServiceUnavailableError } from '../apiError'
 import InteractionEditorWorkspace from '../components/editor/InteractionEditorWorkspace'
 import InteractionInspector, { patchForGesture } from '../components/editor/InteractionInspector'
+import {
+  EDITOR_FRAME_MS,
+  nearestAvailableInteractionFrame,
+} from '../components/editor/timelineUtils'
 import useInteractionHistory from '../components/editor/useInteractionHistory'
 import ServiceBusyCard from '../components/ServiceBusyCard'
 import { normalizeVisionConfig } from '../components/VisionInteractionFields'
@@ -269,23 +273,32 @@ export default function AnnotatePage() {
   }
 
   function addInteractionAt(gestureValue: string, atMs: number) {
-    const gateAtMs = Math.max(0, Math.round(atMs))
-    const existingIndex = rows.findIndex((row) => row.gate_at_ms === gateAtMs)
-    if (existingIndex >= 0) {
-      messageApi.warning('该时刻已有互动点')
-      setSelectedIndex(existingIndex)
-      return
-    }
-    const item = enforceInteractionTypeRules({
-      gate_at_ms: gateAtMs,
-      gesture: 'tap',
-      hint: '',
-      ...patchForGesture(gestureValue),
-    } as Interaction)
+    const mediaDurationMs = Number(state?.timeline?.media?.duration_ms || 0) || undefined
     commitRows((previous) => {
+      const placement = nearestAvailableInteractionFrame(previous, atMs, mediaDurationMs)
+      if (!placement) {
+        const existingIndex = previous.findIndex((row) => (
+          Math.round(row.gate_at_ms / EDITOR_FRAME_MS)
+            === Math.round(atMs / EDITOR_FRAME_MS)
+        ))
+        setSelectedIndex(existingIndex >= 0 ? existingIndex : null)
+        messageApi.warning('当前视频没有可用的空闲帧')
+        return previous
+      }
+      const item = enforceInteractionTypeRules({
+        gate_at_ms: placement.resolvedMs,
+        gesture: 'tap',
+        hint: '',
+        ...patchForGesture(gestureValue),
+      } as Interaction)
       const next = [...previous, item]
         .sort((left, right) => left.gate_at_ms - right.gate_at_ms)
       setSelectedIndex(next.indexOf(item))
+      if (placement.shiftFrames !== 0) {
+        messageApi.info(
+          `当前帧已有节点，已${placement.shiftFrames > 0 ? '后移' : '前移'}到最近空闲帧 ${(placement.resolvedMs / 1000).toFixed(3)}s`,
+        )
+      }
       return next
     })
   }

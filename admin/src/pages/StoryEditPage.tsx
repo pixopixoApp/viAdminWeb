@@ -41,6 +41,10 @@ import { normalizeVisionConfig } from '../components/VisionInteractionFields'
 import ServiceBusyCard from '../components/ServiceBusyCard'
 import { isServiceUnavailableError } from '../apiError'
 import { patchForGesture } from '../components/editor/InteractionInspector'
+import {
+  EDITOR_FRAME_MS,
+  nearestAvailableInteractionFrame,
+} from '../components/editor/timelineUtils'
 import useInteractionHistory from '../components/editor/useInteractionHistory'
 
 type UploadStage = 'preparing' | 'uploading' | 'processing'
@@ -750,27 +754,35 @@ export default function StoryEditPage() {
   }
 
   function addInteractionAt(gestureValue: string, atMs: number) {
-    const ms = Math.max(0, Math.round(atMs))
-    const existingIndex = rows.findIndex((row) => row.gate_at_ms === ms)
-    if (existingIndex >= 0) {
-      messageApi.warning('该时刻已有互动点')
-      setSelectedIndex(existingIndex)
-      return
-    }
-    const item = enforceInteractionTypeRules({
-      gate_at_ms: ms,
-      gesture: 'tap',
-      hint: '',
-      outcomes: {
-        success: { action: 'continue' },
-        fail: { action: 'continue' },
-      },
-      ...patchForGesture(gestureValue),
-    } as Interaction)
+    const mediaDurationMs = Number(
+      story?.clip_meta?.find((clip) => clip.clip_id === activeClipId)?.duration_ms
+        || story?.clips[activeClipId]?.timeline?.media?.duration_ms
+        || 0,
+    ) || undefined
     const branchRow = simpleConfig.branch_interaction_index == null
       ? null
       : rows[simpleConfig.branch_interaction_index] || null
     commitRows((previousRows) => {
+      const placement = nearestAvailableInteractionFrame(previousRows, atMs, mediaDurationMs)
+      if (!placement) {
+        const existingIndex = previousRows.findIndex((row) => (
+          Math.round(row.gate_at_ms / EDITOR_FRAME_MS)
+            === Math.round(atMs / EDITOR_FRAME_MS)
+        ))
+        setSelectedIndex(existingIndex >= 0 ? existingIndex : null)
+        messageApi.warning('当前视频没有可用的空闲帧')
+        return previousRows
+      }
+      const item = enforceInteractionTypeRules({
+        gate_at_ms: placement.resolvedMs,
+        gesture: 'tap',
+        hint: '',
+        outcomes: {
+          success: { action: 'continue' },
+          fail: { action: 'continue' },
+        },
+        ...patchForGesture(gestureValue),
+      } as Interaction)
       const next = [...previousRows, item]
         .sort((left, right) => left.gate_at_ms - right.gate_at_ms)
       setSelectedIndex(next.indexOf(item))
@@ -780,6 +792,11 @@ export default function StoryEditPage() {
           branch_interaction_index: next.indexOf(branchRow),
           complete: false,
         }))
+      }
+      if (placement.shiftFrames !== 0) {
+        messageApi.info(
+          `当前帧已有节点，已${placement.shiftFrames > 0 ? '后移' : '前移'}到最近空闲帧 ${(placement.resolvedMs / 1000).toFixed(3)}s`,
+        )
       }
       return next
     })

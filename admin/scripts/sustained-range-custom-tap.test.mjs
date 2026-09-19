@@ -12,6 +12,17 @@ const transformed = await transformWithEsbuild(interactionSource, interactionUrl
 const encoded = Buffer.from(transformed.code).toString('base64')
 const interaction = await import(`data:text/javascript;base64,${encoded}`)
 
+const timelineUtilsUrl = new URL('../src/components/editor/timelineUtils.ts', import.meta.url)
+const timelineUtilsSource = await readFile(timelineUtilsUrl, 'utf8')
+const timelineUtilsTransformed = await transformWithEsbuild(
+  timelineUtilsSource,
+  timelineUtilsUrl.pathname,
+  { loader: 'ts', format: 'esm' },
+)
+const timelineUtils = await import(
+  `data:text/javascript;base64,${Buffer.from(timelineUtilsTransformed.code).toString('base64')}`
+)
+
 const entrySources = await Promise.all([
   readFile(new URL('../src/pages/AnnotatePage.tsx', import.meta.url), 'utf8'),
   readFile(new URL('../src/components/story-edit/ClipEditor.tsx', import.meta.url), 'utf8'),
@@ -69,4 +80,26 @@ test('workspace supports click and drag authoring with clipped range feedback', 
   assert.match(playerSource, /editor-interaction-overflow/)
   assert.match(playerSource, /beginGateDrag/)
   assert.match(playerSource, /onAddInteractionAt/)
+})
+
+test('interaction library is collapsible and defaults to the first group', () => {
+  assert.match(workspaceSource, /<Collapse/)
+  assert.match(workspaceSource, /accordion/)
+  assert.match(workspaceSource, /defaultActiveKey=\{\['0'\]\}/)
+  assert.match(workspaceSource, /interaction-library-option-copy/)
+})
+
+test('timeline scrubs by frame and resolves occupied frames without a modal', () => {
+  assert.equal(timelineUtils.snapToEditorFrame(1000), 990)
+  assert.deepEqual(
+    timelineUtils.nearestAvailableInteractionFrame(
+      [{ gate_at_ms: 1000, gesture: 'tap' }],
+      1000,
+      2000,
+    ),
+    { requestedMs: 990, resolvedMs: 1023, shiftFrames: 1 },
+  )
+  assert.match(playerSource, /editor-time-ruler/)
+  assert.match(playerSource, /onPointerDown=\{onRailPointerDown\}/)
+  assert.match(playerSource, /按住左右拖动逐帧/)
 })

@@ -6,7 +6,7 @@ import {
   UnorderedListOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
-import { Button, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { Button, Collapse, Tabs, Tag, Tooltip, Typography } from 'antd'
 import { useEffect, type ReactNode } from 'react'
 import type { Interaction, InteractionPatch } from '../../types/interaction'
 import {
@@ -20,6 +20,7 @@ import {
   CUSTOM_ACTION_VALUE,
   INTERACTION_TYPE_OPTIONS,
 } from './InteractionInspector'
+import { snapToEditorFrame } from './timelineUtils'
 
 function interactionLabel(row: Interaction) {
   if (row.custom_action) return row.action_description || '自定义动作'
@@ -83,6 +84,8 @@ export default function InteractionEditorWorkspace({
   onUndo,
   onRedo,
 }: Props) {
+  const currentFrameMs = snapToEditorFrame(playheadMs, durationMs)
+
   useEffect(() => {
     if (!editing) return
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -107,37 +110,58 @@ export default function InteractionEditorWorkspace({
   const palette = (
     <div className="interaction-library">
       <Typography.Paragraph type="secondary">
-        点击可添加到播放头，也可以拖到下方时间轴。
+        点击添加到当前帧，也可以拖到时间轴。
       </Typography.Paragraph>
-      {INTERACTION_TYPE_OPTIONS.map((group) => (
-        <section className="interaction-library-group" key={String(group.label)}>
-          <Typography.Text strong>{group.label}</Typography.Text>
-          <div className="interaction-library-grid">
-            {group.options.map((option) => (
-              <button
-                key={String(option.value)}
-                type="button"
-                disabled={!editing}
-                draggable={editing}
-                title={`添加 ${option.label}`}
-                onClick={() => onAddInteractionAt(String(option.value), playheadMs)}
-                onDragStart={(event) => {
-                  event.dataTransfer.effectAllowed = 'copy'
-                  event.dataTransfer.setData('application/x-pixo-interaction', String(option.value))
-                  event.dataTransfer.setData('text/plain', String(option.value))
-                }}
-              >
-                <span className="interaction-library-icon" aria-hidden="true">
-                  {option.value === CUSTOM_ACTION_VALUE
-                    ? '＋'
-                    : String(option.label).slice(0, 1).toUpperCase()}
-                </span>
-                <span>{option.label}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-      ))}
+      <Collapse
+        className="interaction-library-collapse"
+        ghost
+        size="small"
+        accordion
+        defaultActiveKey={['0']}
+        expandIconPosition="end"
+        items={INTERACTION_TYPE_OPTIONS.map((group, groupIndex) => ({
+          key: String(groupIndex),
+          label: (
+            <span className="interaction-library-group-label">
+              <strong>{group.label}</strong>
+              <small>{group.options.length}</small>
+            </span>
+          ),
+          children: (
+            <div className="interaction-library-grid">
+              {group.options.map((option) => (
+                <button
+                  key={String(option.value)}
+                  type="button"
+                  disabled={!editing}
+                  draggable={editing}
+                  title={`添加 ${option.label} 到 ${formatTime(currentFrameMs)}`}
+                  onClick={() => onAddInteractionAt(String(option.value), currentFrameMs)}
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = 'copy'
+                    event.dataTransfer.setData('application/x-pixo-interaction', String(option.value))
+                    event.dataTransfer.setData('text/plain', String(option.value))
+                  }}
+                >
+                  <span className="interaction-library-icon" aria-hidden="true">
+                    {option.value === CUSTOM_ACTION_VALUE
+                      ? '＋'
+                      : String(option.label).slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="interaction-library-option-copy">
+                    <strong>{option.label}</strong>
+                    <small>
+                      {option.value === CUSTOM_ACTION_VALUE
+                        ? 'custom_action'
+                        : String(option.value)}
+                    </small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ),
+        }))}
+      />
     </div>
   )
 
