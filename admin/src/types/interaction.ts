@@ -277,6 +277,8 @@ export const GESTURE_LABEL: Record<string, string> = {
   camera_continuous: 'Continuous Camera Motion',
   tilt_left: 'Tilt Left',
   tilt_right: 'Tilt Right',
+  tilt_forward: 'Tilt Forward',
+  tilt_backward: 'Tilt Backward',
   shake: 'Shake',
   mic_level: 'Sound',
   mic_level_continuous: 'Continuous Sound · Voice (Pitch)',

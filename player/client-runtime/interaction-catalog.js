@@ -108,6 +108,8 @@
     { type: "camera_motion", instruction: "Follow the prompt using the front camera", icon: "face", library: "material-symbols-rounded", mechanic: "camera", capability: "camera", animation: "camera", badgeIcon: "camera", detection: detection({ response_window_ms: 5000, min_motion_score: 45, place: SENSOR_PLACE }) },
     { type: "tilt_left", instruction: "Tilt left", icon: "smartphone", library: "lucide", mechanic: "motion", capability: "device_motion", animation: "tilt", direction: "left", badgeIcon: "arrow_left", rotation: 15, detection: detection({ response_window_ms: 1200, min_angle_deg: 15, place: SENSOR_PLACE }) },
     { type: "tilt_right", instruction: "Tilt right", icon: "smartphone", library: "lucide", mechanic: "motion", capability: "device_motion", animation: "tilt", direction: "right", badgeIcon: "arrow_right", rotation: -15, detection: detection({ response_window_ms: 1200, min_angle_deg: 15, place: SENSOR_PLACE }) },
+    { type: "tilt_forward", instruction: "Tilt forward", icon: "smartphone", library: "lucide", mechanic: "motion", capability: "device_motion", animation: "pitch", direction: "forward", badgeIcon: "arrow_up", detection: detection({ response_window_ms: 1200, min_angle_deg: 15, place: SENSOR_PLACE }) },
+    { type: "tilt_backward", instruction: "Tilt backward", icon: "smartphone", library: "lucide", mechanic: "motion", capability: "device_motion", animation: "pitch", direction: "backward", badgeIcon: "arrow_down", detection: detection({ response_window_ms: 1200, min_angle_deg: 15, place: SENSOR_PLACE }) },
     { type: "shake", instruction: "Shake your phone", icon: "smartphone", library: "lucide", mechanic: "motion", capability: "device_motion", animation: "shake", badgeIcon: "swap_horiz", detection: detection({ response_window_ms: 1500, min_shake_score: 60, place: SENSOR_PLACE }) },
     { type: "rotate", instruction: "Rotate your phone", icon: "smartphone", library: "lucide", mechanic: "motion", capability: "device_motion", animation: "rotate", badgeIcon: "rotate_right", detection: detection({ response_window_ms: 1800, min_angle_deg: 75, rotation_direction: "counterclockwise", place: SENSOR_PLACE }) },
     { type: "mic_level", instruction: "Make some noise", icon: "mic", library: "lucide", mechanic: "microphone", capability: "microphone", animation: "mic-level", detection: detection({ response_window_ms: 4000, min_duration_ms: 300, min_volume_score: 55, place: SENSOR_PLACE }) },
@@ -137,7 +139,7 @@
   });
 
   return Object.freeze({
-    version: "3.6.0",
+    version: "3.7.0",
     entries: Object.freeze(entries),
     types: Object.freeze(entries.map(function wireValues(entry) { return entry.type; })),
     fieldSemantics,

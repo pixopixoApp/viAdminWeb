@@ -8,6 +8,8 @@
     "hold_still",
     "tilt_left",
     "tilt_right",
+    "tilt_forward",
+    "tilt_backward",
     "shake",
     "rotate",
   ]);
@@ -97,13 +99,12 @@
   windowObject.addEventListener("resize", scheduleBrowserHostLayout);
 
   let experienceSpec = null;
-  let experienceSpecRaw = "";
   if (storageKey) {
     try {
       const raw = windowObject.sessionStorage.getItem(storageKey);
       if (raw) {
-        experienceSpecRaw = raw;
         experienceSpec = JSON.parse(raw);
+        windowObject.__pixoPendingExperienceSpecJson = raw;
       }
     } catch {
       experienceSpec = null;
@@ -119,19 +120,6 @@
   );
   const needsMotion = WEB_MOTION_INTERACTIONS_ENABLED
     && [...interactionTypes].some((type) => motionTypes.has(type));
-  const visionTargets = [...new Set(
-    (experienceSpec?.body?.video || []).flatMap((video) =>
-      (Array.isArray(video?.interactions) ? video.interactions : []).flatMap((interaction) => {
-        if (!["camera_motion", "camera_continuous"].includes(interaction?.type)) return [];
-        const target = interaction?.detection?.vision?.target;
-        return typeof target === "string" && target.trim() ? [target.trim()] : [];
-      }),
-    ),
-  )];
-  const needsVision = visionTargets.length > 0;
-  if (experienceSpecRaw && !needsVision) {
-    windowObject.__pixoPendingExperienceSpecJson = experienceSpecRaw;
-  }
 
   let motionPermissionPromise = null;
   let motionActive = false;
@@ -148,9 +136,6 @@
   let microphoneActive = false;
   let microphoneMeter = null;
   let microphoneProcessingProfile = "legacy";
-  let visionSession = null;
-  let visionPreparationPromise = null;
-  let deferredExperienceLoaded = false;
 
   function now() {
     return Date.now();
@@ -174,63 +159,6 @@
 
   function status(value, extra) {
     return { status: value, ...(extra || {}) };
-  }
-
-  function postPreflight(state, detail = {}) {
-    if (windowObject.parent === windowObject) return;
-    windowObject.parent.postMessage({
-      type: "pixo-web-preflight",
-      experienceId,
-      state,
-      capabilities: needsVision ? ["vision"] : [],
-      ...detail,
-    }, windowObject.location.origin);
-  }
-
-  function ensureVisionSession() {
-    if (visionSession) return visionSession;
-    const createSession = windowObject.PixoWebVision?.createSession;
-    if (typeof createSession !== "function") return null;
-    visionSession = createSession({ onSignal: (detail) => emit("vision", detail) });
-    return visionSession;
-  }
-
-  async function loadDeferredExperience() {
-    if (!needsVision || !experienceSpecRaw || deferredExperienceLoaded) return;
-    deferredExperienceLoaded = true;
-    if (typeof windowObject.PixoRuntime?.loadExperience === "function") {
-      await windowObject.PixoRuntime.loadExperience(experienceSpecRaw);
-    } else {
-      windowObject.__pixoPendingExperienceSpecJson = experienceSpecRaw;
-    }
-  }
-
-  function prepareVision() {
-    if (!needsVision) {
-      postPreflight("ready");
-      return Promise.resolve(status("granted"));
-    }
-    if (visionPreparationPromise) return visionPreparationPromise;
-    const session = ensureVisionSession();
-    if (!session) {
-      const unavailable = status("unavailable", { reason: "vision_host_unavailable" });
-      postPreflight("error", unavailable);
-      return Promise.resolve(unavailable);
-    }
-    postPreflight("loading");
-    visionPreparationPromise = session.prepare(visionTargets).then(async (result) => {
-      if (result.status === "granted") await loadDeferredExperience();
-      postPreflight(result.status === "granted" ? "ready" : "error", result);
-      return result;
-    }).catch((error) => {
-      const result = status("unavailable", {
-        reason: "vision_engine_load_failed",
-        message: String(error?.message || "Vision engine failed.").slice(0, 160),
-      });
-      postPreflight("error", result);
-      return result;
-    });
-    return visionPreparationPromise;
   }
 
   async function requestMotionPermission() {
@@ -486,40 +414,11 @@
       return requestMotionPermission();
     }
     if (normalized.includes("microphone")) return ensureMicrophone();
-    if (normalized === "vision" || normalized.includes("camera")) {
-      const prepared = await prepareVision();
-      if (prepared.status !== "granted") return prepared;
-      const session = ensureVisionSession();
-      return session
-        ? session.requestPermission()
-        : status("unavailable", { reason: "vision_host_unavailable" });
-    }
+    if (normalized.includes("camera")) return status("unavailable");
     if (["haptics", "deviceinfo", "mediacontrol"].includes(normalized)) {
       return status("granted");
     }
     return status("unavailable");
-  }
-
-  async function startVision(config) {
-    const prepared = await prepareVision();
-    if (prepared.status !== "granted") return prepared;
-    const session = ensureVisionSession();
-    if (!session) return status("unavailable", { reason: "vision_host_unavailable" });
-    const result = await session.start(config || {});
-    if (result.status === "active") {
-      emit("vision", {
-        status: "active",
-        timestamp: now(),
-        target: String(config?.target || ""),
-      });
-    } else if (["denied", "unavailable", "error"].includes(result.status)) {
-      emit("vision", { ...result, target: String(config?.target || "") });
-    }
-    return result;
-  }
-
-  function stopVision() {
-    return visionSession?.stop() || status("stopped");
   }
 
   function haptic(style) {
@@ -571,7 +470,6 @@
               motion: needsMotion,
               microphoneLevel: Boolean(navigator.mediaDevices?.getUserMedia),
               cameraSignals: false,
-              vision: Boolean(needsVision && ensureVisionSession()?.supported()),
               haptics: typeof navigator.vibrate === "function",
               mediaControl: true,
               shareExperience: Boolean(experienceId),
@@ -591,10 +489,6 @@
           return status("unavailable");
         case "stopCameraSignals":
           return status("stopped");
-        case "startVision":
-          return startVision(paramsValue);
-        case "stopVision":
-          return stopVision();
         case "haptic":
           return haptic(paramsValue.style);
         case "mediaControl":
@@ -618,13 +512,7 @@
     windowObject.removeEventListener("resize", scheduleBrowserHostLayout);
     stopMotion();
     stopMicrophone();
-    visionSession?.dispose();
-    visionSession = null;
   }
 
   windowObject.addEventListener("pagehide", cleanup, { once: true });
-  windowObject.document.addEventListener("visibilitychange", () => {
-    if (windowObject.document.hidden) visionSession?.suspend();
-  });
-  windowObject.queueMicrotask(() => { void prepareVision(); });
 })(window);

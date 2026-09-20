@@ -119,6 +119,8 @@ const GESTURE_INSTRUCTION_ZH: Record<string, string> = {
   erase: '擦除指定区域',
   tilt_left: '向左倾斜设备',
   tilt_right: '向右倾斜设备',
+  tilt_forward: '向前倾斜设备',
+  tilt_backward: '向后倾斜设备',
   shake: '摇动设备',
   rotate: '按指定方向旋转设备',
   hold_still: '保持设备静止',

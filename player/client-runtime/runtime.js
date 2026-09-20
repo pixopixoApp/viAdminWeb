@@ -44,10 +44,11 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createPixoRuntime(host) {
   "use strict";
 
-  const VERSION = "0.31.0";
-  const EXPERIENCE_SPEC_VERSION = "1.8";
+  const VERSION = "0.32.0";
+  const EXPERIENCE_SPEC_VERSION = "1.9";
   const SUPPORTED_EXPERIENCE_SPEC_VERSIONS = new Set([
-    "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", EXPERIENCE_SPEC_VERSION,
+    "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8",
+    EXPERIENCE_SPEC_VERSION,
   ]);
   const DEFAULT_CONFIDENCE_THRESHOLD = 0.85;
   const DEFAULT_RESPONSE_WINDOW_MS = 3000;
@@ -225,6 +226,8 @@
     camera_motion: "anim-cam",
     tilt_left: "anim-tilt",
     tilt_right: "anim-tilt",
+    tilt_forward: "anim-pitch",
+    tilt_backward: "anim-pitch",
     shake: "anim-shake",
     rotate: "anim-rot",
     mic_level: "anim-mic",
@@ -1291,13 +1294,28 @@
       isRecord(current) ? current.gamma : undefined,
       isRecord(baseline) ? baseline.gamma : undefined,
     );
+    const pitchDeltaDeg = angularDeltaDegrees(
+      isRecord(current) ? current.beta : undefined,
+      isRecord(baseline) ? baseline.beta : undefined,
+    );
+    // DeviceOrientation beta is positive when the device pitches forward
+    // toward the user and negative when it pitches backward away from them.
+    const axisDeltaDeg = type === "tilt_forward" || type === "tilt_backward"
+      ? pitchDeltaDeg
+      : rollDeltaDeg;
     const signedAngleDeg = type === "tilt_left"
       ? -rollDeltaDeg
-      : (type === "tilt_right" ? rollDeltaDeg : 0);
+      : type === "tilt_right"
+        ? rollDeltaDeg
+        : type === "tilt_forward"
+          ? pitchDeltaDeg
+          : (type === "tilt_backward" ? -pitchDeltaDeg : 0);
     return Object.freeze({
       matches: signedAngleDeg >= safe.effectiveMinAngleDeg,
       type,
       rollDeltaDeg,
+      pitchDeltaDeg,
+      axisDeltaDeg,
       signedAngleDeg,
     });
   }
@@ -2347,27 +2365,30 @@
           runtime_key: typeof interaction.id === "string" ? interaction.id.trim() : "",
         };
       });
-      if (!["1.7", "1.8"].includes(specVersion) && cues.some(function outwardPinch(cue) {
+      if (!["1.7", "1.8", "1.9"].includes(specVersion) && cues.some(function outwardPinch(cue) {
         return cue.type === "pinch" && cue.detection.pinch_direction === "outward";
       })) throw new TypeError("Outward pinch requires ExperienceSpec v1.7.");
-      if (specVersion !== "1.8" && cues.some(function v18Range(cue) {
+      if (!["1.8", "1.9"].includes(specVersion) && cues.some(function v18Range(cue) {
         return isFiniteNumber(cue.active_until_ms);
       })) throw new TypeError("active_until_ms requires ExperienceSpec v1.8.");
-      if (specVersion !== "1.8" && cues.some(function v18TouchType(cue) {
+      if (!["1.8", "1.9"].includes(specVersion) && cues.some(function v18TouchType(cue) {
         return cue.type === "continuous_hold" || cue.type === "multi_tap";
       })) throw new TypeError("continuous_hold and multi_tap require ExperienceSpec v1.8.");
+      if (specVersion !== "1.9" && cues.some(function v19PitchType(cue) {
+        return cue.type === "tilt_forward" || cue.type === "tilt_backward";
+      })) throw new TypeError("tilt_forward and tilt_backward require ExperienceSpec v1.9.");
       if (specVersion === "1.0" && cues.some(isContinuousSwipeCue)) {
         throw new TypeError(
           `Video '${videoId}' uses continuous_swipe in an ExperienceSpec v1.0 payload.`,
         );
       }
-      if (!["1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8"].includes(specVersion)
+      if (!["1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"].includes(specVersion)
         && cues.some(isContinuousTapCue)) {
         throw new TypeError(
           `Video '${videoId}' uses continuous_tap in an ExperienceSpec v${specVersion} payload.`,
         );
       }
-      if (!["1.3", "1.4", "1.5", "1.6", "1.7", "1.8"].includes(specVersion)
+      if (!["1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9"].includes(specVersion)
         && cues.some(isCameraContinuousCue)) {
         throw new TypeError(
           `Video '${videoId}' uses camera_continuous in an ExperienceSpec v${specVersion} payload.`,
@@ -2381,12 +2402,12 @@
           `Video '${videoId}' uses hand_finger_gun_recoil in an ExperienceSpec v1.3 payload.`,
         );
       }
-      if (!["1.5", "1.6", "1.7", "1.8"].includes(specVersion) && cues.some(isContinuousBlowCue)) {
+      if (!["1.5", "1.6", "1.7", "1.8", "1.9"].includes(specVersion) && cues.some(isContinuousBlowCue)) {
         throw new TypeError(
           `Video '${videoId}' uses mic_blow_continuous in an ExperienceSpec v${specVersion} payload.`,
         );
       }
-      if (!["1.6", "1.7", "1.8"].includes(specVersion) && cues.some(isContinuousVoiceCue)) {
+      if (!["1.6", "1.7", "1.8", "1.9"].includes(specVersion) && cues.some(isContinuousVoiceCue)) {
         throw new TypeError(
           `Video '${videoId}' uses mic_level_continuous in an ExperienceSpec v${specVersion} payload.`,
         );
@@ -3419,6 +3440,10 @@
         targetElement.style.setProperty(`--guide-scrub-${distance}-y`, `${scrubVector.y * distance}px`);
       });
       targetElement.style.setProperty("--guide-rot", resolvedGuide.direction === "left" ? "-15deg" : "15deg");
+      targetElement.style.setProperty(
+        "--guide-pitch",
+        resolvedGuide.direction === "forward" ? "28deg" : "-28deg",
+      );
       targetElement.style.setProperty(
         "--guide-rotation",
         resolvedGuide.rotation_direction === "counterclockwise" ? "-90deg" : "90deg",
@@ -4726,7 +4751,7 @@
         return;
       }
 
-      if (active.cue.type === "tilt_left" || active.cue.type === "tilt_right") {
+      if (["tilt_left", "tilt_right", "tilt_forward", "tilt_backward"].includes(active.cue.type)) {
         const evaluation = evaluateTiltGesture(
           active.cue,
           active.motionBaseline,

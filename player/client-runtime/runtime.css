@@ -786,6 +786,7 @@ html[data-pixo-place-grid="visible"] .interaction-target::after {
 .anim-cam .gesture-face { animation: guide-rock 1.6s ease-in-out infinite; }
 .anim-cam .gesture-badge { animation: guide-blink 1.6s infinite; }
 .anim-tilt .gesture-glyph { transform-origin: 50% 92%; animation: guide-tilt 1.8s ease-in-out infinite; }
+.anim-pitch .gesture-glyph { transform-origin: 50% 92%; animation: guide-pitch 1.8s ease-in-out infinite; }
 .anim-shake .gesture-glyph { animation: guide-shake 1.6s infinite; }
 .anim-rot .gesture-glyph { animation: guide-rotate 2s ease-in-out infinite; }
 .anim-mic .rip1 { animation: guide-ripple 1.6s infinite .1s; }
@@ -917,6 +918,7 @@ html[data-pixo-place-grid="visible"] .interaction-target::after {
 @keyframes guide-rock { 0%, 100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
 @keyframes guide-blink { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 @keyframes guide-tilt { 0%, 14% { transform: rotate(0); } 36%, 58% { transform: rotate(var(--guide-rot)); } 78%, 100% { transform: rotate(0); } }
+@keyframes guide-pitch { 0%, 14% { transform: perspective(160px) rotateX(0); } 36%, 58% { transform: perspective(160px) rotateX(var(--guide-pitch)); } 78%, 100% { transform: perspective(160px) rotateX(0); } }
 @keyframes guide-shake { 0%, 8% { transform: translateX(0); } 13% { transform: translateX(-7px); } 18% { transform: translateX(7px); } 23% { transform: translateX(-7px); } 28% { transform: translateX(7px); } 33%, 100% { transform: translateX(0); } }
 @keyframes guide-rotate { 0%, 12% { transform: rotate(0); } 38%, 62% { transform: rotate(var(--guide-rotation, 90deg)); } 86%, 100% { transform: rotate(0); } }
 @keyframes guide-puff { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: .9; } 60% { transform: translate(46px, 0); opacity: 0; } 100% { opacity: 0; } }

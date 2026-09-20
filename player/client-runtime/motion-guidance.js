@@ -25,6 +25,7 @@
     continuous_tap: ["tap", "Keep tapping", 0, .35], hold: ["hold", "Press & hold", 0, 2.4], continuous_hold: ["hold", "Hold to play", 0, 2.4], hold_charge: ["charge", "Hold to charge", 0, 2.4],
     continuous_swipe: ["flow", "Swipe back & forth", 0, .6], draw_circle: ["circle", "Draw a circle", 0, 1.65], erase: ["erase", "Rub to erase", 0, 1.8],
     hold_still: ["still", "Hold phone still", 0, 2.4], tilt_left: ["tilt", "Tilt phone left", 0, 1.9], tilt_right: ["tilt", "Tilt phone right", 0, 1.9],
+    tilt_forward: ["pitch", "Tilt phone forward", 0, 1.9], tilt_backward: ["pitch", "Tilt phone backward", 0, 1.9],
     shake: ["shake", "Shake phone", 0, .65], mic_level: ["voice", "Make a sound", 0, 1.7], mic_level_continuous: ["voice", "Keep pitch steady", 0, 1.2],
     mic_blow: ["blow", "Blow into mic", 0, 1.65], mic_blow_continuous: ["blow", "Keep blowing", 0, .8],
     mic_clap: ["clap", "Clap once", 0, 1.8], mic_quiet: ["quiet", "Stay quiet", 0, 2.4],
@@ -48,13 +49,18 @@
       model.outward = detection.pinch_direction === "outward"; model.kind = "pinch"; model.period = 1.8;
       model.copy = model.outward ? "Spread two fingers" : "Pinch two fingers"; model.id = model.outward ? "pinch_out" : "pinch_in";
     }
+    if (type === "multi_tap") {
+      const count = Number(detection.required_tap_count);
+      model.count = Number.isInteger(count) && count >= 1 && count <= 99 ? count : 3;
+      model.copy = `Tap ${model.count} times`;
+    }
     if (type === "rotate") {
       // Legacy rotate without a direction uses the catalog's counterclockwise default.
       model.sign = detection.rotation_direction === "clockwise" ? 1 : -1; model.kind = "rotate"; model.period = 2.1;
       model.copy = model.sign < 0 ? "Counterclockwise" : "Clockwise";
       model.id = model.sign < 0 ? "rotate_counterclockwise" : "rotate_clockwise";
     }
-    if (type === "tilt_left") model.sign = -1;
+    if (type === "tilt_left" || type === "tilt_backward") model.sign = -1;
     if (type === "camera_motion" || type === "camera_continuous") {
       model.target = detection.vision && detection.vision.target || (type === "camera_continuous" ? "hand_finger_snap" : "hand_open_palm");
       model.id = `${type}.${model.target || "unknown"}`;
@@ -72,6 +78,7 @@
       : model.target === "hand_i_love_you" ? "Extend your thumb, index finger and little finger. Bend your middle and ring fingers."
       : model.target === "hand_finger_snap" ? "Press your thumb against your middle finger, then snap your middle finger toward your palm. Keep snapping to keep the video playing."
       : model.kind === "rotate" ? `Rotate your phone ${model.sign < 0 ? "counterclockwise" : "clockwise"} as you face its screen.`
+      : model.kind === "pitch" ? `${model.copy} as you face its screen.`
       : model.kind === "scrub" ? `Swipe back and forth, then release on the ${DIRECTIONS[match[2]][2]} side.`
       : model.target === "face_wink_left" ? "Close your left eye and keep your right eye open."
       : model.target === "face_wink_right" ? "Close your right eye and keep your left eye open."
@@ -569,6 +576,25 @@
     }
     ctx.restore();
   }
+  function pitchedPhone(ctx,x,y,color,height,pitch) {
+    const amount=clamp(Math.abs(pitch),0,.85),signed=clamp(pitch,-.85,.85);
+    const topHalf=31*(1+signed*.16),bottomHalf=31*(1-signed*.16);
+    const top=-60+amount*8,bottom=60-amount*8,corner=8;
+    ctx.save(); ctx.translate(x,y); ctx.scale(height/120,height/120);
+    ctx.beginPath();
+    ctx.moveTo(-topHalf+corner,top); ctx.lineTo(topHalf-corner,top);
+    ctx.quadraticCurveTo(topHalf,top,topHalf,top+corner);
+    ctx.lineTo(bottomHalf,bottom-corner); ctx.quadraticCurveTo(bottomHalf,bottom,bottomHalf-corner,bottom);
+    ctx.lineTo(-bottomHalf+corner,bottom); ctx.quadraticCurveTo(-bottomHalf,bottom,-bottomHalf,bottom-corner);
+    ctx.lineTo(-topHalf,top+corner); ctx.quadraticCurveTo(-topHalf,top,-topHalf+corner,top); ctx.closePath();
+    ctx.fillStyle=rgba(INK,.12); ctx.fill(); ctx.strokeStyle=rgba(color,.53); ctx.lineWidth=1.4; ctx.stroke();
+    const innerTopHalf=topHalf*.8,innerBottomHalf=bottomHalf*.8,innerTop=top+11,innerBottom=bottom-14;
+    ctx.beginPath(); ctx.moveTo(-innerTopHalf,innerTop); ctx.lineTo(innerTopHalf,innerTop);
+    ctx.lineTo(innerBottomHalf,innerBottom); ctx.lineTo(-innerBottomHalf,innerBottom); ctx.closePath();
+    const g=ctx.createLinearGradient(0,innerTop,0,innerBottom); g.addColorStop(0,rgba(color,.03)); g.addColorStop(1,rgba(color,.08));
+    ctx.fillStyle=g; ctx.fill(); stroke(ctx,[[-8,bottom-7],[8,bottom-7]],color,.55,2);
+    ellipse(ctx,0,top+6,2,2,color,.5); ctx.restore();
+  }
   function microphone(ctx,x,y,color,height = 43) {
     ctx.save(); ctx.translate(x,y); ctx.scale(height/43,height/43);
     rounded(ctx,-7,-21,14,27,7); ctx.fillStyle=rgba(color,.16); ctx.fill(); ctx.strokeStyle=rgba(color,.65); ctx.lineWidth=1.4; ctx.stroke();
@@ -680,7 +706,7 @@
         if(to>.12) directionTip(ctx,pathPart(trail,0,.76),WHITE,.7,8);
         contact(ctx,p[0],p[1],WHITE,1.35);
       }
-    } else if(["still","tilt","shake","rotate"].includes(model.kind)) {
+    } else if(["still","tilt","pitch","shake","rotate"].includes(model.kind)) {
       const h=layout.phoneSize;
       let angle=0,tx=x;
       if(model.kind==="tilt") angle=model.sign*.35*(actual ? ratio : frame.amount);
@@ -689,10 +715,16 @@
       phone(ctx,x,y,0,WHITE,h,true);
       ctx.save();
       if(model.kind==="rotate" && !actual && !reduced) ctx.globalAlpha*=mix(.18,1,ease(frame.phase/.1))*(frame.release ? 1-ease((frame.phase-.83)/.17) : 1);
-      phone(ctx,tx,y,angle,color,h); ctx.restore();
+      if(model.kind==="pitch") pitchedPhone(ctx,tx,y,color,h,model.sign*.72*(actual ? ratio : frame.amount));
+      else phone(ctx,tx,y,angle,color,h);
+      ctx.restore();
       if(model.kind==="rotate") flowPath(ctx,layout.paths.orbit,frame.amount,WHITE,18,false,reduced);
       if(model.kind==="tilt") {
         const path=sample(t=>[x+model.sign*(h*.38+t*h*.28),y+h*.48-Math.sin(t*Math.PI*.5)*h*.32],32);
+        flowPath(ctx,path,frame.amount,WHITE,17,false,reduced);
+      }
+      if(model.kind==="pitch") {
+        const path=sample(t=>[x+h*.48+Math.sin(t*Math.PI)*h*.08,y+model.sign*(h*.32-t*h*.64)],32);
         flowPath(ctx,path,frame.amount,WHITE,17,false,reduced);
       }
       if(model.kind==="shake") [-1,1].forEach(s=>flowPath(ctx,sample(t=>[x+s*(h*.34+t*h*.27),y+Math.sin(t*Math.PI)*6],24),frame.amount,WHITE,16,false,reduced));

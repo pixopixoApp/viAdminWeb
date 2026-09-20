@@ -63,7 +63,10 @@ const GROUPS: Array<{ label: string; values: string[]; flattenChildren?: boolean
   },
   {
     label: '设备动作',
-    values: ['tilt_left', 'tilt_right', 'shake', 'rotate', 'hold_still'],
+    values: [
+      'tilt_left', 'tilt_right', 'tilt_forward', 'tilt_backward',
+      'shake', 'rotate', 'hold_still',
+    ],
   },
   {
     label: '摄像头识别',

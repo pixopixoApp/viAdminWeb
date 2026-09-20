@@ -68,7 +68,7 @@ test('admin preview compiles gates through the client interaction catalog', asyn
     context.sessionStorage.getItem('pixo-admin:draft:test'),
   ))
   const [hold, taps] = spec.body.video[0].interactions
-  assert.equal(spec.body.experience_spec_version, '1.8')
+  assert.equal(spec.body.experience_spec_version, '1.9')
   assert.equal(hold.active_until_ms, 3000)
   assert.equal(hold.detection.response_window_ms, 0)
   assert.equal(taps.detection.required_tap_count, 7)
@@ -106,6 +106,28 @@ test('camera preview preserves the semantic client vision contract', async () =>
     min_confidence: 0.6,
     stable_for_ms: 250,
   })
+})
+
+test('admin preview exposes and compiles forward and backward tilt', async () => {
+  const context = await previewContext({
+    itemId: 'pitch-draft',
+    mediaUrl: '/video.mp4',
+    gates: [
+      { sourceIndex: 0, gesture: 'tilt_forward', gate_at_ms: 1000 },
+      { sourceIndex: 1, gesture: 'tilt_backward', gate_at_ms: 2000 },
+    ],
+  })
+
+  const spec = context.PixoAdminPreview.buildSpec(JSON.parse(
+    context.sessionStorage.getItem('pixo-admin:draft:test'),
+  ))
+  assert.equal(spec.body.experience_spec_version, '1.9')
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(spec.body.video[0].interactions.map((item) => item.type))),
+    ['tilt_forward', 'tilt_backward'],
+  )
+  assert.equal(context.PixoInteractionCatalog.get('tilt_forward').direction, 'forward')
+  assert.equal(context.PixoInteractionCatalog.get('tilt_backward').direction, 'backward')
 })
 
 test('vendored browser models match the pinned Web Vision release', async () => {

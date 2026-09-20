@@ -22,6 +22,8 @@ export const ADMIN_GESTURE_LABEL_ZH: Record<string, string> = {
   erase: '擦除',
   tilt_left: '向左倾斜',
   tilt_right: '向右倾斜',
+  tilt_forward: '向前倾斜',
+  tilt_backward: '向后倾斜',
   shake: '摇动设备',
   rotate: '旋转设备',
   hold_still: '保持静止',
