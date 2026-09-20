@@ -36,6 +36,10 @@ const workspaceSource = await readFile(
   new URL('../src/components/editor/InteractionEditorWorkspace.tsx', import.meta.url),
   'utf8',
 )
+const classicEditorSource = await readFile(
+  new URL('../src/components/editor/ClassicInteractionEditor.tsx', import.meta.url),
+  'utf8',
+)
 const playerSource = await readFile(
   new URL('../src/components/PreviewPlayer.tsx', import.meta.url),
   'utf8',
@@ -63,12 +67,23 @@ test('custom tap count is operator-authored and clamped to one through ninety-ni
   assert.equal(interaction.enforceInteractionTypeRules({ gesture: 'tap', tap_count: 7 }).tap_count, undefined)
 })
 
-test('both authoring entries use the shared professional editor', () => {
+test('professional editor remains available to both authoring entries', () => {
   for (const source of [entrySources[0], entrySources[2]]) {
     assert.match(source, /InteractionEditorWorkspace/)
     assert.match(source, /InteractionInspector/)
   }
   assert.match(entrySources[1], /<ClipEditor/)
+})
+
+test('manual annotation defaults to the classic editor and exposes expert mode', () => {
+  assert.match(entrySources[0], /searchParams\.get\('mode'\) === 'expert'/)
+  assert.match(entrySources[0], /if \(!expertMode\)/)
+  assert.match(entrySources[0], /<ClassicInteractionEditor/)
+  assert.match(entrySources[0], />\s*专家模式\s*</)
+  assert.match(entrySources[0], />\s*返回基础模式\s*</)
+  assert.match(classicEditorSource, /<PreviewPlayer/)
+  assert.match(classicEditorSource, /usesRotationDirection/)
+  assert.doesNotMatch(classicEditorSource, /自定义动作 <span/)
 })
 
 test('shared inspector distinguishes configured and effective ranges', () => {

@@ -1,7 +1,9 @@
+import { ExperimentOutlined, RollbackOutlined } from '@ant-design/icons'
 import { Button, Card, Empty, Input, Select, Space, Tag, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { isServiceUnavailableError } from '../apiError'
+import ClassicInteractionEditor from '../components/editor/ClassicInteractionEditor'
 import InteractionEditorWorkspace from '../components/editor/InteractionEditorWorkspace'
 import InteractionInspector, { patchForGesture } from '../components/editor/InteractionInspector'
 import { adminInteractionLabel } from '../components/editor/interactionCopy'
@@ -28,6 +30,8 @@ import type { AnnotateState, VersionInfo } from '../types/run'
 export default function AnnotatePage() {
   const { id, version } = useParams()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const expertMode = searchParams.get('mode') === 'expert'
   const [state, setState] = useState<AnnotateState | null>(null)
   const [displayTitle, setDisplayTitle] = useState('')
   const [sourceFilename, setSourceFilename] = useState('')
@@ -191,7 +195,9 @@ export default function AnnotatePage() {
     try {
       await runsApi.switchRunVersion(id, nextVersion)
       navigate(
-        target?.editing ? `/runs/${id}/annotate/${nextVersion}` : `/runs/${id}`,
+        target?.editing
+          ? `/runs/${id}/annotate/${nextVersion}${expertMode ? '?mode=expert' : ''}`
+          : `/runs/${id}`,
         { replace: true },
       )
     } catch (error) {
@@ -331,6 +337,13 @@ export default function AnnotatePage() {
     })
   }
 
+  function setExpertMode(enabled: boolean) {
+    const next = new URLSearchParams(searchParams)
+    if (enabled) next.set('mode', 'expert')
+    else next.delete('mode')
+    setSearchParams(next, { replace: true })
+  }
+
   if (loading && !state) return <Card loading />
   if (loadUnavailable && !state) return <ServiceBusyCard onRetry={load} />
   if (!state || !id) return <Empty />
@@ -371,6 +384,105 @@ export default function AnnotatePage() {
       />
     </div>
   )
+
+  if (!expertMode) {
+    return (
+      <>
+        {contextHolder}
+        <Space
+          style={{
+            marginBottom: 16,
+            width: '100%',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+          }}
+          wrap
+        >
+          <div>
+            <Typography.Title
+              level={4}
+              style={{ margin: 0 }}
+              className="page-title"
+              editable={{
+                tooltip: '点击修改标题',
+                onChange: (value) => void onSaveTitle(value),
+                triggerType: ['text', 'icon'],
+              }}
+            >
+              {displayTitle || `手动标注 · ${state.label}`}
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              <Link to="/">返回列表</Link>
+              {sourceFilename ? ` · 文件 ${sourceFilename}` : ''}
+              {saveLabel ? ` · ${saveLabel}` : ''}
+            </Typography.Text>
+            <div style={{ marginTop: 10 }}>
+              <Tag color={publishedVersion ? 'green' : 'blue'}>
+                {publishedVersion ? '已发布' : '待发布'}
+              </Tag>
+              <Tag>基础模式</Tag>
+            </div>
+          </div>
+          <Space wrap>
+            {saveStatus === 'error' ? (
+              <Button size="small" onClick={() => void persist()}>重试保存</Button>
+            ) : null}
+            <Button
+              icon={<ExperimentOutlined />}
+              onClick={() => setExpertMode(true)}
+            >
+              专家模式
+            </Button>
+            <Button type="primary" loading={finalizing} onClick={() => void onFinalize()}>
+              定稿
+            </Button>
+          </Space>
+        </Space>
+
+        {versionInfos.length > 0 ? (
+          <div
+            className="version-result-bar"
+            style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8 }}
+          >
+            <Space size="middle" wrap>
+              <Typography.Text strong>查看结果</Typography.Text>
+              <Typography.Text type="secondary">版本</Typography.Text>
+              <Select
+                style={{ width: 180 }}
+                value={version}
+                loading={switching}
+                options={versionInfos.map((item) => ({
+                  value: item.version,
+                  label: versionOptionLabel(item.label, item.version, publishedVersion),
+                }))}
+                onChange={(value) => void onSwitchVersion(value)}
+              />
+              <Typography.Text type="secondary">
+                {kindLabel}{barNote ? ` · ${barNote}` : ''}
+              </Typography.Text>
+            </Space>
+          </div>
+        ) : null}
+
+        <ClassicInteractionEditor
+          runId={id}
+          stateLabel={state.label}
+          sourceFilename={sourceFilename}
+          rows={rows}
+          selectedIndex={selectedIndex}
+          durationMs={durationMs}
+          playheadMs={playheadMs}
+          note={note}
+          onNoteChange={setNote}
+          onSelectIndex={setSelectedIndex}
+          onPlayheadChange={setPlayheadMs}
+          onAddAtPlayhead={() => addInteractionAt('tap', playheadMs)}
+          onUpdateSelected={updateSelected}
+          onRemoveSelected={removeSelected}
+        />
+      </>
+    )
+  }
 
   return (
     <div className="interaction-editor-page">
@@ -429,6 +541,12 @@ export default function AnnotatePage() {
           {saveStatus === 'error' ? (
             <Button size="small" onClick={() => void persist()}>重试保存</Button>
           ) : null}
+          <Button
+            icon={<RollbackOutlined />}
+            onClick={() => setExpertMode(false)}
+          >
+            返回基础模式
+          </Button>
           <Button type="primary" loading={finalizing} onClick={() => void onFinalize()}>
             定稿
           </Button>
