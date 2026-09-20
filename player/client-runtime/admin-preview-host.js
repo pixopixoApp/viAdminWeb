@@ -95,7 +95,7 @@
     if (type === "pinch") {
       detection.pinch_direction = gate.pinch_direction === "outward" ? "outward" : "inward";
     }
-    if (type === "rotate") {
+    if (type === "rotate" || type === "draw_circle") {
       detection.rotation_direction = gate.rotation_direction === "clockwise"
         ? "clockwise"
         : "counterclockwise";
@@ -180,49 +180,94 @@
     };
   }
 
-  async function waitForMedia(video) {
-    if (video.readyState >= 1) return;
-    await new Promise((resolve, reject) => {
-      const timeout = windowObject.setTimeout(() => {
-        cleanup();
-        reject(new Error("Preview media metadata timed out."));
-      }, 8000);
-      const cleanup = () => {
-        windowObject.clearTimeout(timeout);
-        video.removeEventListener("loadedmetadata", loaded);
-        video.removeEventListener("error", failed);
-      };
-      const loaded = () => {
-        cleanup();
-        resolve();
-      };
-      const failed = () => {
-        cleanup();
-        reject(new Error("Preview media could not be loaded."));
-      };
-      video.addEventListener("loadedmetadata", loaded, { once: true });
-      video.addEventListener("error", failed, { once: true });
-    });
+  async function waitForCurrentMedia() {
+    const startedAt = windowObject.performance.now();
+    while (windowObject.performance.now() - startedAt < 8000) {
+      const state = windowObject.PixoRuntime?.getState?.();
+      const video = windowObject.document.getElementById("experience-video");
+      if (state?.mediaReady && !state.mediaSwapPending && video?.readyState >= 1) {
+        return video;
+      }
+      await new Promise((resolve) => windowObject.setTimeout(resolve, 16));
+    }
+    throw new Error("Preview media metadata timed out.");
+  }
+
+  async function seekMedia(video, positionMs) {
+    const durationMs = Number.isFinite(video.duration) ? video.duration * 1000 : Infinity;
+    const targetMs = Math.max(0, Math.min(finite(positionMs, 0), durationMs));
+    video.pause();
+    if (Math.abs(video.currentTime * 1000 - targetMs) > 0.5) {
+      await new Promise((resolve) => {
+        const timeout = windowObject.setTimeout(resolve, 1200);
+        video.addEventListener("seeked", () => {
+          windowObject.clearTimeout(timeout);
+          resolve();
+        }, { once: true });
+        video.currentTime = targetMs / 1000;
+      });
+    }
+    video.pause();
+    video.dispatchEvent(new Event("timeupdate"));
+    await new Promise((resolve) => windowObject.requestAnimationFrame(resolve));
+    return targetMs;
   }
 
   async function loadDraft(draftValue, options = {}) {
     if (!windowObject.PixoRuntime?.loadExperience) {
       throw new Error("Pixo client Runtime is not ready.");
     }
-    const spec = buildSpec(draftValue, options);
+    const spec = buildSpec(draftValue);
     await windowObject.PixoRuntime.loadExperience(spec);
-    const video = windowObject.document.getElementById("experience-video");
-    if (video && Number.isFinite(Number(options.seekMs))) {
-      await waitForMedia(video);
-      video.pause();
-      const durationMs = Number.isFinite(video.duration) ? video.duration * 1000 : Infinity;
-      const seekMs = Math.max(0, Math.min(Number(options.seekMs), durationMs));
-      video.currentTime = seekMs / 1000;
-      video.dispatchEvent(new Event("timeupdate"));
-      windowObject.requestAnimationFrame(() => video.dispatchEvent(new Event("timeupdate")));
+    if (Number.isFinite(Number(options.seekMs))) {
+      await seekPosition(Number(options.seekMs), options.selectedSourceIndex);
     }
     return spec;
   }
+
+  async function seekPosition(positionMs, selectedSourceIndex) {
+    const video = await waitForCurrentMedia();
+    const result = windowObject.PixoRuntime.seekExperience(positionMs, {
+      ...(Number.isInteger(selectedSourceIndex)
+        ? { cueId: `admin-${selectedSourceIndex}` }
+        : {}),
+      activateSustainedRange: true,
+    });
+    await seekMedia(video, result?.positionMs ?? positionMs);
+    return result;
+  }
+
+  function previewPosition(positionMs) {
+    const video = windowObject.document.getElementById("experience-video");
+    if (!video) return 0;
+    video.pause();
+    const durationMs = Number.isFinite(video.duration) ? video.duration * 1000 : Infinity;
+    const targetMs = Math.max(0, Math.min(finite(positionMs, 0), durationMs));
+    video.currentTime = targetMs / 1000;
+    return targetMs;
+  }
+
+  async function toggleTransport() {
+    const video = windowObject.document.getElementById("experience-video");
+    if (!video) return false;
+    const playControl = windowObject.document.getElementById("play-control");
+    if (playControl) playControl.click();
+    await new Promise((resolve) => windowObject.requestAnimationFrame(resolve));
+    return !video.paused && !video.ended;
+  }
+
+  function isTextEntry(target) {
+    return target instanceof windowObject.HTMLElement
+      && Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
+  }
+
+  windowObject.addEventListener("keydown", (event) => {
+    if ((event.code !== "Space" && event.key !== " ") || event.repeat) return;
+    if (isTextEntry(event.target)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void toggleTransport();
+  }, true);
 
   const initialDraft = readDraft();
   if (initialDraft) {
@@ -232,6 +277,9 @@
   windowObject.PixoAdminPreview = Object.freeze({
     buildSpec,
     loadDraft,
+    seekPosition,
+    previewPosition,
+    toggleTransport,
     draftKey,
     runtimeKey,
   });

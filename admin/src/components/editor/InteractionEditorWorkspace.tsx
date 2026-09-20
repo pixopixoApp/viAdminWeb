@@ -16,10 +16,7 @@ import {
   sustainedPlaybackEndMs,
 } from '../../types/interaction'
 import PreviewPlayer from '../PreviewPlayer'
-import {
-  CUSTOM_ACTION_VALUE,
-  INTERACTION_TYPE_OPTIONS,
-} from './InteractionInspector'
+import { INTERACTION_TYPE_OPTIONS } from './InteractionInspector'
 import { adminInteractionLabel } from './interactionCopy'
 import { snapToEditorFrame } from './timelineUtils'
 
@@ -159,9 +156,7 @@ export default function InteractionEditorWorkspace({
                       onDragStart={(event) => beginPaletteDrag(event, String(option.value))}
                     >
                       <span className="interaction-library-icon" aria-hidden="true">
-                        {option.value === CUSTOM_ACTION_VALUE
-                          ? '＋'
-                          : String(option.label).slice(0, 1).toUpperCase()}
+                        {String(option.label).slice(0, 1).toUpperCase()}
                       </span>
                       <span className="interaction-library-option-copy">
                         <strong>{option.label}</strong>

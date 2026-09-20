@@ -135,11 +135,13 @@ export default function VisionInteractionFields({
   return (
     <div className="vision-interaction-fields">
       <Space direction="vertical" size={10} style={{ width: '100%' }}>
-        <Typography.Text strong>第二步：选择具体识别目标（必选）</Typography.Text>
+        <Typography.Text strong>
+          {continuous ? '第二步：选择具体识别目标（必选）' : '识别目标'}
+        </Typography.Text>
         <Typography.Text type="secondary">
           {continuous
             ? '`camera_continuous` 是持续摄像头交互大类；识别脉冲会续播 1100ms。Android 真机端侧识别，不上传或保存摄像头画面。'
-            : '`camera_motion` 只是镜头识别大类；请在下方选择具体手势或表情。Android 真机端侧识别，不上传或保存摄像头画面。'}
+            : '当前识别目标可在此调整。Android 真机端侧识别，不上传或保存摄像头画面。'}
         </Typography.Text>
         <Space wrap>
           <Typography.Text type="secondary">具体手势 / 表情</Typography.Text>

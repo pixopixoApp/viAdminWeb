@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { createReadStream } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname, extname, resolve, sep } from 'node:path'
@@ -118,12 +119,37 @@ function localEditorDemo() {
 
       if (pathname === `${localEditorDemoApi}/media/video`) {
         try {
-          const body = await readFile(localEditorDemoVideo)
-          response.statusCode = 200
+          const metadata = await stat(localEditorDemoVideo)
+          const fileSize = metadata.size
+          const range = request.headers.range?.match(/^bytes=(\d*)-(\d*)$/)
+          let start = 0
+          let end = fileSize - 1
+          if (range) {
+            if (range[1]) start = Number(range[1])
+            if (range[2]) end = Number(range[2])
+            if (!range[1] && range[2]) {
+              const suffixLength = Math.min(fileSize, Number(range[2]))
+              start = fileSize - suffixLength
+              end = fileSize - 1
+            }
+            if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start > end || start >= fileSize) {
+              response.statusCode = 416
+              response.setHeader('Content-Range', `bytes */${fileSize}`)
+              response.end()
+              return
+            }
+            end = Math.min(end, fileSize - 1)
+            response.statusCode = 206
+            response.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`)
+          } else {
+            response.statusCode = 200
+          }
           response.setHeader('Content-Type', 'video/mp4')
-          response.setHeader('Content-Length', String(body.length))
+          response.setHeader('Accept-Ranges', 'bytes')
+          response.setHeader('Content-Length', String(end - start + 1))
           response.setHeader('Cache-Control', 'no-store')
-          response.end(body)
+          if (request.method === 'HEAD') response.end()
+          else createReadStream(localEditorDemoVideo, { start, end }).pipe(response)
         } catch {
           response.statusCode = 404
           response.end('Demo video not found')

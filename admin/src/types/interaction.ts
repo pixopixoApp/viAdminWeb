@@ -153,6 +153,14 @@ export function isRotate(value: { gesture?: string } | undefined | null) {
   return value?.gesture === 'rotate'
 }
 
+export function isDrawCircle(value: { gesture?: string } | undefined | null) {
+  return value?.gesture === 'draw_circle'
+}
+
+export function usesRotationDirection(value: { gesture?: string } | undefined | null) {
+  return isRotate(value) || isDrawCircle(value)
+}
+
 export function normalizeRotationDirection(value?: string): RotationDirection {
   return value === 'clockwise' ? 'clockwise' : DEFAULT_ROTATION_DIRECTION
 }
@@ -228,7 +236,7 @@ export function enforceInteractionTypeRules(value: Interaction): Interaction {
   } else {
     delete typed.pinch_direction
   }
-  if (isRotate(typed)) {
+  if (usesRotationDirection(typed)) {
     typed.rotation_direction = normalizeRotationDirection(typed.rotation_direction)
   } else {
     delete typed.rotation_direction

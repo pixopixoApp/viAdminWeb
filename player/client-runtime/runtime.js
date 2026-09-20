@@ -981,6 +981,7 @@
     maxClosureGapDp,
     responseWindowMs,
     confidenceThreshold,
+    rotationDirection,
   ) {
     const baseMinRadiusDp = positiveNumber(minRadiusDp, DEFAULT_CIRCLE_RADIUS_DP, 4, 512);
     const baseMaxClosureGapDp = positiveNumber(
@@ -1008,6 +1009,7 @@
       effectiveMaxClosureGapDp: Infinity,
       effectiveMinRotationDeg: MIN_CIRCLE_ROTATION_DEG * tolerance,
       minDirectionConsistency: CIRCLE_DIRECTION_CONSISTENCY,
+      rotationDirection: rotationDirection === "clockwise" ? "clockwise" : "counterclockwise",
       responseWindowMs: safeResponseWindowMs,
     });
   }
@@ -1131,7 +1133,10 @@
     const radiusMatches = true;
     const closureMatches = true;
     const rotationMatches = turningDeg >= safe.effectiveMinRotationDeg;
-    const directionMatches = directionConsistency >= safe.minDirectionConsistency;
+    const rotationDirection = signedTurning >= 0 ? "clockwise" : "counterclockwise";
+    const consistencyMatches = directionConsistency >= safe.minDirectionConsistency;
+    const rotationDirectionMatches = rotationDirection === safe.rotationDirection;
+    const directionMatches = consistencyMatches && rotationDirectionMatches;
     // This is a normalized shape/noise check, not a radius or aspect-ratio gate.
     // An open arc, oval or imperfect loop passes; a line/retraced line does not.
     const shapeMatches = span > PINCH_NOISE_DP && areaRatio >= 0.015;
@@ -1142,6 +1147,9 @@
       rotationDeg,
       turningDeg,
       directionConsistency,
+      rotationDirection,
+      expectedRotationDirection: safe.rotationDirection,
+      rotationDirectionMatches,
       areaRatio,
       elapsedMs,
       durationMatches,
@@ -2145,10 +2153,10 @@
         );
       }
     }
-    if (type === "rotate") {
+    if (type === "rotate" || type === "draw_circle") {
       if (!["clockwise", "counterclockwise"].includes(mergedDetection.rotation_direction)) {
         throw new TypeError(
-          `Interaction '${cueLabel}' rotate requires detection.rotation_direction to be clockwise or counterclockwise.`,
+          `Interaction '${cueLabel}' ${type} requires detection.rotation_direction to be clockwise or counterclockwise.`,
         );
       }
       normalizedDetection.rotation_direction = mergedDetection.rotation_direction;
@@ -2478,6 +2486,13 @@
     return getDomRuntime().load(experience);
   }
 
+  function seekExperience(positionMs, options) {
+    if (!host || !host.document) {
+      throw new Error("Experience seeking requires a browser environment.");
+    }
+    return getDomRuntime().seek(positionMs, options);
+  }
+
   async function loadLocalExperience() {
     if (!host || !host.document) {
       throw new Error("Local experience loading requires a browser environment.");
@@ -2569,6 +2584,7 @@
       hostMode: initialHostMode,
       hostActive: initialHostMode === "active",
       resumePlaybackOnHostActive: false,
+      authoringTransportPaused: false,
       pendingReplayTargetMs: null,
       pendingReplayMediaGeneration: -1,
       pendingSegmentStartMs: 0,
@@ -3372,6 +3388,13 @@
       const startMultiplier = animationClass === "anim-swipe" ? -0.6 : -0.5;
       targetElement.className = `gesture-visual interaction-gesture-visual ${animationClass}`;
       targetElement.dataset.interactionType = type;
+      if (type === "draw_circle") {
+        targetElement.dataset.rotationDirection = resolvedGuide.rotation_direction === "clockwise"
+          ? "clockwise"
+          : "counterclockwise";
+      } else {
+        delete targetElement.dataset.rotationDirection;
+      }
       targetElement.style.setProperty("--guide-tx", `${motionVector.x}px`);
       targetElement.style.setProperty("--guide-ty", `${motionVector.y}px`);
       targetElement.style.setProperty("--guide-start-x", `${motionVector.x * startMultiplier}px`);
@@ -3572,7 +3595,7 @@
         : "";
       elements.interactionLabel.textContent = copy.label;
       renderInteractionAnimation(
-        cue.type === "rotate"
+        cue.type === "rotate" || cue.type === "draw_circle"
           ? { ...copy.guide, rotation_direction: cue.detection.rotation_direction }
           : copy.guide,
       );
@@ -3976,6 +3999,7 @@
 
     function requestPlaybackIfAllowed(onFailure, allowEnded) {
       if (!state.started || state.pendingMediaSwap) return false;
+      if (state.authoringTransportPaused) return false;
       if (elements.video.ended && allowEnded !== true) return false;
       // Android updates the native bridge before its asynchronous JS lifecycle event. Consulting
       // that volatile flag closes the small race where an `ended` task could open and play the
@@ -4317,6 +4341,7 @@
       const active = state.active;
       if (!active || active.resolved) return false;
       if (outcome === "success" && performance.now() < state.inputDebounceUntil) return false;
+      state.authoringTransportPaused = false;
       const mediaEndedWhileWaiting = elements.video.ended && state.mediaEndDeferred;
       const guidancePlacement = guidance && guidance.getPlacement();
       active.resolved = true;
@@ -5652,6 +5677,7 @@
           cue.detection.max_closure_gap_dp,
           cue.detection.response_window_ms,
           cue.detection.confidence_threshold,
+          cue.detection.rotation_direction,
         ),
         eraseRequirements: calculateEraseRequirements(
           cue.detection.min_travel_dp,
@@ -6099,6 +6125,7 @@
         elements.soundMeter.dataset.driving = "true";
       }
       setCueProgressWidth("100%");
+      state.authoringTransportPaused = false;
       const requestToken = ++active.continuousPlayRequestToken;
       const playbackRequested = requestPlaybackIfAllowed(function handleSustainedPlayFailure() {
         if (!activeMatches(active.activationId)
@@ -6855,6 +6882,7 @@
 
     function handleStart() {
       if (!state.experience) return;
+      state.authoringTransportPaused = false;
       const firstStart = !state.started;
       if (firstStart) {
         state.started = true;
@@ -6896,6 +6924,7 @@
       if (!state.started) {
         handleStart();
       } else if (elements.video.paused) {
+        state.authoringTransportPaused = false;
         Promise.resolve(elements.video.play())
           .then(function reportUserResume() {
             emitRuntimeEvent("playbackStateChanged", {
@@ -6905,6 +6934,7 @@
           })
           .catch(function ignorePlayFailure() {});
       } else {
+        state.authoringTransportPaused = true;
         elements.video.pause();
         emitRuntimeEvent("playbackStateChanged", {
           playbackState: "paused",
@@ -7131,6 +7161,7 @@
       state.pendingResultAction = null;
       state.retryOrigin = null;
       state.resumePlaybackOnHostActive = false;
+      state.authoringTransportPaused = false;
       state.experience = experience;
       state.segmentIndex = 0;
       state.completedCueCount = 0;
@@ -7161,6 +7192,86 @@
       requestPlaybackIfAllowed(showBrowserStartPrompt);
       emitRuntimeEvent("started", { automatic: true });
       return experience;
+    }
+
+    function seek(positionMs, options) {
+      if (!state.experience || !currentSegment()) {
+        throw new Error("Experience must be loaded before seeking.");
+      }
+      if (!isCurrentMediaReady()) {
+        throw new Error("Experience media must be ready before seeking.");
+      }
+
+      const settings = isRecord(options) ? options : {};
+      const durationMs = Number(elements.video.duration || 0) * 1000;
+      const targetMs = clamp(
+        isFiniteNumber(positionMs) ? positionMs : 0,
+        0,
+        durationMs > 0 ? durationMs : Number.MAX_SAFE_INTEGER,
+      );
+      const selectedCueId = typeof settings.cueId === "string" ? settings.cueId : null;
+      const cues = currentCues();
+      let activationIndex = selectedCueId
+        ? cues.findIndex(function findSelectedCue(cue) { return cue.id === selectedCueId; })
+        : -1;
+
+      if (activationIndex < 0 && settings.activateSustainedRange !== false) {
+        activationIndex = cues.findIndex(function findSustainedRange(cue, index) {
+          if (!isSustainedPlaybackCue(cue)) return false;
+          const startMs = getOffsetTimeMs(cue);
+          if (!isFiniteNumber(startMs) || targetMs < startMs) return false;
+          const boundaries = [];
+          if (isFiniteNumber(cue.active_until_ms)) boundaries.push(cue.active_until_ms);
+          const nextStartMs = getOffsetTimeMs(cues[index + 1]);
+          if (isFiniteNumber(nextStartMs)) boundaries.push(nextStartMs);
+          const endMs = boundaries.length ? Math.min(...boundaries) : durationMs;
+          return !isFiniteNumber(endMs) || targetMs < endMs;
+        });
+      }
+
+      cleanupActiveResources(state.active);
+      windowObject.clearTimeout(state.replayTimer);
+      state.active = null;
+      state.replayTimer = 0;
+      state.replayScheduled = false;
+      state.pendingReplayTargetMs = null;
+      state.pendingReplayMediaGeneration = -1;
+      state.pendingResultAction = null;
+      state.retryOrigin = null;
+      state.mediaEndDeferred = false;
+      state.resumePlaybackOnHostActive = false;
+      state.authoringTransportPaused = true;
+      state.started = true;
+      state.phase = state.hostActive ? "playing" : "inactive";
+      elements.video.pause();
+      elements.video.currentTime = targetMs / 1000;
+      elements.startPanel.hidden = true;
+      elements.completionPanel.hidden = true;
+      elements.feedback.hidden = true;
+      setCueUiVisible(false);
+
+      cues.forEach(function resetCueForSeek(cue, index) {
+        const cueStartMs = getOffsetTimeMs(cue);
+        const skipped = index !== activationIndex
+          && isFiniteNumber(cueStartMs)
+          && cueStartMs <= targetMs;
+        state.cueStates.set(cueKey(cue), skipped ? "skipped" : "pending");
+      });
+      renderMarkers();
+      if (activationIndex >= 0) activateCue(activationIndex);
+      elements.video.pause();
+      updateTimeline();
+      updatePlayState();
+      elements.app.dataset.runtimeState = state.phase;
+      emitRuntimeEvent("seeked", {
+        positionMs: targetMs,
+        cueId: activationIndex >= 0 ? cues[activationIndex].id : null,
+        source: "authoring",
+      });
+      return {
+        positionMs: targetMs,
+        cueId: activationIndex >= 0 ? cues[activationIndex].id : null,
+      };
     }
 
     function showFatal(error) {
@@ -7205,6 +7316,7 @@
         activeInteractionType: state.active ? state.active.cue.type : null,
         activeActivationId: state.active ? state.active.activationId : null,
         activeCuePausesVideo: Boolean(state.active && state.active.pausedVideo),
+        authoringTransportPaused: state.authoringTransportPaused,
         continuousSwipeDriving: Boolean(
           state.active
           && isContinuousSwipeCue(state.active.cue)
@@ -7374,6 +7486,10 @@
       });
       video.addEventListener("play", function activeVideoPlayed() {
         if (video === elements.video) {
+          if (state.authoringTransportPaused) {
+            video.pause();
+            return;
+          }
           updatePlayState();
           emitRuntimeEvent("mediaPlaybackStateChanged", {
             playbackState: "playing",
@@ -7418,6 +7534,7 @@
 
     return Object.freeze({
       load,
+      seek,
       showFatal,
       getState: getStateSnapshot,
       applyHostLayout: applyRuntimeHostLayout,
@@ -7550,6 +7667,7 @@
     interactionCatalog,
     setHostLayout,
     loadExperience,
+    seekExperience,
     loadLocalExperience,
     showFatalError,
     getState,

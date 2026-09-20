@@ -272,8 +272,9 @@ export default function PreviewPlayer({
   const handleClientGateOpened = useCallback((sourceIndex: number) => {
     setIndex(sourceIndex)
     setPausedAtGate(true)
-    if (annotate) onSelectGateRef.current?.(sourceIndex)
-  }, [annotate])
+    // Playback may open a gate while the operator is scrubbing. Keep the
+    // inspector selection stable; clicking the timeline node selects it explicitly.
+  }, [])
 
   const handleClientError = useCallback((message: string | null) => {
     setMediaError(message)
@@ -314,7 +315,7 @@ export default function PreviewPlayer({
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
-      if (event.key === ' ') {
+      if ((event.code === 'Space' || event.key === ' ') && !event.repeat) {
         event.preventDefault()
         togglePlay()
         return
@@ -867,7 +868,7 @@ export default function PreviewPlayer({
 
   function togglePlay() {
     if (workspace && clientRuntimeRef.current) {
-      clientRuntimeRef.current.togglePlay()
+      void clientRuntimeRef.current.togglePlay()
       return
     }
     if (activeSustained) return
@@ -1082,8 +1083,16 @@ export default function PreviewPlayer({
     const seekFromClient = (clientX: number, commit: boolean) => {
       const raw = timelineMsFromClient(clientX, rail)
       const target = workspace ? snapToEditorFrame(raw, totalMs) : raw
-      if (commit) seekToMs(target, { play: false })
-      else previewPositionAtMs(target)
+      if (!commit) {
+        previewPositionAtMs(target)
+        return
+      }
+      const gateIndex = sorted.findIndex((gate) => (
+        Math.round(gate.gate_at_ms / EDITOR_FRAME_MS)
+          === Math.round(target / EDITOR_FRAME_MS)
+      ))
+      if (gateIndex >= 0) selectGate(gateIndex)
+      else seekToMs(target, { play: false })
     }
     setTimelineScrubbing(true)
     seekFromClient(event.clientX, false)
@@ -1111,6 +1120,10 @@ export default function PreviewPlayer({
     if (!workspace || (activeSustained && clientInteractionEnabled) || event.button !== 0 || totalMs <= 0) return
     const target = event.target as HTMLElement
     if (target.closest('button, .preview-gate, .preview-media-status')) return
+    event.preventDefault()
+    event.stopPropagation()
+    const surface = event.currentTarget
+    surface.setPointerCapture(event.pointerId)
 
     const startX = event.clientX
     const startMs = progress
@@ -1120,6 +1133,8 @@ export default function PreviewPlayer({
     const onMove = (moveEvent: PointerEvent) => {
       const deltaX = moveEvent.clientX - startX
       if (!moved && Math.abs(deltaX) < 4) return
+      moveEvent.preventDefault()
+      moveEvent.stopPropagation()
       moved = true
       suppressPreviewClickRef.current = true
       setVideoScrubbing(true)
@@ -1129,10 +1144,11 @@ export default function PreviewPlayer({
       previewPositionAtMs(finalMs)
     }
 
-    const cleanup = (cancelled = false) => {
+    const cleanup = (pointerId: number, cancelled = false) => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onCancel)
+      if (surface.hasPointerCapture(pointerId)) surface.releasePointerCapture(pointerId)
       setVideoScrubbing(false)
       setTimelineScrubbing(false)
       if (cancelled) suppressPreviewClickRef.current = false
@@ -1142,11 +1158,13 @@ export default function PreviewPlayer({
         }, 0)
       }
     }
-    const onUp = () => {
+    const onUp = (upEvent: PointerEvent) => {
+      upEvent.preventDefault()
+      upEvent.stopPropagation()
       if (moved) seekToMs(finalMs, { play: false })
-      cleanup()
+      cleanup(upEvent.pointerId)
     }
-    const onCancel = () => cleanup(true)
+    const onCancel = (cancelEvent: PointerEvent) => cleanup(cancelEvent.pointerId, true)
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
     window.addEventListener('pointercancel', onCancel)
@@ -1211,6 +1229,7 @@ export default function PreviewPlayer({
               gates={sorted}
               selectedSourceIndex={selectedIndex}
               interactionEnabled={clientInteractionEnabled}
+              scrubbing={timelineScrubbing || videoScrubbing}
               onProgress={handleClientProgress}
               onGateOpened={handleClientGateOpened}
               onError={handleClientError}

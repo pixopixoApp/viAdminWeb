@@ -7,17 +7,19 @@ import {
 type Props = {
   value?: RotationDirection
   disabled?: boolean
+  label?: string
   onChange: (value: RotationDirection) => void
 }
 
 export default function RotationDirectionFields({
   value,
   disabled = false,
+  label = '旋转方向（以用户正视屏幕为准）',
   onChange,
 }: Props) {
   return (
     <Space direction="vertical" size={4} style={{ marginTop: 10 }}>
-      <Typography.Text type="secondary">旋转方向（以用户正视屏幕为准）</Typography.Text>
+      <Typography.Text type="secondary">{label}</Typography.Text>
       <Select
         disabled={disabled}
         value={normalizeRotationDirection(value)}

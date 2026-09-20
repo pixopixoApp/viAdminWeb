@@ -19,12 +19,13 @@ import {
   isContinuousHold,
   isContinuousSound,
   isContinuousTap,
+  isDrawCircle,
   isMultiTap,
   isPinch,
-  isRotate,
   isSustainedPlaybackInteraction,
   pinchDirectionCopy,
   sustainedPlaybackEndMs,
+  usesRotationDirection,
   type PinchDirection,
   type RotationDirection,
 } from '../../types/interaction'
@@ -44,7 +45,7 @@ import { adminGestureLabel } from './interactionCopy'
 
 export const CUSTOM_ACTION_VALUE = '__custom_action__'
 
-const GROUPS: Array<{ label: string; values: string[] }> = [
+const GROUPS: Array<{ label: string; values: string[]; flattenChildren?: boolean }> = [
   {
     label: '点击与按压',
     values: [
@@ -67,6 +68,7 @@ const GROUPS: Array<{ label: string; values: string[] }> = [
   {
     label: '摄像头识别',
     values: ['camera_motion'],
+    flattenChildren: true,
   },
   {
     label: '声音识别',
@@ -121,6 +123,10 @@ const SECONDARY_OPTIONS: Record<string, InteractionAuthoringOption[]> = {
     { value: presetValue('rotate', 'clockwise'), label: '顺时针旋转', code: 'clockwise' },
     { value: presetValue('rotate', 'counterclockwise'), label: '逆时针旋转', code: 'counterclockwise' },
   ],
+  draw_circle: [
+    { value: presetValue('draw_circle', 'clockwise'), label: '顺时针画圆', code: 'clockwise' },
+    { value: presetValue('draw_circle', 'counterclockwise'), label: '逆时针画圆', code: 'counterclockwise' },
+  ],
 }
 
 function authoringOption(value: string): InteractionAuthoringOption {
@@ -137,22 +143,19 @@ export const INTERACTION_TYPE_OPTIONS = [
     label: group.label,
     options: group.values
       .filter((value) => AUTHORING_SET.has(value))
-      .map(authoringOption),
+      .flatMap((value) => {
+        const option = authoringOption(value)
+        return group.flattenChildren && option.children?.length ? option.children : [option]
+      }),
   })).filter((group) => group.options.length > 0),
-  {
-    label: '其他',
-    options: [
-      ...AUTHORING_GESTURE_TYPES
-        .filter((value) => !GROUPS.some((group) => group.values.includes(value)))
-        .map(authoringOption),
-      { value: CUSTOM_ACTION_VALUE, label: '自定义动作', code: 'custom_action' },
-    ],
-  },
 ]
 
 function displayGestureValue(interaction: Interaction) {
   if (interaction.custom_action) return CUSTOM_ACTION_VALUE
   if (isContinuousSound(interaction)) return CONTINUOUS_SOUND_AUTHORING_TYPE
+  if (interaction.gesture === 'camera_motion' && interaction.vision?.target) {
+    return presetValue('camera_motion', interaction.vision.target)
+  }
   return interaction.gesture
 }
 
@@ -187,7 +190,7 @@ export function patchForGesture(value: string, current?: Interaction): Partial<I
           hint: pinchDirectionCopy(preset).hint,
         }
       : {}),
-    ...(gestureValue === 'rotate' && preset
+    ...(['rotate', 'draw_circle'].includes(gestureValue) && preset
       ? { rotation_direction: preset as RotationDirection }
       : {}),
   }
@@ -447,10 +450,13 @@ export default function InteractionInspector({
           />
         ) : null}
 
-        {!selected.custom_action && isRotate(selected) ? (
+        {!selected.custom_action && usesRotationDirection(selected) ? (
           <RotationDirectionFields
             value={selected.rotation_direction}
             disabled={!editing}
+            label={isDrawCircle(selected)
+              ? '画圆方向（以用户正视屏幕为准）'
+              : undefined}
             onChange={(rotation_direction) => onUpdate({ rotation_direction })}
           />
         ) : null}

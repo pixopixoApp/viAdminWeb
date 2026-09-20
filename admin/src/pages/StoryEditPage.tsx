@@ -10,11 +10,11 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { storiesApi, runsApi, accountsApi } from '../services/api'
 import {
   enforceInteractionTypeRules,
-  isRotate,
   isPinch,
   normalizePinchDirection,
   isSustainedPlaybackInteraction,
   normalizeRotationDirection,
+  usesRotationDirection,
   type Interaction,
   type InteractionPatch,
   type SaveStatus,
@@ -71,7 +71,7 @@ function serializeInteraction(row: Interaction) {
     ...(row.gesture === 'multi_tap' ? { tap_count: row.tap_count ?? 3 } : {}),
     ...(row.hint ? { hint: row.hint } : {}),
     ...(row.pause_video === false ? { pause_video: false } : { pause_video: true }),
-    ...(isRotate(row)
+    ...(usesRotationDirection(row)
       ? { rotation_direction: normalizeRotationDirection(row.rotation_direction) }
       : {}),
     ...(isPinch(row) ? { pinch_direction: normalizePinchDirection(row.pinch_direction) } : {}),

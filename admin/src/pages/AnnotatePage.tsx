@@ -17,10 +17,10 @@ import type { Interaction, InteractionPatch, SaveStatus } from '../types/interac
 import {
   enforceInteractionTypeRules,
   isPinch,
-  isRotate,
   isSustainedPlaybackInteraction,
   normalizePinchDirection,
   normalizeRotationDirection,
+  usesRotationDirection,
   versionOptionLabel,
 } from '../types/interaction'
 import type { AnnotateState, VersionInfo } from '../types/run'
@@ -45,6 +45,8 @@ export default function AnnotatePage() {
   const [messageApi, contextHolder] = message.useMessage()
   const skipAutosave = useRef(true)
   const saveGen = useRef(0)
+  const playheadMsRef = useRef(0)
+  playheadMsRef.current = playheadMs
 
   const restoreSelection = useCallback((nextRows: Interaction[]) => {
     if (nextRows.length === 0) {
@@ -52,13 +54,13 @@ export default function AnnotatePage() {
       return
     }
     const nearest = nextRows.reduce((best, row, index) => (
-      Math.abs(row.gate_at_ms - playheadMs)
-        < Math.abs(nextRows[best].gate_at_ms - playheadMs)
+      Math.abs(row.gate_at_ms - playheadMsRef.current)
+        < Math.abs(nextRows[best].gate_at_ms - playheadMsRef.current)
         ? index
         : best
     ), 0)
     setSelectedIndex(nearest)
-  }, [playheadMs])
+  }, [])
   const {
     commitRows,
     undo,
@@ -125,7 +127,7 @@ export default function AnnotatePage() {
       ...(row.gesture === 'multi_tap' ? { tap_count: row.tap_count ?? 3 } : {}),
       ...(row.hint ? { hint: row.hint } : {}),
       ...(row.pause_video === false ? { pause_video: false } : { pause_video: true }),
-      ...(isRotate(row)
+      ...(usesRotationDirection(row)
         ? { rotation_direction: normalizeRotationDirection(row.rotation_direction) }
         : {}),
       ...(isPinch(row)

@@ -777,6 +777,7 @@ html[data-pixo-place-grid="visible"] .interaction-target::after {
 .gesture-orbit { position: absolute; inset: 0; }
 .gesture-orbit i { position: absolute; top: 14px; left: 50%; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: var(--pixo-accent); }
 .anim-circle .gesture-orbit { animation: guide-orbit 1.6s infinite; }
+.anim-circle[data-rotation-direction="counterclockwise"] .gesture-orbit { animation-direction: reverse; }
 .anim-circle .gesture-ring circle { stroke-width: 2.5; stroke-dasharray: 189; animation: guide-trace 1.6s infinite linear; }
 .anim-circle .gesture-glyph { opacity: .9; }
 .anim-erase .gesture-glyph { animation: guide-wiggle 1.8s ease-in-out infinite; }

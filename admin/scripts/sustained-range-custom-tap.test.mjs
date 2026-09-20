@@ -96,6 +96,28 @@ test('interaction library is collapsible and defaults to the first group', () =>
   assert.match(workspaceSource, /option\.children/)
 })
 
+test('camera recognition targets are flat and unsupported custom actions are hidden', () => {
+  assert.match(inspectorSource, /label: '摄像头识别'[\s\S]*flattenChildren: true/)
+  assert.match(inspectorSource, /group\.flattenChildren && option\.children\?\.length/)
+  assert.doesNotMatch(inspectorSource, /label: '其他'/)
+  assert.doesNotMatch(inspectorSource, /label: '自定义动作', code: 'custom_action'/)
+})
+
+test('draw circle exposes and preserves clockwise and counterclockwise variants', () => {
+  const clockwise = interaction.enforceInteractionTypeRules({
+    gesture: 'draw_circle',
+    rotation_direction: 'clockwise',
+  })
+  assert.equal(clockwise.rotation_direction, 'clockwise')
+  assert.equal(
+    interaction.enforceInteractionTypeRules({ gesture: 'draw_circle' }).rotation_direction,
+    'counterclockwise',
+  )
+  assert.match(inspectorSource, /draw_circle'[\s\S]*顺时针画圆/)
+  assert.match(inspectorSource, /draw_circle'[\s\S]*逆时针画圆/)
+  assert.match(inspectorSource, /usesRotationDirection/)
+})
+
 test('timeline and main video scrub by frame while occupied frames are replaced', () => {
   assert.equal(timelineUtils.snapToEditorFrame(1000), 990)
   assert.match(playerSource, /editor-time-ruler/)

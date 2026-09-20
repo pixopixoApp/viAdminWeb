@@ -2463,6 +2463,21 @@ body {
   background: #080b0a;
 }
 
+.client-runtime-scrub-preview {
+  position: absolute;
+  z-index: 30;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.client-runtime-scrub-preview.is-visible {
+  opacity: 1;
+}
+
 .client-runtime-frame.is-positioning {
   cursor: ew-resize;
 }

@@ -13,6 +13,11 @@ async function previewContext(draft) {
   const context = {
     URLSearchParams,
     console,
+    performance,
+    setTimeout,
+    clearTimeout,
+    requestAnimationFrame(callback) { return setTimeout(callback, 0) },
+    addEventListener() {},
     location: { search: '?experience=test' },
     document: {
       documentElement: { setAttribute() {} },
