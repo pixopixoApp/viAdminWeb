@@ -190,7 +190,7 @@ export default function PreviewPlayer({
   const [timelineZoom, setTimelineZoom] = useState(1)
   const [timelineScrubbing, setTimelineScrubbing] = useState(false)
   const [videoScrubbing, setVideoScrubbing] = useState(false)
-  const [clientInteractionEnabled, setClientInteractionEnabled] = useState(true)
+  const clientInteractionEnabled = true
   const [clientSimulation, setClientSimulation] = useState<ClientSimulationState | null>(null)
   const [clientSimulationPending, setClientSimulationPending] = useState(false)
   const [timelineDraft, setTimelineDraft] = useState<{
@@ -1213,25 +1213,6 @@ export default function PreviewPlayer({
         role={workspace ? undefined : 'button'}
         tabIndex={workspace ? undefined : 0}
       >
-        {workspace ? (
-          <div className="client-preview-mode" role="group" aria-label="预览操作模式">
-            <span>客户端 Runtime</span>
-            <button
-              type="button"
-              className={clientInteractionEnabled ? 'is-active' : undefined}
-              onClick={() => setClientInteractionEnabled(true)}
-            >
-              真实体验
-            </button>
-            <button
-              type="button"
-              className={!clientInteractionEnabled ? 'is-active' : undefined}
-              onClick={() => setClientInteractionEnabled(false)}
-            >
-              画面定位
-            </button>
-          </div>
-        ) : null}
         <div
           className={`preview-phone${videoScrubbing ? ' is-frame-scrubbing' : ''}`}
           onPointerDown={workspace && clientInteractionEnabled ? undefined : beginVideoScrub}

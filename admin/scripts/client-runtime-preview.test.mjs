@@ -203,3 +203,20 @@ test('workspace copy and second-based control row stay removed', async () => {
   assert.match(player, /annotate && !workspace/)
   assert.match(player, /ClientRuntimePreview/)
 })
+
+test('workspace is locked to the real client experience without a mode switch', async () => {
+  const player = await readFile(
+    new URL('../src/components/PreviewPlayer.tsx', import.meta.url),
+    'utf8',
+  )
+  const styles = await readFile(
+    new URL('../src/styles.css', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(player, /const clientInteractionEnabled = true/)
+  assert.doesNotMatch(player, /预览操作模式/)
+  assert.doesNotMatch(player, /画面定位/)
+  assert.doesNotMatch(player, /setClientInteractionEnabled/)
+  assert.doesNotMatch(styles, /\.client-preview-mode/)
+})
