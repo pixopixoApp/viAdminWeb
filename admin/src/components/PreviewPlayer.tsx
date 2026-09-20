@@ -63,6 +63,8 @@ const CAMERA_CONTINUOUS_IDLE_TIMEOUT_MS = 1100
 const CONTINUOUS_MICROPHONE_IDLE_TIMEOUT_MS = 450
 const CONTINUOUS_JITTER_DP = 3
 const CONTINUOUS_REVERSAL_COSINE = -0.5
+const LOCAL_EDITOR_DEMO_RUN_ID = '00000000-0000-4000-8000-000000000018'
+const LOCAL_EDITOR_DEMO_VIDEO_REVISION = 'provided-27s-463e845'
 
 type ContinuousPointerState = {
   pointerId: number
@@ -250,9 +252,12 @@ export default function PreviewPlayer({
   const totalMs =
     mediaDuration || durationMs || (sorted.length ? sorted[sorted.length - 1].gate_at_ms : 1)
   const selectedGateAtMs = selectedIndex == null ? undefined : sorted[selectedIndex]?.gate_at_ms
-  const mediaUrl = videoUrl || (clipId
+  const baseMediaUrl = videoUrl || (clipId
     ? `/api/v1/stories/${runId}/clips/${clipId}/video`
     : `/api/v1/runs/${runId}/media/video`)
+  const mediaUrl = import.meta.env.DEV && runId === LOCAL_EDITOR_DEMO_RUN_ID
+    ? `${baseMediaUrl}${baseMediaUrl.includes('?') ? '&' : '?'}asset=${LOCAL_EDITOR_DEMO_VIDEO_REVISION}`
+    : baseMediaUrl
 
   const handleClientProgress = useCallback((positionMs: number, measuredDurationMs: number, isPlaying: boolean) => {
     setProgress(workspace && !isPlaying ? snapToEditorFrame(positionMs, measuredDurationMs) : positionMs)
