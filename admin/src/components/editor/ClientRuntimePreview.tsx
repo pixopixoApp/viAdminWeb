@@ -21,6 +21,10 @@ type RuntimeWindow = Window & typeof globalThis & {
     seekPosition?: (positionMs: number, selectedSourceIndex?: number) => Promise<unknown>
     previewPosition?: (positionMs: number) => number
     toggleTransport?: () => Promise<boolean>
+    simulateActiveInteraction?: () => Promise<{
+      status?: 'disabled' | 'unavailable' | 'resolved' | 'driving'
+      cueId?: string
+    }>
   }
 }
 
@@ -42,6 +46,13 @@ export type ClientRuntimePreviewHandle = {
   seek: (ms: number, selectedSourceIndex?: number) => Promise<void>
   previewPosition: (ms: number) => void
   togglePlay: () => Promise<void>
+  simulateInteraction: () => Promise<boolean>
+}
+
+export type ClientSimulationState = {
+  cueId: string
+  interactionType: string
+  status: 'available' | 'running'
 }
 
 type Props = {
@@ -55,6 +66,7 @@ type Props = {
   scrubbing: boolean
   onProgress: (positionMs: number, durationMs: number, playing: boolean) => void
   onGateOpened: (sourceIndex: number) => void
+  onSimulationChange: (state: ClientSimulationState | null) => void
   onError: (message: string | null) => void
 }
 
@@ -82,6 +94,7 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
     scrubbing,
     onProgress,
     onGateOpened,
+    onSimulationChange,
     onError,
   }, ref) {
     const iframeRef = useRef<HTMLIFrameElement>(null)
@@ -215,6 +228,18 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
           .getElementById('play-control') as HTMLButtonElement | null
         playControl?.click()
       },
+      async simulateInteraction() {
+        const controller = runtimeWindow(iframeRef.current)?.PixoAdminPreview
+        if (!controller?.simulateActiveInteraction) return false
+        try {
+          const result = await controller.simulateActiveInteraction()
+          onError(null)
+          return result?.status === 'resolved' || result?.status === 'driving'
+        } catch (error) {
+          onError(error instanceof Error ? error.message : '模拟触发失败。')
+          return false
+        }
+      },
     }))
 
     useEffect(() => {
@@ -281,17 +306,35 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
           return
         }
         if (detail.name === 'gateOpened') {
+          onSimulationChange(null)
           const cueId = String(detail.cueId || '')
           const match = /^admin-(\d+)$/.exec(cueId)
           if (match && !seekingRef.current && !authoringSeekInFlightRef.current) {
             onGateOpened(Number(match[1]))
           }
         }
+        if (detail.name === 'gateBlocked') {
+          onSimulationChange({
+            cueId: String(detail.cueId || ''),
+            interactionType: String(detail.type || 'interaction'),
+            status: 'available',
+          })
+        }
+        if (detail.name === 'gateSimulationStarted') {
+          onSimulationChange({
+            cueId: String(detail.cueId || ''),
+            interactionType: String(detail.type || 'interaction'),
+            status: 'running',
+          })
+        }
+        if (['gateResolved', 'replay', 'experienceCompleted'].includes(String(detail.name || ''))) {
+          onSimulationChange(null)
+        }
         if (detail.name === 'error') onError(String(detail.message || '客户端预览运行失败。'))
       }
       window.addEventListener('message', receiveMessage)
       return () => window.removeEventListener('message', receiveMessage)
-    }, [onError, onGateOpened])
+    }, [onError, onGateOpened, onSimulationChange])
 
     useEffect(() => {
       if (!mounted) return

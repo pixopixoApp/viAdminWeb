@@ -130,6 +130,54 @@ test('admin preview exposes and compiles forward and backward tilt', async () =>
   assert.equal(context.PixoInteractionCatalog.get('tilt_backward').direction, 'backward')
 })
 
+test('admin preview exposes a guarded capability simulation bridge', async () => {
+  const context = await previewContext({
+    itemId: 'simulation-draft',
+    mediaUrl: '/video.mp4',
+    gates: [],
+  })
+  let simulationCount = 0
+  context.PixoRuntime = {
+    simulateActiveInteraction() {
+      simulationCount += 1
+      return { status: 'resolved', cueId: 'admin-2' }
+    },
+  }
+
+  assert.equal(context.__pixoRuntimeAuthoringSimulation, true)
+  const result = await context.PixoAdminPreview.simulateActiveInteraction()
+  assert.equal(result.status, 'resolved')
+  assert.equal(result.cueId, 'admin-2')
+  assert.equal(simulationCount, 1)
+})
+
+test('blocked desktop capabilities preserve guidance and use explicit authoring simulation', async () => {
+  const runtime = await readFile(new URL('runtime.js', runtimeRoot), 'utf8')
+  const guidance = await readFile(new URL('motion-guidance.js', runtimeRoot), 'utf8')
+  const webHost = await readFile(new URL('web-host.js', runtimeRoot), 'utf8')
+  const preview = await readFile(
+    new URL('../src/components/editor/ClientRuntimePreview.tsx', import.meta.url),
+    'utf8',
+  )
+  const player = await readFile(
+    new URL('../src/components/PreviewPlayer.tsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(guidance, /Unavailable here/)
+  assert.match(runtime, /authoringSimulationAvailable/)
+  assert.match(runtime, /blocked: active\.capabilityBlocked && !authoringSimulationAvailable/)
+  assert.match(runtime, /function simulateActiveInteraction\(\)/)
+  assert.match(runtime, /return domRuntime\.simulateActiveInteraction\(\)/)
+  assert.match(runtime, /authoring_simulation/)
+  assert.match(runtime, /当前电脑无法真实触发，请使用播放器旁的模拟触发按钮/)
+  assert.match(webHost, /isAdminPreview \? 400 : 1500/)
+  assert.match(preview, /detail\.name === 'gateBlocked'/)
+  assert.match(player, /桌面端模拟/)
+  assert.match(player, /点击模拟触发/)
+  assert.match(player, /客户端引导已按真实效果显示/)
+})
+
 test('vendored browser models match the pinned Web Vision release', async () => {
   const release = JSON.parse(await readFile(
     new URL('vision/release-lock.json', runtimeRoot),

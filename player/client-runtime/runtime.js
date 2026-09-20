@@ -2541,6 +2541,11 @@
     return domRuntime ? domRuntime.getState() : { phase: "unmounted", version: VERSION };
   }
 
+  function simulateActiveInteraction() {
+    if (!domRuntime) return { status: "unavailable" };
+    return domRuntime.simulateActiveInteraction();
+  }
+
   function createDomRuntime(documentObject, windowObject) {
     const elements = {
       app: documentObject.getElementById("pixo-app"),
@@ -2657,6 +2662,8 @@
     function updateGuidance() {
       const active = state.active;
       if (!guidance || !active || active.resolved || !state.hostActive) return;
+      const authoringSimulationAvailable = active.capabilityBlocked
+        && host.__pixoRuntimeAuthoringSimulation === true;
       const now = performance.now();
       const points = Array.from(active.guidancePointers.values());
       let progress = active.guidanceProgress;
@@ -2675,8 +2682,10 @@
         lastPoint: active.guidanceLastPoint, progress, count: active.tapCount,
         hasInput: active.guidanceHasInput, driving: active.continuousDriving,
         continuousPhase: active.continuousPhase,
-        preparing, calibrating: active.guidanceCalibrating,
-        blocked: active.capabilityBlocked, retryReady: active.cameraRetryReady,
+        preparing: preparing && !authoringSimulationAvailable,
+        calibrating: active.guidanceCalibrating && !authoringSimulationAvailable,
+        blocked: active.capabilityBlocked && !authoringSimulationAvailable,
+        retryReady: active.cameraRetryReady && !authoringSimulationAvailable,
         level: active.guidanceLevel, meter: active.guidanceMeter,
         remainingMs, durationMs: active.responseWindowMs,
       }, now);
@@ -4526,7 +4535,9 @@
       cleanupActiveResources(active);
       if (!elements.video.paused) elements.video.pause();
       setCueState(active.cue, "blocked");
-      const message = "This interaction is not available on this device. Open it in the Pixo app.";
+      const message = host.__pixoRuntimeAuthoringSimulation === true
+        ? "当前电脑无法真实触发，请使用播放器旁的模拟触发按钮。"
+        : "This interaction is not available on this device. Open it in the Pixo app.";
       showCapabilityFeedback(message, "miss", true, 10000);
       emitRuntimeEvent("gateBlocked", {
         cueId: active.cue.id,
@@ -5592,6 +5603,7 @@
         continuousIdleTimer: 0,
         continuousTapFeedbackTimer: 0,
         continuousPlayRequestToken: 0,
+        authoringSimulationDriving: false,
         gesturePointers: new Map(),
         gesturePointerId: null,
         gestureCaptureTarget: null,
@@ -6123,7 +6135,7 @@
     function armSustainedPlaybackIdle(active) {
       windowObject.clearTimeout(active.continuousIdleTimer);
       active.continuousIdleTimer = 0;
-      if (isContinuousHoldCue(active.cue)) return;
+      if (isContinuousHoldCue(active.cue) || active.authoringSimulationDriving) return;
       active.continuousIdleTimer = windowObject.setTimeout(function pauseOnSustainedIdle() {
         if (!activeMatches(active.activationId)
           || active.continuousDriving !== true) return;
@@ -7354,6 +7366,10 @@
         activeInteractionType: state.active ? state.active.cue.type : null,
         activeActivationId: state.active ? state.active.activationId : null,
         activeCuePausesVideo: Boolean(state.active && state.active.pausedVideo),
+        activeCapabilityBlocked: Boolean(state.active && state.active.capabilityBlocked),
+        authoringSimulationDriving: Boolean(
+          state.active && state.active.authoringSimulationDriving,
+        ),
         authoringTransportPaused: state.authoringTransportPaused,
         continuousSwipeDriving: Boolean(
           state.active
@@ -7403,6 +7419,49 @@
           : null,
         retryOriginVideoId: state.retryOrigin ? state.retryOrigin.videoId : null,
         retryOriginCueId: state.retryOrigin ? state.retryOrigin.cueId : null,
+      };
+    }
+
+    function simulateActiveInteraction() {
+      if (host.__pixoRuntimeAuthoringSimulation !== true) {
+        return { status: "disabled" };
+      }
+      const active = state.active;
+      if (!active || active.resolved || !active.capabilityBlocked) {
+        return { status: "unavailable" };
+      }
+
+      active.capabilityBlocked = false;
+      active.pendingCapabilityFailure = null;
+      active.authoringSimulationDriving = isSustainedPlaybackCue(active.cue);
+      setCueState(active.cue, "active");
+      updateGuidance();
+
+      if (active.authoringSimulationDriving) {
+        const started = startSustainedPlaybackDriving(active, "authoring_simulation");
+        if (!started) {
+          active.authoringSimulationDriving = false;
+          active.capabilityBlocked = true;
+          setCueState(active.cue, "blocked");
+          updateGuidance();
+          return { status: "unavailable" };
+        }
+        emitRuntimeEvent("gateSimulationStarted", {
+          cueId: active.cue.id,
+          segmentIndex: state.segmentIndex,
+          type: active.cue.type,
+          sustained: true,
+        });
+        return { status: "driving", cueId: active.cue.id };
+      }
+
+      // An explicit operator action should not inherit the short anti-double-input
+      // debounce from a previously completed cue.
+      state.inputDebounceUntil = 0;
+      const cueId = active.cue.id;
+      return {
+        status: resolveSuccess("authoring_simulation") ? "resolved" : "unavailable",
+        cueId,
       };
     }
 
@@ -7575,6 +7634,7 @@
       seek,
       showFatal,
       getState: getStateSnapshot,
+      simulateActiveInteraction,
       applyHostLayout: applyRuntimeHostLayout,
       destroy: destroyRuntime,
     });
@@ -7709,6 +7769,7 @@
     loadLocalExperience,
     showFatalError,
     getState,
+    simulateActiveInteraction,
     destroy,
     testing,
   });

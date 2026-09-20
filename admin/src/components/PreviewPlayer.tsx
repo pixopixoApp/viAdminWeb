@@ -29,6 +29,7 @@ import {
 import { adminGestureLabel } from './editor/interactionCopy'
 import ClientRuntimePreview, {
   type ClientRuntimePreviewHandle,
+  type ClientSimulationState,
 } from './editor/ClientRuntimePreview'
 import { EDITOR_FRAME_MS, snapToEditorFrame } from './editor/timelineUtils'
 export { GESTURE_LABEL }
@@ -190,6 +191,8 @@ export default function PreviewPlayer({
   const [timelineScrubbing, setTimelineScrubbing] = useState(false)
   const [videoScrubbing, setVideoScrubbing] = useState(false)
   const [clientInteractionEnabled, setClientInteractionEnabled] = useState(true)
+  const [clientSimulation, setClientSimulation] = useState<ClientSimulationState | null>(null)
+  const [clientSimulationPending, setClientSimulationPending] = useState(false)
   const [timelineDraft, setTimelineDraft] = useState<{
     index: number
     gate_at_ms: number
@@ -1246,6 +1249,7 @@ export default function PreviewPlayer({
               scrubbing={timelineScrubbing || videoScrubbing}
               onProgress={handleClientProgress}
               onGateOpened={handleClientGateOpened}
+              onSimulationChange={setClientSimulation}
               onError={handleClientError}
             />
           ) : (
@@ -1427,6 +1431,42 @@ export default function PreviewPlayer({
             </div>
           ) : null}
         </div>
+        {workspace && clientInteractionEnabled && clientSimulation ? (
+          <aside
+            className={`client-simulation-card${clientSimulation.status === 'running' ? ' is-running' : ''}`}
+            aria-live="polite"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <span className="client-simulation-kicker">
+              <span className="client-simulation-indicator" aria-hidden="true" />
+              桌面端模拟
+            </span>
+            <strong>
+              {clientSimulation.status === 'running' ? '正在模拟持续触发' : '当前电脑无法真实触发'}
+            </strong>
+            <small>
+              {clientSimulation.status === 'running'
+                ? '将按真实互动区间继续播放'
+                : '客户端引导已按真实效果显示'}
+            </small>
+            <button
+              type="button"
+              disabled={clientSimulationPending || clientSimulation.status === 'running'}
+              onClick={async () => {
+                setClientSimulationPending(true)
+                const simulated = await clientRuntimeRef.current?.simulateInteraction()
+                if (!simulated) setClientSimulationPending(false)
+                else if (clientSimulation.status !== 'running') setClientSimulationPending(false)
+              }}
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M7 4.8v10.4l8-5.2-8-5.2Z" />
+              </svg>
+              {clientSimulationPending ? '正在触发…' : '点击模拟触发'}
+            </button>
+          </aside>
+        ) : null}
         {annotate && !workspace ? (
           <div
             className="preview-annotate-bar"

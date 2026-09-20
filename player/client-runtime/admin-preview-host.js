@@ -15,6 +15,10 @@
   ]);
 
   windowObject.document.documentElement.setAttribute("data-pixo-admin-preview", "true");
+  // The authoring surface may explicitly advance a capability-blocked cue. The
+  // Runtime checks this flag before exposing that preview-only escape hatch, so
+  // the published browser and native clients keep their real input semantics.
+  windowObject.__pixoRuntimeAuthoringSimulation = true;
 
   function record(value) {
     return value && typeof value === "object" && !Array.isArray(value) ? value : {};
@@ -256,6 +260,14 @@
     return !video.paused && !video.ended;
   }
 
+  async function simulateActiveInteraction() {
+    const simulate = windowObject.PixoRuntime?.simulateActiveInteraction;
+    if (typeof simulate !== "function") {
+      return { status: "unavailable" };
+    }
+    return simulate();
+  }
+
   function isTextEntry(target) {
     return target instanceof windowObject.HTMLElement
       && Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
@@ -280,6 +292,7 @@
     seekPosition,
     previewPosition,
     toggleTransport,
+    simulateActiveInteraction,
     draftKey,
     runtimeKey,
   });

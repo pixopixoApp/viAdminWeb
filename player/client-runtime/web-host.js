@@ -14,7 +14,12 @@
     "rotate",
   ]);
   const WEB_MOTION_INTERACTIONS_ENABLED = true;
-  const MOTION_SAMPLE_TIMEOUT_MS = 1500;
+  const isAdminPreview = windowObject.document.documentElement
+    .getAttribute("data-pixo-admin-preview") === "true";
+  // The editor must surface its simulation control before a short authored
+  // response window can expire. Real web experiences retain the more tolerant
+  // sensor warm-up interval.
+  const MOTION_SAMPLE_TIMEOUT_MS = isAdminPreview ? 400 : 1500;
   windowObject.__pixoRuntimeHostCapabilities = Object.freeze({
     unsupportedInteractionTypes: Object.freeze(
       WEB_MOTION_INTERACTIONS_ENABLED ? [] : [...motionTypes],
