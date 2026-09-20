@@ -1,5 +1,6 @@
 import { SettingOutlined } from '@ant-design/icons'
 import { Button, Popover, Space, Switch, Tag, Typography } from 'antd'
+import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { SaveStatus } from '../../types/interaction'
 import type { StoryEditorMode } from '../../types/run'
@@ -29,6 +30,7 @@ type Props = {
   onOpenPublish: () => void
   unpublishing: boolean
   onUnpublish: () => void
+  versionControl?: ReactNode
 }
 
 export default function StoryHeader({
@@ -55,6 +57,7 @@ export default function StoryHeader({
   onOpenPublish,
   unpublishing,
   onUnpublish,
+  versionControl,
 }: Props) {
   const settings = (
     <Space direction="vertical" size="middle" style={{ width: 280 }}>
@@ -112,6 +115,7 @@ export default function StoryHeader({
           <Tag>{editing ? '编辑中' : '已定稿'}</Tag>
           <Tag color="purple">{editorMode === 'simple_abc' ? 'ABC 简化故事' : '高级故事'}</Tag>
         </Space>
+        {versionControl}
       </Space>
       <Space wrap>
         <Popover placement="bottomRight" trigger="click" title="内容设置" content={settings}>

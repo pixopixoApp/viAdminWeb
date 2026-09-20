@@ -1,4 +1,4 @@
-import { Select, Space, Typography } from 'antd'
+import { Select, Typography } from 'antd'
 import type { VersionInfo } from '../../types/run'
 import { versionOptionLabel } from '../../types/interaction'
 
@@ -24,24 +24,21 @@ export default function VersionManager({
   if (versionInfos.length === 0) return null
 
   return (
-    <div className="editor-version-bar version-result-bar">
-      <Space size="middle" wrap>
-        <Typography.Text strong>版本</Typography.Text>
-        <Select
-          style={{ width: 200 }}
-          value={version}
-          loading={switching}
-          options={versionInfos.map((v) => ({
-            value: v.version,
-            label: versionOptionLabel(v.label, v.version, publishedVersion),
-          }))}
-          onChange={(v) => void onSwitchVersion(v)}
-        />
-        <Typography.Text type="secondary">
-          {editing ? '编辑中' : '已定稿'}
-          {barNote ? ` · ${barNote}` : ''}
-        </Typography.Text>
-      </Space>
+    <div className="editor-version-inline">
+      <Typography.Text strong>版本</Typography.Text>
+      <Select
+        value={version}
+        loading={switching}
+        options={versionInfos.map((v) => ({
+          value: v.version,
+          label: versionOptionLabel(v.label, v.version, publishedVersion),
+        }))}
+        onChange={(v) => void onSwitchVersion(v)}
+      />
+      <Typography.Text className="editor-version-inline-note" type="secondary" title={barNote}>
+        {editing ? '编辑中' : '已定稿'}
+        {barNote ? ` · ${barNote}` : ''}
+      </Typography.Text>
     </div>
   )
 }

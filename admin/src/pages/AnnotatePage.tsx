@@ -4,9 +4,10 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { isServiceUnavailableError } from '../apiError'
 import InteractionEditorWorkspace from '../components/editor/InteractionEditorWorkspace'
 import InteractionInspector, { patchForGesture } from '../components/editor/InteractionInspector'
+import { adminInteractionLabel } from '../components/editor/interactionCopy'
 import {
   EDITOR_FRAME_MS,
-  nearestAvailableInteractionFrame,
+  snapToEditorFrame,
 } from '../components/editor/timelineUtils'
 import useInteractionHistory from '../components/editor/useInteractionHistory'
 import ServiceBusyCard from '../components/ServiceBusyCard'
@@ -275,28 +276,44 @@ export default function AnnotatePage() {
   function addInteractionAt(gestureValue: string, atMs: number) {
     const mediaDurationMs = Number(state?.timeline?.media?.duration_ms || 0) || undefined
     commitRows((previous) => {
-      const placement = nearestAvailableInteractionFrame(previous, atMs, mediaDurationMs)
-      if (!placement) {
-        const existingIndex = previous.findIndex((row) => (
-          Math.round(row.gate_at_ms / EDITOR_FRAME_MS)
-            === Math.round(atMs / EDITOR_FRAME_MS)
-        ))
-        setSelectedIndex(existingIndex >= 0 ? existingIndex : null)
-        messageApi.warning('当前视频没有可用的空闲帧')
-        return previous
-      }
-      const item = enforceInteractionTypeRules({
-        gate_at_ms: placement.resolvedMs,
+      const snappedMs = snapToEditorFrame(atMs, mediaDurationMs)
+      const existingIndex = previous.findIndex((row) => (
+        Math.round(row.gate_at_ms / EDITOR_FRAME_MS)
+          === Math.round(snappedMs / EDITOR_FRAME_MS)
+      ))
+      const existing = existingIndex >= 0 ? previous[existingIndex] : undefined
+      let item = enforceInteractionTypeRules({
+        gate_at_ms: existing?.gate_at_ms ?? snappedMs,
         gesture: 'tap',
         hint: '',
+        ...(existing?.gameplay_description
+          ? { gameplay_description: existing.gameplay_description }
+          : {}),
+        ...(typeof existing?.reaction_start_ms === 'number'
+          ? { reaction_start_ms: existing.reaction_start_ms }
+          : {}),
+        ...(typeof existing?.reaction_end_ms === 'number'
+          ? { reaction_end_ms: existing.reaction_end_ms }
+          : {}),
+        ...(existing?.cue ? { cue: existing.cue } : {}),
         ...patchForGesture(gestureValue),
       } as Interaction)
-      const next = [...previous, item]
+      if (
+        existing
+        && isSustainedPlaybackInteraction(existing)
+        && isSustainedPlaybackInteraction(item)
+        && typeof existing.gate_end_ms === 'number'
+      ) {
+        item = { ...item, gate_end_ms: existing.gate_end_ms }
+      }
+      const next = (existingIndex >= 0
+        ? previous.map((row, index) => (index === existingIndex ? item : row))
+        : [...previous, item])
         .sort((left, right) => left.gate_at_ms - right.gate_at_ms)
       setSelectedIndex(next.indexOf(item))
-      if (placement.shiftFrames !== 0) {
-        messageApi.info(
-          `当前帧已有节点，已${placement.shiftFrames > 0 ? '后移' : '前移'}到最近空闲帧 ${(placement.resolvedMs / 1000).toFixed(3)}s`,
+      if (existing) {
+        messageApi.success(
+          `已将当前帧的「${adminInteractionLabel(existing)}」替换为「${adminInteractionLabel(item)}」，可撤销`,
         )
       }
       return next
@@ -384,6 +401,27 @@ export default function AnnotatePage() {
           <Tag color={publishedVersion ? 'green' : 'blue'}>
             {publishedVersion ? '已发布' : '待发布'}
           </Tag>
+          {versionInfos.length > 0 ? (
+            <div className="editor-version-inline">
+              <Typography.Text strong>版本</Typography.Text>
+              <Select
+                value={version}
+                loading={switching}
+                options={versionInfos.map((item) => ({
+                  value: item.version,
+                  label: versionOptionLabel(item.label, item.version, publishedVersion),
+                }))}
+                onChange={(value) => void onSwitchVersion(value)}
+              />
+              <Typography.Text
+                className="editor-version-inline-note"
+                type="secondary"
+                title={barNote}
+              >
+                {kindLabel}{barNote ? ` · ${barNote}` : ''}
+              </Typography.Text>
+            </div>
+          ) : null}
         </Space>
         <Space wrap>
           {saveStatus === 'error' ? (
@@ -394,27 +432,6 @@ export default function AnnotatePage() {
           </Button>
         </Space>
       </Space>
-
-      {versionInfos.length > 0 ? (
-        <div className="version-result-bar">
-          <Space size="middle" wrap>
-            <Typography.Text strong>版本</Typography.Text>
-            <Select
-              style={{ width: 180 }}
-              value={version}
-              loading={switching}
-              options={versionInfos.map((item) => ({
-                value: item.version,
-                label: versionOptionLabel(item.label, item.version, publishedVersion),
-              }))}
-              onChange={(value) => void onSwitchVersion(value)}
-            />
-            <Typography.Text type="secondary">
-              {kindLabel}{barNote ? ` · ${barNote}` : ''}
-            </Typography.Text>
-          </Space>
-        </div>
-      ) : null}
 
       <InteractionEditorWorkspace
         runId={id}

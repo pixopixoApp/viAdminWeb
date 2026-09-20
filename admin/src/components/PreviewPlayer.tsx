@@ -25,6 +25,7 @@ import {
   isPinch,
   pinchDirectionCopy,
 } from '../types/interaction'
+import { adminGestureLabel } from './editor/interactionCopy'
 import { EDITOR_FRAME_MS, snapToEditorFrame } from './editor/timelineUtils'
 export { GESTURE_LABEL }
 
@@ -74,9 +75,10 @@ type ContinuousPointerState = {
 
 function actionLabel(gate: Gate) {
   if (gate.custom_action && gate.action_description) return gate.action_description
-  if (isPinch(gate)) return pinchDirectionCopy(gate.pinch_direction).label
-  if (gate.gesture && GESTURE_LABEL[gate.gesture]) return GESTURE_LABEL[gate.gesture]
-  return gate.gesture || '互动'
+  if (isPinch(gate)) {
+    return `${adminGestureLabel(gate.gesture)} · ${pinchDirectionCopy(gate.pinch_direction).hint}`
+  }
+  return adminGestureLabel(gate.gesture)
 }
 
 function hintLabel(gate: Gate) {
@@ -177,6 +179,7 @@ export default function PreviewPlayer({
   const [multiTapProgress, setMultiTapProgress] = useState(0)
   const [timelineZoom, setTimelineZoom] = useState(1)
   const [timelineScrubbing, setTimelineScrubbing] = useState(false)
+  const [videoScrubbing, setVideoScrubbing] = useState(false)
   const [timelineDraft, setTimelineDraft] = useState<{
     index: number
     gate_at_ms: number
@@ -188,6 +191,7 @@ export default function PreviewPlayer({
   const continuousTapRenewalRef = useRef(0)
   const continuousMicrophonePointerRef = useRef<number | null>(null)
   const continuousMicrophoneKeyboardRef = useRef(false)
+  const suppressPreviewClickRef = useRef(false)
   const onSelectGateRef = useRef(onSelectGate)
   onSelectGateRef.current = onSelectGate
 
@@ -823,6 +827,16 @@ export default function PreviewPlayer({
     else resumePlay()
   }
 
+  function handlePreviewClick(event?: MouseEvent<HTMLElement>) {
+    if (suppressPreviewClickRef.current) {
+      suppressPreviewClickRef.current = false
+      event?.preventDefault()
+      event?.stopPropagation()
+      return
+    }
+    togglePlay()
+  }
+
   function seekToMs(ms: number, { play = true }: { play?: boolean } = {}) {
     const video = videoRef.current
     if (!video || totalMs <= 0) return
@@ -913,6 +927,7 @@ export default function PreviewPlayer({
     if (annotate) onSelectGate?.(gateIndex)
 
     const sustained = isSustainedPlaybackInteraction(gate)
+    if (kind === 'end' && !sustained) return
     const minimumSpan = sustained ? 1 : 0
     const automaticEnd = sustainedPlaybackEndMs(
       gate,
@@ -1011,6 +1026,46 @@ export default function PreviewPlayer({
     window.addEventListener('pointercancel', onCancel)
   }
 
+  function beginVideoScrub(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!workspace || activeSustained || event.button !== 0 || totalMs <= 0) return
+    const target = event.target as HTMLElement
+    if (target.closest('button, .preview-gate, .preview-media-status')) return
+
+    const startX = event.clientX
+    const startMs = progress
+    let moved = false
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const deltaX = moveEvent.clientX - startX
+      if (!moved && Math.abs(deltaX) < 4) return
+      moved = true
+      suppressPreviewClickRef.current = true
+      setVideoScrubbing(true)
+      setTimelineScrubbing(true)
+      const frameDelta = Math.round(deltaX / 3) * EDITOR_FRAME_MS
+      seekToMs(snapToEditorFrame(startMs + frameDelta, totalMs), { play: false })
+    }
+
+    const cleanup = (cancelled = false) => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onCancel)
+      setVideoScrubbing(false)
+      setTimelineScrubbing(false)
+      if (cancelled) suppressPreviewClickRef.current = false
+      else if (moved) {
+        window.setTimeout(() => {
+          suppressPreviewClickRef.current = false
+        }, 0)
+      }
+    }
+    const onUp = () => cleanup()
+    const onCancel = () => cleanup(true)
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onCancel)
+  }
+
   function stepBy(deltaMs: number) {
     seekToMs(progress + deltaMs, { play: false })
   }
@@ -1031,8 +1086,11 @@ export default function PreviewPlayer({
 
   return (
     <div className={`preview-wrap${workspace ? ' preview-wrap-workspace' : ''}`}>
-      <div className="preview-stage" onClick={togglePlay} role="button" tabIndex={0}>
-        <div className="preview-phone">
+      <div className="preview-stage" onClick={handlePreviewClick} role="button" tabIndex={0}>
+        <div
+          className={`preview-phone${videoScrubbing ? ' is-frame-scrubbing' : ''}`}
+          onPointerDown={beginVideoScrub}
+        >
           <video
             ref={videoRef}
             className="preview-video"
@@ -1050,6 +1108,11 @@ export default function PreviewPlayer({
             draggable={false}
             onDragStart={(e) => e.preventDefault()}
           />
+          {videoScrubbing ? (
+            <div className="preview-video-scrub-time" aria-live="polite">
+              {formatFrameTime(progress)}
+            </div>
+          ) : null}
           {mediaError ? (
             <div className="preview-media-status is-error" role="alert" onClick={(e) => e.stopPropagation()}>
               <strong>视频无法播放</strong>
@@ -1158,7 +1221,7 @@ export default function PreviewPlayer({
                 className={`preview-overlay${playing ? ' preview-overlay-playing' : ''}`}
                 onClick={(e) => {
                   e.stopPropagation()
-                  togglePlay()
+                  handlePreviewClick(e)
                 }}
               >
                 <button
@@ -1167,7 +1230,7 @@ export default function PreviewPlayer({
                   aria-label={playing ? '暂停' : '播放'}
                   onClick={(e) => {
                     e.stopPropagation()
-                    togglePlay()
+                    handlePreviewClick(e)
                   }}
                 >
                   {playing ? <PauseCircleFilled /> : <PlayCircleFilled />}
@@ -1225,8 +1288,8 @@ export default function PreviewPlayer({
             ) : null}
             <span className="preview-annotate-time">{(progress / 1000).toFixed(2)}s</span>
             {workspace ? (
-              <span className="preview-frame-hint" title="方向键逐帧，Shift + 方向键跳转 1 秒">
-                ←/→ 逐帧
+              <span className="preview-frame-hint" title="拖动画面或方向键逐帧，Shift + 方向键跳转 1 秒">
+                拖动画面 / ←→ 逐帧
               </span>
             ) : null}
           </div>
@@ -1238,7 +1301,7 @@ export default function PreviewPlayer({
           <div className="editor-timeline-toolbar">
             <div>
               <strong>时间轴</strong>
-              <span>单击定位 · 按住左右拖动逐帧</span>
+              <span>单击定位 · 拖动时间轴或画面逐帧</span>
             </div>
             <div className="editor-timeline-zoom">
               <span>适应</span>
@@ -1322,13 +1385,12 @@ export default function PreviewPlayer({
                 </div>
                 {timelineRows.map((gate, gateIndex) => {
                   const sustained = isSustainedPlaybackInteraction(gate)
-                  const effectiveEnd = sustained
-                    ? sustainedPlaybackEndMs(
-                        gate,
-                        timelineRows[gateIndex + 1]?.gate_at_ms,
-                        totalMs,
-                      ) ?? totalMs
-                    : gate.gate_end_ms
+                  if (!sustained) return null
+                  const effectiveEnd = sustainedPlaybackEndMs(
+                    gate,
+                    timelineRows[gateIndex + 1]?.gate_at_ms,
+                    totalMs,
+                  ) ?? totalMs
                   if (typeof effectiveEnd !== 'number' || effectiveEnd <= gate.gate_at_ms) return null
                   const left = (gate.gate_at_ms / Math.max(totalMs, 1)) * 100
                   const right = (Math.min(totalMs, effectiveEnd) / Math.max(totalMs, 1)) * 100
@@ -1337,7 +1399,7 @@ export default function PreviewPlayer({
                   return (
                     <div
                       key={`editor-range-${gate.gate_at_ms}-${gateIndex}`}
-                      className={`editor-interaction-range${sustained ? ' is-sustained' : ' is-response'}${automatic ? ' is-automatic' : ''}${selected ? ' is-selected' : ''}`}
+                      className={`editor-interaction-range is-sustained${automatic ? ' is-automatic' : ''}${selected ? ' is-selected' : ''}`}
                       style={{ left: `${left}%`, width: `${Math.max(0, right - left)}%` }}
                       title={`${actionLabel(gate)} · ${(gate.gate_at_ms / 1000).toFixed(3)}s → ${(effectiveEnd / 1000).toFixed(3)}s`}
                       onPointerDown={(event) => beginGateDrag(event, gateIndex, 'body')}
@@ -1392,7 +1454,6 @@ export default function PreviewPlayer({
                 {timelineRows.map((gate, gateIndex) => {
                   const left = `${Math.min(100, (gate.gate_at_ms / Math.max(totalMs, 1)) * 100)}%`
                   const state = nodeState(gateIndex)
-                  const selected = selectedIndex === gateIndex
                   return (
                     <span
                       key={`editor-node-${gate.gate_at_ms}-${gateIndex}`}
@@ -1408,17 +1469,6 @@ export default function PreviewPlayer({
                       >
                         <span>{String(gateIndex + 1).padStart(2, '0')}</span>
                       </button>
-                      {selected
-                        && !isSustainedPlaybackInteraction(gate)
-                        && typeof gate.gate_end_ms !== 'number' ? (
-                          <button
-                            type="button"
-                            className="editor-create-end-handle"
-                            title="拖动创建响应结束时间"
-                            aria-label="拖动创建响应结束时间"
-                            onPointerDown={(event) => beginGateDrag(event, gateIndex, 'end')}
-                          />
-                        ) : null}
                     </span>
                   )
                 })}
@@ -1427,7 +1477,6 @@ export default function PreviewPlayer({
           </div>
           <div className="editor-timeline-legend">
             <span><i className="is-sustained" />持续区间</span>
-            <span><i className="is-response" />响应窗口</span>
             <span><i className="is-overflow" />超出但不生效</span>
             <span>拖动时按 Alt 关闭吸附</span>
           </div>

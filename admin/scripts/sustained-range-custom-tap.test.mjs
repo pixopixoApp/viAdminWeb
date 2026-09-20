@@ -25,6 +25,7 @@ const timelineUtils = await import(
 
 const entrySources = await Promise.all([
   readFile(new URL('../src/pages/AnnotatePage.tsx', import.meta.url), 'utf8'),
+  readFile(new URL('../src/pages/StoryEditPage.tsx', import.meta.url), 'utf8'),
   readFile(new URL('../src/components/story-edit/ClipEditor.tsx', import.meta.url), 'utf8'),
 ])
 const inspectorSource = await readFile(
@@ -59,23 +60,25 @@ test('custom tap count is operator-authored and clamped to one through ninety-ni
 })
 
 test('both authoring entries use the shared professional editor', () => {
-  for (const source of entrySources) {
+  for (const source of [entrySources[0], entrySources[2]]) {
     assert.match(source, /InteractionEditorWorkspace/)
     assert.match(source, /InteractionInspector/)
   }
+  assert.match(entrySources[1], /<ClipEditor/)
 })
 
 test('shared inspector distinguishes configured and effective ranges', () => {
   assert.match(inspectorSource, /期望结束/)
-  assert.match(inspectorSource, /响应结束/)
   assert.match(inspectorSource, /实际结束：/)
+  assert.match(inspectorSource, /单点互动在当前帧触发，无需设置结束时间/)
+  assert.doesNotMatch(playerSource, /editor-create-end-handle/)
   assert.match(inspectorSource, /目标点击次数/)
   assert.match(inspectorSource, /gate_end_ms/)
   assert.match(inspectorSource, /tap_count/)
 })
 
 test('workspace supports click and drag authoring with clipped range feedback', () => {
-  assert.match(workspaceSource, /draggable=\{editing\}/)
+  assert.match(workspaceSource, /draggable=\{editing && !hasChildren\}/)
   assert.match(workspaceSource, /application\/x-pixo-interaction/)
   assert.match(playerSource, /editor-interaction-overflow/)
   assert.match(playerSource, /beginGateDrag/)
@@ -87,19 +90,22 @@ test('interaction library is collapsible and defaults to the first group', () =>
   assert.match(workspaceSource, /accordion/)
   assert.match(workspaceSource, /defaultActiveKey=\{\['0'\]\}/)
   assert.match(workspaceSource, /interaction-library-option-copy/)
+  assert.match(inspectorSource, /label: '持续互动'/)
+  assert.match(inspectorSource, /SECONDARY_OPTIONS/)
+  assert.match(workspaceSource, /interaction-library-secondary/)
+  assert.match(workspaceSource, /option\.children/)
 })
 
-test('timeline scrubs by frame and resolves occupied frames without a modal', () => {
+test('timeline and main video scrub by frame while occupied frames are replaced', () => {
   assert.equal(timelineUtils.snapToEditorFrame(1000), 990)
-  assert.deepEqual(
-    timelineUtils.nearestAvailableInteractionFrame(
-      [{ gate_at_ms: 1000, gesture: 'tap' }],
-      1000,
-      2000,
-    ),
-    { requestedMs: 990, resolvedMs: 1023, shiftFrames: 1 },
-  )
   assert.match(playerSource, /editor-time-ruler/)
   assert.match(playerSource, /onPointerDown=\{onRailPointerDown\}/)
-  assert.match(playerSource, /按住左右拖动逐帧/)
+  assert.match(playerSource, /beginVideoScrub/)
+  assert.match(playerSource, /is-frame-scrubbing/)
+  assert.match(playerSource, /拖动时间轴或画面逐帧/)
+  for (const source of entrySources.slice(0, 2)) {
+    assert.match(source, /替换为/)
+    assert.match(source, /existingIndex >= 0/)
+    assert.doesNotMatch(source, /nearestAvailableInteractionFrame/)
+  }
 })

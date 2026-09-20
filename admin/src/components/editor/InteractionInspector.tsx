@@ -10,11 +10,11 @@ import {
   AUTHORING_GESTURE_TYPES,
   CAMERA_CONTINUOUS_DEFAULT_TARGET,
   CONTINUOUS_SOUND_AUTHORING_TYPE,
+  CONTINUOUS_SOUND_TARGET_COPY,
   cameraContinuousTargetCopy,
   continuousSoundInteractionPatch,
   continuousSoundTarget,
   continuousSoundTargetCopy,
-  gestureAuthoringLabel,
   isCameraContinuous,
   isContinuousHold,
   isContinuousSound,
@@ -25,6 +25,8 @@ import {
   isSustainedPlaybackInteraction,
   pinchDirectionCopy,
   sustainedPlaybackEndMs,
+  type PinchDirection,
+  type RotationDirection,
 } from '../../types/interaction'
 import type { ClipMeta } from '../../types/run'
 import ClipOutcomesEditor from '../ClipOutcomesEditor'
@@ -33,8 +35,12 @@ import RotationDirectionFields from '../RotationDirectionFields'
 import SoundInteractionFields from '../SoundInteractionFields'
 import VisionInteractionFields, {
   normalizeVisionConfig,
+  VISION_CONTINUOUS_TARGETS,
+  VISION_FACE_TARGETS,
+  VISION_HAND_TARGETS,
   VISION_TARGET_HINTS,
 } from '../VisionInteractionFields'
+import { adminGestureLabel } from './interactionCopy'
 
 export const CUSTOM_ACTION_VALUE = '__custom_action__'
 
@@ -43,7 +49,6 @@ const GROUPS: Array<{ label: string; values: string[] }> = [
     label: '点击与按压',
     values: [
       'tap', 'double_tap', 'multi_tap', 'rapid_tap', 'hold', 'hold_charge',
-      'continuous_tap', 'continuous_hold',
     ],
   },
   {
@@ -52,7 +57,7 @@ const GROUPS: Array<{ label: string; values: string[] }> = [
       'swipe_left', 'swipe_right', 'swipe_up', 'swipe_down',
       'drag_left', 'drag_right', 'drag_up', 'drag_down',
       'scrub_left', 'scrub_right', 'scrub_up', 'scrub_down',
-      'continuous_swipe', 'pinch', 'draw_circle', 'erase',
+      'pinch', 'draw_circle', 'erase',
     ],
   },
   {
@@ -61,30 +66,86 @@ const GROUPS: Array<{ label: string; values: string[] }> = [
   },
   {
     label: '摄像头识别',
-    values: ['camera_motion', 'camera_continuous'],
+    values: ['camera_motion'],
   },
   {
     label: '声音识别',
-    values: ['mic_level', 'mic_blow', 'mic_clap', 'mic_quiet', CONTINUOUS_SOUND_AUTHORING_TYPE],
+    values: ['mic_level', 'mic_blow', 'mic_clap', 'mic_quiet'],
+  },
+  {
+    label: '持续互动',
+    values: [
+      'continuous_tap', 'continuous_hold', 'continuous_swipe',
+      'camera_continuous', CONTINUOUS_SOUND_AUTHORING_TYPE,
+    ],
   },
 ]
 
 const AUTHORING_SET = new Set(AUTHORING_GESTURE_TYPES)
+const PRESET_SEPARATOR = '::'
+
+export type InteractionAuthoringOption = {
+  value: string
+  label: string
+  code?: string
+  children?: InteractionAuthoringOption[]
+}
+
+function presetValue(gesture: string, variant: string) {
+  return `${gesture}${PRESET_SEPARATOR}${variant}`
+}
+
+const SECONDARY_OPTIONS: Record<string, InteractionAuthoringOption[]> = {
+  camera_motion: [
+    ...VISION_HAND_TARGETS.map(([code, label]) => ({
+      value: presetValue('camera_motion', code), label, code,
+    })),
+    ...VISION_FACE_TARGETS.map(([code, label]) => ({
+      value: presetValue('camera_motion', code), label, code,
+    })),
+  ],
+  camera_continuous: VISION_CONTINUOUS_TARGETS.map(([code, label]) => ({
+    value: presetValue('camera_continuous', code), label, code,
+  })),
+  [CONTINUOUS_SOUND_AUTHORING_TYPE]: Object.entries(CONTINUOUS_SOUND_TARGET_COPY)
+    .map(([code, copy]) => ({
+      value: presetValue(CONTINUOUS_SOUND_AUTHORING_TYPE, code),
+      label: copy.label,
+      code,
+    })),
+  pinch: [
+    { value: presetValue('pinch', 'inward'), label: '向内捏合', code: 'inward' },
+    { value: presetValue('pinch', 'outward'), label: '向外张开', code: 'outward' },
+  ],
+  rotate: [
+    { value: presetValue('rotate', 'clockwise'), label: '顺时针旋转', code: 'clockwise' },
+    { value: presetValue('rotate', 'counterclockwise'), label: '逆时针旋转', code: 'counterclockwise' },
+  ],
+}
+
+function authoringOption(value: string): InteractionAuthoringOption {
+  return {
+    value,
+    label: adminGestureLabel(value),
+    code: value,
+    ...(SECONDARY_OPTIONS[value] ? { children: SECONDARY_OPTIONS[value] } : {}),
+  }
+}
 
 export const INTERACTION_TYPE_OPTIONS = [
   ...GROUPS.map((group) => ({
     label: group.label,
     options: group.values
       .filter((value) => AUTHORING_SET.has(value))
-      .map((value) => ({ value, label: gestureAuthoringLabel(value) })),
+      .map(authoringOption),
   })).filter((group) => group.options.length > 0),
   {
     label: '其他',
     options: [
       ...AUTHORING_GESTURE_TYPES
         .filter((value) => !GROUPS.some((group) => group.values.includes(value)))
-        .map((value) => ({ value, label: gestureAuthoringLabel(value) })),
-      { value: CUSTOM_ACTION_VALUE, label: '自定义动作' },
+        .map(authoringOption),
+      { value: CUSTOM_ACTION_VALUE, label: '自定义动作', code: 'custom_action' },
     ],
   },
 ]
@@ -99,22 +160,35 @@ export function patchForGesture(value: string, current?: Interaction): Partial<I
   if (value === CUSTOM_ACTION_VALUE) {
     return { gesture: 'tap', custom_action: true }
   }
+  const [gestureValue, preset] = value.split(PRESET_SEPARATOR, 2)
+  const cameraTarget = preset || (
+    gestureValue === 'camera_continuous'
+      ? CAMERA_CONTINUOUS_DEFAULT_TARGET
+      : 'hand_victory'
+  )
   return {
-    ...(value === CONTINUOUS_SOUND_AUTHORING_TYPE
-      ? continuousSoundInteractionPatch(continuousSoundTarget(current))
-      : { gesture: value }),
+    ...(gestureValue === CONTINUOUS_SOUND_AUTHORING_TYPE
+      ? continuousSoundInteractionPatch(preset || continuousSoundTarget(current))
+      : { gesture: gestureValue }),
     custom_action: false,
     action_description: undefined,
-    ...(['camera_motion', 'camera_continuous'].includes(value)
+    ...(['camera_motion', 'camera_continuous'].includes(gestureValue)
       ? {
-          vision: normalizeVisionConfig(undefined, value),
+          vision: normalizeVisionConfig({ target: cameraTarget }, gestureValue),
           vision_resolution: { target_source: 'operator' as const },
-          hint: VISION_TARGET_HINTS[
-            value === 'camera_continuous'
-              ? CAMERA_CONTINUOUS_DEFAULT_TARGET
-              : 'hand_victory'
-          ],
+          hint: gestureValue === 'camera_continuous'
+            ? cameraContinuousTargetCopy(cameraTarget).hint
+            : VISION_TARGET_HINTS[cameraTarget],
         }
+      : {}),
+    ...(gestureValue === 'pinch' && preset
+      ? {
+          pinch_direction: preset as PinchDirection,
+          hint: pinchDirectionCopy(preset).hint,
+        }
+      : {}),
+    ...(gestureValue === 'rotate' && preset
+      ? { rotation_direction: preset as RotationDirection }
       : {}),
   }
 }
@@ -180,9 +254,8 @@ export default function InteractionInspector({
 
   function setStart(seconds: number | null) {
     const next = Math.max(0, Math.round(Number(seconds ?? 0) * 1000))
-    if (typeof interaction.gate_end_ms === 'number') {
-      const maximum = sustained ? interaction.gate_end_ms - 1 : interaction.gate_end_ms
-      if (next > maximum) return
+    if (sustained && typeof interaction.gate_end_ms === 'number') {
+      if (next > interaction.gate_end_ms - 1) return
     }
     onUpdate({ gate_at_ms: next })
   }
@@ -192,8 +265,9 @@ export default function InteractionInspector({
       onUpdate({ gate_end_ms: undefined })
       return
     }
-    const minimum = sustained ? interaction.gate_at_ms + 1 : interaction.gate_at_ms
-    onUpdate({ gate_end_ms: Math.max(minimum, Math.round(Number(seconds) * 1000)) })
+    onUpdate({
+      gate_end_ms: Math.max(interaction.gate_at_ms + 1, Math.round(Number(seconds) * 1000)),
+    })
   }
 
   return (
@@ -205,11 +279,11 @@ export default function InteractionInspector({
             {String((selectedIndex ?? 0) + 1).padStart(2, '0')} · {' '}
             {selected.custom_action
               ? selected.action_description || '自定义动作'
-              : gestureAuthoringLabel(displayGestureValue(selected))}
+              : `${adminGestureLabel(displayGestureValue(selected))} / ${displayGestureValue(selected)}`}
           </Typography.Title>
         </div>
         <Space size={6}>
-          {sustained ? <Tag color="lime">持续区间</Tag> : <Tag color="blue">响应互动</Tag>}
+          {sustained ? <Tag color="lime">持续区间</Tag> : <Tag color="blue">单点互动</Tag>}
           {editing ? (
             <Button
               danger
@@ -233,8 +307,8 @@ export default function InteractionInspector({
           <InputNumber
             aria-label="互动开始时间"
             min={0}
-            max={typeof selected.gate_end_ms === 'number'
-              ? Number(((selected.gate_end_ms - (sustained ? 1 : 0)) / 1000).toFixed(3))
+            max={sustained && typeof selected.gate_end_ms === 'number'
+              ? Number(((selected.gate_end_ms - 1) / 1000).toFixed(3))
               : undefined}
             step={0.033}
             precision={3}
@@ -252,21 +326,21 @@ export default function InteractionInspector({
           />
         </label>
 
-        {selectedIsBranch ? (
+        {selectedIsBranch && !sustained ? (
           <div className="interaction-time-note">
-            <InfoCircleOutlined /> 响应结束由故事流程中的分支响应时间统一控制。
+            <InfoCircleOutlined /> 分支响应超时由故事流程统一控制，不在主时间轴编辑。
           </div>
-        ) : (
+        ) : sustained ? (
           <label className="interaction-time-row">
-            <span>{sustained ? '期望结束' : '响应结束'}</span>
+            <span>期望结束</span>
             <InputNumber
-              aria-label={sustained ? '持续互动期望结束时间' : '互动响应结束时间'}
-              min={Number(((selected.gate_at_ms + (sustained ? 1 : 0)) / 1000).toFixed(3))}
+              aria-label="持续互动期望结束时间"
+              min={Number(((selected.gate_at_ms + 1) / 1000).toFixed(3))}
               step={0.033}
               precision={3}
               disabled={!editing}
               value={exactEnd}
-              placeholder={sustained ? '下一节点/片尾' : '播放器默认'}
+              placeholder="下一节点/片尾"
               addonAfter="s"
               onChange={setEnd}
             />
@@ -274,13 +348,17 @@ export default function InteractionInspector({
               title="设为当前播放头"
               aria-label="把结束时间设为当前播放头"
               icon={<AimOutlined />}
-              disabled={!editing || playheadMs < selected.gate_at_ms + (sustained ? 1 : 0)}
+              disabled={!editing || playheadMs < selected.gate_at_ms + 1}
               onClick={() => setEnd(playheadMs / 1000)}
             />
             {typeof selected.gate_end_ms === 'number' ? (
               <Button disabled={!editing} onClick={() => setEnd(null)}>自动</Button>
             ) : null}
           </label>
+        ) : (
+          <div className="interaction-time-note">
+            <InfoCircleOutlined /> 单点互动在当前帧触发，无需设置结束时间。
+          </div>
         )}
 
         {sustained ? (

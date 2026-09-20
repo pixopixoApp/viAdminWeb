@@ -41,9 +41,10 @@ import { normalizeVisionConfig } from '../components/VisionInteractionFields'
 import ServiceBusyCard from '../components/ServiceBusyCard'
 import { isServiceUnavailableError } from '../apiError'
 import { patchForGesture } from '../components/editor/InteractionInspector'
+import { adminInteractionLabel } from '../components/editor/interactionCopy'
 import {
   EDITOR_FRAME_MS,
-  nearestAvailableInteractionFrame,
+  snapToEditorFrame,
 } from '../components/editor/timelineUtils'
 import useInteractionHistory from '../components/editor/useInteractionHistory'
 
@@ -763,39 +764,60 @@ export default function StoryEditPage() {
       ? null
       : rows[simpleConfig.branch_interaction_index] || null
     commitRows((previousRows) => {
-      const placement = nearestAvailableInteractionFrame(previousRows, atMs, mediaDurationMs)
-      if (!placement) {
-        const existingIndex = previousRows.findIndex((row) => (
-          Math.round(row.gate_at_ms / EDITOR_FRAME_MS)
-            === Math.round(atMs / EDITOR_FRAME_MS)
-        ))
-        setSelectedIndex(existingIndex >= 0 ? existingIndex : null)
-        messageApi.warning('当前视频没有可用的空闲帧')
-        return previousRows
-      }
-      const item = enforceInteractionTypeRules({
-        gate_at_ms: placement.resolvedMs,
+      const snappedMs = snapToEditorFrame(atMs, mediaDurationMs)
+      const existingIndex = previousRows.findIndex((row) => (
+        Math.round(row.gate_at_ms / EDITOR_FRAME_MS)
+          === Math.round(snappedMs / EDITOR_FRAME_MS)
+      ))
+      const existing = existingIndex >= 0 ? previousRows[existingIndex] : undefined
+      let item = enforceInteractionTypeRules({
+        gate_at_ms: existing?.gate_at_ms ?? snappedMs,
         gesture: 'tap',
         hint: '',
-        outcomes: {
+        outcomes: existing?.outcomes || {
           success: { action: 'continue' },
           fail: { action: 'continue' },
         },
+        ...(existing?.gameplay_description
+          ? { gameplay_description: existing.gameplay_description }
+          : {}),
+        ...(typeof existing?.reaction_start_ms === 'number'
+          ? { reaction_start_ms: existing.reaction_start_ms }
+          : {}),
+        ...(typeof existing?.reaction_end_ms === 'number'
+          ? { reaction_end_ms: existing.reaction_end_ms }
+          : {}),
+        ...(existing?.cue ? { cue: existing.cue } : {}),
         ...patchForGesture(gestureValue),
       } as Interaction)
-      const next = [...previousRows, item]
+      if (
+        existing
+        && isSustainedPlaybackInteraction(existing)
+        && isSustainedPlaybackInteraction(item)
+        && typeof existing.gate_end_ms === 'number'
+      ) {
+        item = { ...item, gate_end_ms: existing.gate_end_ms }
+      }
+      const next = (existingIndex >= 0
+        ? previousRows.map((row, index) => (index === existingIndex ? item : row))
+        : [...previousRows, item])
         .sort((left, right) => left.gate_at_ms - right.gate_at_ms)
       setSelectedIndex(next.indexOf(item))
       if (branchRow) {
+        const nextBranchRow = branchRow === existing ? item : branchRow
+        const branchWasInvalidated = isSustainedPlaybackInteraction(nextBranchRow)
         setSimpleConfig((previous) => ({
           ...previous,
-          branch_interaction_index: next.indexOf(branchRow),
+          branch_interaction_index: branchWasInvalidated ? null : next.indexOf(nextBranchRow),
           complete: false,
         }))
+        if (branchWasInvalidated) {
+          messageApi.warning('持续播放类互动不能作为分支挑战，请重新选择挑战节点')
+        }
       }
-      if (placement.shiftFrames !== 0) {
-        messageApi.info(
-          `当前帧已有节点，已${placement.shiftFrames > 0 ? '后移' : '前移'}到最近空闲帧 ${(placement.resolvedMs / 1000).toFixed(3)}s`,
+      if (existing) {
+        messageApi.success(
+          `已将当前帧的「${adminInteractionLabel(existing)}」替换为「${adminInteractionLabel(item)}」，可撤销`,
         )
       }
       return next
@@ -881,16 +903,17 @@ export default function StoryEditPage() {
         onOpenPublish={() => void openPublish()}
         unpublishing={unpublishing}
         onUnpublish={onUnpublish}
-      />
-
-      <VersionManager
-        version={version}
-        versionInfos={versionInfos}
-        publishedVersion={publishedVersion}
-        editing={editing}
-        switching={switching}
-        onSwitchVersion={onSwitchVersion}
-        barNote={barNote}
+        versionControl={(
+          <VersionManager
+            version={version}
+            versionInfos={versionInfos}
+            publishedVersion={publishedVersion}
+            editing={editing}
+            switching={switching}
+            onSwitchVersion={onSwitchVersion}
+            barNote={barNote}
+          />
+        )}
       />
 
       {storyEditorMode === 'simple_abc' ? (

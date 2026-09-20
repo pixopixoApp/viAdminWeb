@@ -1,17 +1,17 @@
 import {
   AppstoreOutlined,
+  DownOutlined,
   FolderOpenOutlined,
   RedoOutlined,
+  RightOutlined,
   UndoOutlined,
   UnorderedListOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
 import { Button, Collapse, Tabs, Tag, Tooltip, Typography } from 'antd'
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type DragEvent, type ReactNode } from 'react'
 import type { Interaction, InteractionPatch } from '../../types/interaction'
 import {
-  gestureAuthoringLabel,
-  isContinuousSound,
   isSustainedPlaybackInteraction,
   sustainedPlaybackEndMs,
 } from '../../types/interaction'
@@ -20,12 +20,11 @@ import {
   CUSTOM_ACTION_VALUE,
   INTERACTION_TYPE_OPTIONS,
 } from './InteractionInspector'
+import { adminInteractionLabel } from './interactionCopy'
 import { snapToEditorFrame } from './timelineUtils'
 
 function interactionLabel(row: Interaction) {
-  if (row.custom_action) return row.action_description || '自定义动作'
-  if (isContinuousSound(row)) return gestureAuthoringLabel('mic_continuous')
-  return gestureAuthoringLabel(row.gesture)
+  return adminInteractionLabel(row)
 }
 
 function formatTime(ms: number) {
@@ -85,6 +84,13 @@ export default function InteractionEditorWorkspace({
   onRedo,
 }: Props) {
   const currentFrameMs = snapToEditorFrame(playheadMs, durationMs)
+  const [expandedType, setExpandedType] = useState<string | null>(null)
+
+  function beginPaletteDrag(event: DragEvent<HTMLButtonElement>, value: string) {
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData('application/x-pixo-interaction', value)
+    event.dataTransfer.setData('text/plain', value)
+  }
 
   useEffect(() => {
     if (!editing) return
@@ -129,35 +135,68 @@ export default function InteractionEditorWorkspace({
           ),
           children: (
             <div className="interaction-library-grid">
-              {group.options.map((option) => (
-                <button
-                  key={String(option.value)}
-                  type="button"
-                  disabled={!editing}
-                  draggable={editing}
-                  title={`添加 ${option.label} 到 ${formatTime(currentFrameMs)}`}
-                  onClick={() => onAddInteractionAt(String(option.value), currentFrameMs)}
-                  onDragStart={(event) => {
-                    event.dataTransfer.effectAllowed = 'copy'
-                    event.dataTransfer.setData('application/x-pixo-interaction', String(option.value))
-                    event.dataTransfer.setData('text/plain', String(option.value))
-                  }}
-                >
-                  <span className="interaction-library-icon" aria-hidden="true">
-                    {option.value === CUSTOM_ACTION_VALUE
-                      ? '＋'
-                      : String(option.label).slice(0, 1).toUpperCase()}
-                  </span>
-                  <span className="interaction-library-option-copy">
-                    <strong>{option.label}</strong>
-                    <small>
-                      {option.value === CUSTOM_ACTION_VALUE
-                        ? 'custom_action'
-                        : String(option.value)}
-                    </small>
-                  </span>
-                </button>
-              ))}
+              {group.options.map((option) => {
+                const hasChildren = Boolean(option.children?.length)
+                const expanded = expandedType === option.value
+                return (
+                  <div
+                    key={String(option.value)}
+                    className={`interaction-library-option${expanded ? ' is-expanded' : ''}`}
+                  >
+                    <button
+                      type="button"
+                      className="interaction-library-primary"
+                      disabled={!editing}
+                      draggable={editing && !hasChildren}
+                      aria-expanded={hasChildren ? expanded : undefined}
+                      title={hasChildren
+                        ? `${expanded ? '收起' : '展开'} ${option.label} 的二级互动`
+                        : `添加 ${option.label} 到 ${formatTime(currentFrameMs)}`}
+                      onClick={() => {
+                        if (hasChildren) {
+                          setExpandedType(expanded ? null : String(option.value))
+                          return
+                        }
+                        onAddInteractionAt(String(option.value), currentFrameMs)
+                      }}
+                      onDragStart={(event) => beginPaletteDrag(event, String(option.value))}
+                    >
+                      <span className="interaction-library-icon" aria-hidden="true">
+                        {option.value === CUSTOM_ACTION_VALUE
+                          ? '＋'
+                          : String(option.label).slice(0, 1).toUpperCase()}
+                      </span>
+                      <span className="interaction-library-option-copy">
+                        <strong>{option.label}</strong>
+                        <small>{option.code || String(option.value)}</small>
+                      </span>
+                      {hasChildren ? (
+                        <span className="interaction-library-chevron" aria-hidden="true">
+                          {expanded ? <DownOutlined /> : <RightOutlined />}
+                        </span>
+                      ) : null}
+                    </button>
+                    {hasChildren && expanded ? (
+                      <div className="interaction-library-secondary">
+                        {option.children?.map((child) => (
+                          <button
+                            key={String(child.value)}
+                            type="button"
+                            disabled={!editing}
+                            draggable={editing}
+                            title={`添加 ${child.label} 到 ${formatTime(currentFrameMs)}`}
+                            onClick={() => onAddInteractionAt(String(child.value), currentFrameMs)}
+                            onDragStart={(event) => beginPaletteDrag(event, String(child.value))}
+                          >
+                            <span>{child.label}</span>
+                            <small>{child.code || String(child.value)}</small>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
             </div>
           ),
         }))}
@@ -194,9 +233,7 @@ export default function InteractionEditorWorkspace({
                 {formatTime(row.gate_at_ms)}
                 {typeof effectiveEnd === 'number'
                   ? ` → ${formatTime(effectiveEnd)}`
-                  : typeof row.gate_end_ms === 'number'
-                    ? ` → ${formatTime(row.gate_end_ms)}`
-                    : ''}
+                  : ''}
               </small>
             </span>
             {clipped ? (
