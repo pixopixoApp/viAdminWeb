@@ -12,7 +12,7 @@ const localEditorDemoVersion = '0.0.2'
 const localEditorDemoApi = `/api/v1/runs/${localEditorDemoId}`
 const localEditorDemoVideo = resolve(
   adminDir,
-  '../../pixo-website-sustained-ranges/tests/fixtures/source.mp4',
+  'demo-assets/editor-sample.mp4',
 )
 
 type MiddlewareServer = {
@@ -48,28 +48,28 @@ function localEditorDemo() {
   let note = '持续交互范围 UI 演示'
   let editing = true
   let timeline = {
-    // Keep the authored timeline aligned with the bundled 2.416667 s fixture.
+    // Keep the authored timeline aligned with the bundled 27.002993 s fixture.
     // The client Runtime rejects multiple cues that all fall beyond media end.
-    media: { duration_ms: 2_417, width: 720, height: 1280 },
+    media: { duration_ms: 27_003, width: 720, height: 1280 },
     interactions: [
       {
         gesture: 'continuous_tap',
-        gate_at_ms: 300,
-        gate_end_ms: 900,
+        gate_at_ms: 1_000,
+        gate_end_ms: 8_000,
         hint: '持续点击以播放',
         pause_video: true,
       },
       {
         gesture: 'continuous_hold',
-        gate_at_ms: 1_100,
-        gate_end_ms: 1_700,
+        gate_at_ms: 5_000,
+        gate_end_ms: 7_500,
         hint: '按住屏幕以播放',
         pause_video: true,
       },
       {
         gesture: 'multi_tap',
         tap_count: 7,
-        gate_at_ms: 2_050,
+        gate_at_ms: 9_000,
         hint: '连续点击 7 次',
         pause_video: true,
       },
@@ -93,8 +93,8 @@ function localEditorDemo() {
       published_version: null,
     },
     media: {
-      filename: 'sustained-range-demo.mp4',
-      duration_ms: 2_417,
+      filename: '9393c9741fa061464e8cfc994368f758.mp4',
+      duration_ms: 27_003,
       width: 720,
       height: 1280,
     },
