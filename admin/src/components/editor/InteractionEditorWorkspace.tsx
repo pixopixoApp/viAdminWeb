@@ -8,7 +8,7 @@ import {
   UnorderedListOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
-import { Button, Collapse, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { Button, Collapse, Tabs, Tag, Tooltip } from 'antd'
 import { useEffect, useState, type DragEvent, type ReactNode } from 'react'
 import type { Interaction, InteractionPatch } from '../../types/interaction'
 import {
@@ -115,9 +115,6 @@ export default function InteractionEditorWorkspace({
 
   const palette = (
     <div className="interaction-library">
-      <Typography.Paragraph type="secondary">
-        点击添加到当前帧，也可以拖到时间轴。
-      </Typography.Paragraph>
       <Collapse
         className="interaction-library-collapse"
         ghost

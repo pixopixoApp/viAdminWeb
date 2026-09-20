@@ -1,0 +1,43 @@
+html[data-pixo-web-host="true"] .hud {
+  display: none;
+}
+
+html[data-pixo-web-host="true"]:not([data-pixo-guidance="spatial"])
+  .interaction-caption[data-caption-placement] {
+  top: auto;
+  right: auto;
+  bottom: 109px;
+  left: 50%;
+  width: fit-content;
+  max-width: calc(100% - var(--safe-left) - var(--safe-right) - 32px);
+  transform: translateX(-50%);
+  text-align: center;
+  animation-name: caption-in;
+}
+
+html[data-pixo-web-host="true"] .interaction-layer {
+  touch-action: none;
+}
+
+html[data-pixo-web-host="true"],
+html[data-pixo-web-host="true"] body {
+  overscroll-behavior: none;
+}
+
+.pixo-web-vision-preview {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  z-index: 22;
+  width: min(31vw, 180px);
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: 18px;
+  background: #080b0a;
+  box-shadow: 0 16px 42px rgb(0 0 0 / 45%);
+}
+
+.pixo-web-vision-preview[data-facing="front"] {
+  transform: scaleX(-1);
+}

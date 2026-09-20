@@ -1,6 +1,7 @@
 import { PauseCircleFilled, PlayCircleFilled } from '@ant-design/icons'
 import { Button } from 'antd'
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -26,6 +27,9 @@ import {
   pinchDirectionCopy,
 } from '../types/interaction'
 import { adminGestureLabel } from './editor/interactionCopy'
+import ClientRuntimePreview, {
+  type ClientRuntimePreviewHandle,
+} from './editor/ClientRuntimePreview'
 import { EDITOR_FRAME_MS, snapToEditorFrame } from './editor/timelineUtils'
 export { GESTURE_LABEL }
 
@@ -164,6 +168,7 @@ export default function PreviewPlayer({
 }: Props) {
   const annotate = mode === 'annotate'
   const videoRef = useRef<HTMLVideoElement>(null)
+  const clientRuntimeRef = useRef<ClientRuntimePreviewHandle>(null)
   const [index, setIndex] = useState(0)
   const [pausedAtGate, setPausedAtGate] = useState(false)
   const [ended, setEnded] = useState(false)
@@ -180,6 +185,7 @@ export default function PreviewPlayer({
   const [timelineZoom, setTimelineZoom] = useState(1)
   const [timelineScrubbing, setTimelineScrubbing] = useState(false)
   const [videoScrubbing, setVideoScrubbing] = useState(false)
+  const [clientInteractionEnabled, setClientInteractionEnabled] = useState(true)
   const [timelineDraft, setTimelineDraft] = useState<{
     index: number
     gate_at_ms: number
@@ -244,9 +250,44 @@ export default function PreviewPlayer({
   const totalMs =
     mediaDuration || durationMs || (sorted.length ? sorted[sorted.length - 1].gate_at_ms : 1)
   const selectedGateAtMs = selectedIndex == null ? undefined : sorted[selectedIndex]?.gate_at_ms
+  const mediaUrl = videoUrl || (clipId
+    ? `/api/v1/stories/${runId}/clips/${clipId}/video`
+    : `/api/v1/runs/${runId}/media/video`)
+
+  const handleClientProgress = useCallback((positionMs: number, measuredDurationMs: number, isPlaying: boolean) => {
+    setProgress(workspace && !isPlaying ? snapToEditorFrame(positionMs, measuredDurationMs) : positionMs)
+    if (measuredDurationMs > 0) setMediaDuration(Math.round(measuredDurationMs))
+    setPlaying(isPlaying)
+    setMediaLoading(false)
+    setStarted(true)
+    setEnded(measuredDurationMs > 0 && positionMs >= measuredDurationMs - 40)
+    onPlayheadChange?.(Math.round(positionMs))
+  }, [onPlayheadChange, workspace])
+
+  const handleClientGateOpened = useCallback((sourceIndex: number) => {
+    setIndex(sourceIndex)
+    setPausedAtGate(true)
+    if (annotate) onSelectGateRef.current?.(sourceIndex)
+  }, [annotate])
+
+  const handleClientError = useCallback((message: string | null) => {
+    setMediaError(message)
+    if (message) setMediaLoading(false)
+  }, [])
 
   useEffect(() => {
     if (!workspace || selectedIndex == null || selectedGateAtMs == null) return
+    if (clientRuntimeRef.current) {
+      resetContinuousControl(true)
+      setStarted(true)
+      setEnded(false)
+      setIndex(selectedIndex)
+      setPausedAtGate(true)
+      setProgress(selectedGateAtMs)
+      onPlayheadChange?.(selectedGateAtMs)
+      void clientRuntimeRef.current.seek(selectedGateAtMs, selectedIndex)
+      return
+    }
     const video = videoRef.current
     if (!video) return
     const gate = sorted[selectedIndex]
@@ -820,6 +861,10 @@ export default function PreviewPlayer({
   }
 
   function togglePlay() {
+    if (workspace && clientRuntimeRef.current) {
+      clientRuntimeRef.current.togglePlay()
+      return
+    }
     if (activeSustained) return
     const video = videoRef.current
     // Prefer element state: rapid play/pause can leave React `playing` out of sync.
@@ -838,8 +883,7 @@ export default function PreviewPlayer({
   }
 
   function seekToMs(ms: number, { play = true }: { play?: boolean } = {}) {
-    const video = videoRef.current
-    if (!video || totalMs <= 0) return
+    if (totalMs <= 0) return
     const clamped = Math.max(0, Math.min(ms, totalMs))
     const continuousIndex = sorted.findIndex((gate, gateIndex) => {
       if (!isSustainedPlaybackInteraction(gate)) return false
@@ -855,23 +899,53 @@ export default function PreviewPlayer({
     setEnded(clamped >= totalMs - 40)
     setPausedAtGate(continuousIndex >= 0)
     setIndex(continuousIndex >= 0 ? continuousIndex : (nextIndex === -1 ? sorted.length : nextIndex))
-    video.currentTime = clamped / 1000
     setProgress(clamped)
     onPlayheadChange?.(Math.round(clamped))
+    if (workspace && clientRuntimeRef.current) {
+      setPlaying(false)
+      void clientRuntimeRef.current.seek(clamped)
+      return
+    }
+    const video = videoRef.current
+    if (!video) return
+    video.currentTime = clamped / 1000
     if (continuousIndex >= 0) video.pause()
     else if (play && clamped < totalMs - 40) void requestPlay(video)
     else video.pause()
   }
 
+  function previewPositionAtMs(ms: number) {
+    const clamped = Math.max(0, Math.min(ms, totalMs))
+    setProgress(clamped)
+    setPlaying(false)
+    onPlayheadChange?.(Math.round(clamped))
+    if (workspace && clientRuntimeRef.current) {
+      clientRuntimeRef.current.previewPosition(clamped)
+      return
+    }
+    seekToMs(clamped, { play: false })
+  }
+
   function selectGate(gateIndex: number) {
-    const video = videoRef.current
     const gate = sorted[gateIndex]
-    if (!video || !gate) return
+    if (!gate) return
     setStarted(true)
     setEnded(false)
     setIndex(gateIndex)
     setPausedAtGate(true)
     resetContinuousControl(true)
+    if (workspace && clientRuntimeRef.current) {
+      setPlaying(false)
+      setProgress(gate.gate_at_ms)
+      onPlayheadChange?.(gate.gate_at_ms)
+      if (annotate) onSelectGate?.(gateIndex)
+      if (selectedIndex === gateIndex) {
+        void clientRuntimeRef.current.seek(gate.gate_at_ms, gateIndex)
+      }
+      return
+    }
+    const video = videoRef.current
+    if (!video) return
     video.pause()
     video.currentTime = gate.gate_at_ms / 1000
     setProgress(gate.gate_at_ms)
@@ -1000,15 +1074,17 @@ export default function PreviewPlayer({
     event.stopPropagation()
     event.preventDefault()
     const rail = event.currentTarget
-    const seekFromClient = (clientX: number) => {
+    const seekFromClient = (clientX: number, commit: boolean) => {
       const raw = timelineMsFromClient(clientX, rail)
-      seekToMs(workspace ? snapToEditorFrame(raw, totalMs) : raw, { play: false })
+      const target = workspace ? snapToEditorFrame(raw, totalMs) : raw
+      if (commit) seekToMs(target, { play: false })
+      else previewPositionAtMs(target)
     }
     setTimelineScrubbing(true)
-    seekFromClient(event.clientX)
+    seekFromClient(event.clientX, false)
 
     const onMove = (moveEvent: PointerEvent) => {
-      seekFromClient(moveEvent.clientX)
+      seekFromClient(moveEvent.clientX, false)
     }
     const cleanup = () => {
       window.removeEventListener('pointermove', onMove)
@@ -1017,7 +1093,7 @@ export default function PreviewPlayer({
       setTimelineScrubbing(false)
     }
     const onUp = (upEvent: PointerEvent) => {
-      seekFromClient(upEvent.clientX)
+      seekFromClient(upEvent.clientX, true)
       cleanup()
     }
     const onCancel = () => cleanup()
@@ -1027,13 +1103,14 @@ export default function PreviewPlayer({
   }
 
   function beginVideoScrub(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!workspace || activeSustained || event.button !== 0 || totalMs <= 0) return
+    if (!workspace || (activeSustained && clientInteractionEnabled) || event.button !== 0 || totalMs <= 0) return
     const target = event.target as HTMLElement
     if (target.closest('button, .preview-gate, .preview-media-status')) return
 
     const startX = event.clientX
     const startMs = progress
     let moved = false
+    let finalMs = startMs
 
     const onMove = (moveEvent: PointerEvent) => {
       const deltaX = moveEvent.clientX - startX
@@ -1043,7 +1120,8 @@ export default function PreviewPlayer({
       setVideoScrubbing(true)
       setTimelineScrubbing(true)
       const frameDelta = Math.round(deltaX / 3) * EDITOR_FRAME_MS
-      seekToMs(snapToEditorFrame(startMs + frameDelta, totalMs), { play: false })
+      finalMs = snapToEditorFrame(startMs + frameDelta, totalMs)
+      previewPositionAtMs(finalMs)
     }
 
     const cleanup = (cancelled = false) => {
@@ -1059,7 +1137,10 @@ export default function PreviewPlayer({
         }, 0)
       }
     }
-    const onUp = () => cleanup()
+    const onUp = () => {
+      if (moved) seekToMs(finalMs, { play: false })
+      cleanup()
+    }
     const onCancel = () => cleanup(true)
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -1086,19 +1167,55 @@ export default function PreviewPlayer({
 
   return (
     <div className={`preview-wrap${workspace ? ' preview-wrap-workspace' : ''}`}>
-      <div className="preview-stage" onClick={handlePreviewClick} role="button" tabIndex={0}>
+      <div
+        className="preview-stage"
+        onClick={workspace ? undefined : handlePreviewClick}
+        role={workspace ? undefined : 'button'}
+        tabIndex={workspace ? undefined : 0}
+      >
+        {workspace ? (
+          <div className="client-preview-mode" role="group" aria-label="预览操作模式">
+            <span>客户端 Runtime</span>
+            <button
+              type="button"
+              className={clientInteractionEnabled ? 'is-active' : undefined}
+              onClick={() => setClientInteractionEnabled(true)}
+            >
+              真实体验
+            </button>
+            <button
+              type="button"
+              className={!clientInteractionEnabled ? 'is-active' : undefined}
+              onClick={() => setClientInteractionEnabled(false)}
+            >
+              画面定位
+            </button>
+          </div>
+        ) : null}
         <div
           className={`preview-phone${videoScrubbing ? ' is-frame-scrubbing' : ''}`}
-          onPointerDown={beginVideoScrub}
+          onPointerDown={workspace && clientInteractionEnabled ? undefined : beginVideoScrub}
         >
+          {workspace ? (
+            <ClientRuntimePreview
+              ref={clientRuntimeRef}
+              runId={runId}
+              clipId={clipId}
+              mediaUrl={mediaUrl}
+              durationMs={durationMs}
+              gates={sorted}
+              selectedSourceIndex={selectedIndex}
+              interactionEnabled={clientInteractionEnabled}
+              onProgress={handleClientProgress}
+              onGateOpened={handleClientGateOpened}
+              onError={handleClientError}
+            />
+          ) : (
+          <>
           <video
             ref={videoRef}
             className="preview-video"
-            src={
-              videoUrl || (clipId
-                ? `/api/v1/stories/${runId}/clips/${clipId}/video`
-                : `/api/v1/runs/${runId}/media/video`)
-            }
+            src={mediaUrl}
             key={clipId || 'default'}
             playsInline
             preload="metadata"
@@ -1252,8 +1369,27 @@ export default function PreviewPlayer({
               ) : null}
             </>
           )}
+          </>
+          )}
+          {workspace && videoScrubbing ? (
+            <div className="preview-video-scrub-time" aria-live="polite">
+              {formatFrameTime(progress)}
+            </div>
+          ) : null}
+          {workspace && mediaError ? (
+            <div className="preview-media-status is-error" role="alert">
+              <strong>客户端预览暂时不可用</strong>
+              <span>{mediaError}</span>
+              <Button size="small" onClick={() => {
+                setMediaError(null)
+                void clientRuntimeRef.current?.seek(progress, selectedIndex ?? undefined)
+              }}>
+                重新加载
+              </Button>
+            </div>
+          ) : null}
         </div>
-        {annotate ? (
+        {annotate && !workspace ? (
           <div
             className="preview-annotate-bar"
             onClick={(e) => e.stopPropagation()}
