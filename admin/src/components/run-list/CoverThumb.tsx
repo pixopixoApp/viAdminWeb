@@ -18,14 +18,16 @@ const THUMB_STYLE: React.CSSProperties = {
  */
 export default function CoverThumb({
   coverUrl,
+  coverVersion,
   previewUrl,
   contentType,
 }: {
   coverUrl?: string
+  coverVersion?: string | null
   previewUrl?: string
   contentType?: string
 }) {
-  const displayUrl = useAuthorizedImageUrl(coverUrl)
+  const displayUrl = useAuthorizedImageUrl(coverUrl, coverVersion)
   const [imgFailed, setImgFailed] = useState(false)
 
   if (displayUrl && !imgFailed) {

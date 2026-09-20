@@ -30,6 +30,7 @@ export type Run = {
   author_nickname?: string
   creation_status?: string
   cover_url?: string
+  cover_media_object_id?: string | null
   preview_url?: string
   distribution_enabled?: boolean
   has_run?: boolean

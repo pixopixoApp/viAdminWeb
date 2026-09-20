@@ -7,6 +7,7 @@ type Props = {
   displayTitle: string
   filename?: string
   coverUrl?: string
+  coverVersion?: string | null
   description?: string
   errorMessage?: string
   businessStatus: string
@@ -37,6 +38,7 @@ export default function RunDetailHeader({
   displayTitle,
   filename,
   coverUrl,
+  coverVersion,
   description,
   errorMessage,
   businessStatus,
@@ -63,7 +65,7 @@ export default function RunDetailHeader({
   onUnpublish,
 }: Props) {
   const [coverFailed, setCoverFailed] = useState(false)
-  const displayCoverUrl = useAuthorizedImageUrl(coverUrl)
+  const displayCoverUrl = useAuthorizedImageUrl(coverUrl, coverVersion)
   const showCover = Boolean(displayCoverUrl) && !coverFailed
   return (
     <>

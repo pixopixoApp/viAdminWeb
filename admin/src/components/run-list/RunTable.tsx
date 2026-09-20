@@ -77,6 +77,7 @@ export default function RunTable({
       render: (_, row) => (
         <CoverThumb
           coverUrl={row.cover_url}
+          coverVersion={row.cover_media_object_id}
           previewUrl={row.preview_url}
           contentType={row.content_type}
         />

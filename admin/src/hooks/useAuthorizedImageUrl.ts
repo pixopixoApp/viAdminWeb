@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { getToken } from '../api'
+import { buildAuthorizedImageRequestUrl } from './coverImageUrl'
 
 /**
  * 把图片 URL 转成可在 <img> 中直接展示的地址。
@@ -8,8 +9,13 @@ import { getToken } from '../api'
  * /api/v1/runs/<id>/media/cover）。<img> 标签不会携带 Authorization 头，
  * 直接使用会得到 401。这里对这类路径用 fetch + Bearer token 拉取后转成
  * Blob URL，从而在管理后台里正常展示。
+ *
+ * 关键点：`/runs/<id>/media/cover` 这类地址在更换封面后**不会变化**，只有内容
+ * 层面发生变化。若 effect 只依赖 `src`，同一页面内换封面不会重新拉取，就会一直
+ * 显示旧封面。因此额外接收 `version`（一般传 cover_media_object_id）：version
+ * 变化时重新拉取，并作为查询参数附在 URL 后，避免任何中间层缓存返回旧图。
  */
-export function useAuthorizedImageUrl(src?: string): string | undefined {
+export function useAuthorizedImageUrl(src?: string, version?: string | null): string | undefined {
   const [url, setUrl] = useState<string | undefined>(undefined)
   const revokeRef = useRef<string | null>(null)
 
@@ -26,8 +32,10 @@ export function useAuthorizedImageUrl(src?: string): string | undefined {
 
     let cancelled = false
     const token = getToken()
+    // 相对 API 路径的封面内容会原地变化，附加 version 强制绕过缓存。
+    const requestUrl = buildAuthorizedImageRequestUrl(src, version)
     setUrl(undefined)
-    fetch(src, {
+    fetch(requestUrl, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       credentials: 'include',
       // 封面地址是不变的（/runs/<id>/media/cover），但内容会变；禁用缓存以确保
@@ -56,7 +64,7 @@ export function useAuthorizedImageUrl(src?: string): string | undefined {
         revokeRef.current = null
       }
     }
-  }, [src])
+  }, [src, version])
 
   return url
 }

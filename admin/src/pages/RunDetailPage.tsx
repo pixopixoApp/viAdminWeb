@@ -409,6 +409,7 @@ export default function RunDetailPage() {
         displayTitle={displayTitle}
         filename={String(data.media.filename || '')}
         coverUrl={data.run.cover_url || undefined}
+        coverVersion={data.run.cover_media_object_id || undefined}
         description={data.run.description || undefined}
         errorMessage={data.run.error_message}
         businessStatus={businessStatus}
