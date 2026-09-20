@@ -223,6 +223,14 @@ export function restoreRun(id: string) {
   return api<Run>(`/api/v1/runs/${id}/restore`, { method: 'POST' })
 }
 
+/** 彻底删除垃圾箱中的视频（不可恢复，同步删除已发布内容与本地文件） */
+export function purgeRun(id: string) {
+  return api<{ id: string; deleted: boolean; published: boolean }>(
+    `/api/v1/runs/${id}/permanent`,
+    { method: 'DELETE' },
+  )
+}
+
 export function getRun(id: string) {
   return api<RunDetail>(`/api/v1/runs/${id}`)
 }
@@ -701,6 +709,7 @@ export const runsApi = {
   delete: deleteRun,
   trash: trashRun,
   restore: restoreRun,
+  purge: purgeRun,
   updateRunFeedWeight,
   updateRunTitle,
   updateRunCover,

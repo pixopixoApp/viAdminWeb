@@ -45,6 +45,21 @@ export default function TrashPage({ embedded = false, onTotalChange }: { embedde
     }
   }, [messageApi, load])
 
+  const handlePurge = useCallback(async (run: Run) => {
+    try {
+      await runsApi.purge(run.id)
+      messageApi.success('已彻底删除')
+      // 删除当前页最后一条时回退一页，避免停留在空页
+      if (rows.length === 1 && page > 1) {
+        setPage((p) => p - 1)
+      } else {
+        void load()
+      }
+    } catch (e) {
+      messageApi.error(e instanceof Error ? e.message : '彻底删除失败')
+    }
+  }, [messageApi, load, rows.length, page])
+
   const columns: ColumnsType<Run> = [
     {
       title: '封面', key: 'cover', width: 88,
@@ -80,7 +95,7 @@ export default function TrashPage({ embedded = false, onTotalChange }: { embedde
       render: (v?: string) => (v ? formatServerTime(v) : '-'),
     },
     {
-      title: '操作', key: 'actions', width: 120,
+      title: '操作', key: 'actions', width: 200,
       render: (_, row) => (
         <Space>
           <Popconfirm
@@ -92,6 +107,24 @@ export default function TrashPage({ embedded = false, onTotalChange }: { embedde
           >
             <Button size="small" type="primary">恢复</Button>
           </Popconfirm>
+          {manageAll ? (
+            <Popconfirm
+              title="彻底删除视频"
+              description={
+                <span>
+                  确定要彻底删除「{row.title || row.source_filename}」吗？
+                  <br />
+                  该操作不可恢复，将同时删除已发布内容及相关文件。
+                </span>
+              }
+              okText="彻底删除"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={() => handlePurge(row)}
+            >
+              <Button size="small" danger>彻底删除</Button>
+            </Popconfirm>
+          ) : null}
         </Space>
       ),
     },
