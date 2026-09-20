@@ -108,6 +108,134 @@ test('camera preview preserves the semantic client vision contract', async () =>
   })
 })
 
+test('browser host connects semantic vision to the web camera session', async () => {
+  const calls = []
+  const runtimeSignals = []
+  const parentMessages = []
+  let signalVision
+  const session = {
+    supported() {
+      calls.push(['supported'])
+      return true
+    },
+    requestPermission(options) {
+      calls.push(['requestPermission', options])
+      return Promise.resolve({ status: 'granted' })
+    },
+    prepare(targets) {
+      calls.push(['prepare', targets])
+      return Promise.resolve({ status: 'granted' })
+    },
+    start(config) {
+      calls.push(['start', config])
+      return Promise.resolve({ status: 'active' })
+    },
+    stop() {
+      calls.push(['stop'])
+      return { status: 'stopped' }
+    },
+    dispose() {
+      calls.push(['dispose'])
+    },
+  }
+  const documentElement = {
+    clientHeight: 800,
+    getAttribute(name) {
+      return name === 'data-pixo-admin-preview' ? 'true' : null
+    },
+    setAttribute() {},
+    style: { setProperty() {} },
+  }
+  const context = {
+    URLSearchParams,
+    console,
+    location: {
+      search: '?experience=vision-host-test',
+      origin: 'http://127.0.0.1:5174',
+    },
+    document: {
+      documentElement,
+      getElementById() { return null },
+      addEventListener() {},
+      removeEventListener() {},
+    },
+    navigator: {
+      mediaDevices: { getUserMedia() {} },
+      vibrate() {},
+    },
+    sessionStorage: { getItem() { return null } },
+    requestAnimationFrame() { return 1 },
+    cancelAnimationFrame() {},
+    setTimeout,
+    clearTimeout,
+    addEventListener() {},
+    removeEventListener() {},
+    PixoWebVision: {
+      createSession(options) {
+        signalVision = options.onSignal
+        calls.push(['createSession'])
+        return session
+      },
+    },
+    __pixoNativeReceive(envelope) {
+      runtimeSignals.push(envelope)
+    },
+  }
+  context.window = context
+  context.globalThis = context
+  context.parent = {
+    postMessage(message, origin) {
+      parentMessages.push([message, origin])
+    },
+  }
+  vm.createContext(context)
+  vm.runInContext(
+    await readFile(new URL('web-host.js', runtimeRoot), 'utf8'),
+    context,
+  )
+
+  const transport = context.__pixoNativeTransport
+  const permission = await transport.post({
+    kind: 'request',
+    method: 'requestCapability',
+    params: { name: 'vision' },
+  })
+  assert.equal(permission.status, 'granted')
+  const started = await transport.post({
+    kind: 'request',
+    method: 'startVision',
+    params: {
+      target: 'hand_open_palm',
+      camera_facing: 'front',
+      show_preview: true,
+    },
+  })
+  assert.equal(started.status, 'active')
+  assert.deepEqual(JSON.parse(JSON.stringify(
+    calls.find((call) => call[0] === 'requestPermission'),
+  )), [
+    'requestPermission',
+    { facing: 'front' },
+  ])
+  assert.deepEqual(JSON.parse(JSON.stringify(
+    calls.find((call) => call[0] === 'prepare'),
+  )), [
+    'prepare',
+    ['hand_open_palm'],
+  ])
+  assert.equal(parentMessages[0][0].state, 'loading')
+  assert.equal(parentMessages[1][0].state, 'ready')
+
+  signalVision({ status: 'matched', target: 'hand_open_palm', confidence: 0.91 })
+  assert.equal(runtimeSignals[0].name, 'vision')
+  assert.equal(runtimeSignals[0].data.target, 'hand_open_palm')
+  assert.equal((await transport.post({
+    kind: 'request',
+    method: 'stopVision',
+    params: {},
+  })).status, 'stopped')
+})
+
 test('admin preview exposes and compiles forward and backward tilt', async () => {
   const context = await previewContext({
     itemId: 'pitch-draft',
@@ -172,10 +300,16 @@ test('blocked desktop capabilities preserve guidance and use explicit authoring 
   assert.match(runtime, /authoring_simulation/)
   assert.match(runtime, /当前电脑无法真实触发，请使用播放器旁的模拟触发按钮/)
   assert.match(webHost, /isAdminPreview \? 400 : 1500/)
+  assert.match(webHost, /PixoWebVision/)
+  assert.match(webHost, /case "startVision"/)
   assert.match(preview, /detail\.name === 'gateBlocked'/)
+  assert.match(preview, /suppressSimulationUntilPlaybackRef/)
+  assert.match(preview, /detail\.name === 'seeked'/)
+  assert.match(preview, /detail\.name === 'gateSimulationStarted'[\s\S]*onSimulationChange\(null\)/)
   assert.match(player, /桌面端模拟/)
   assert.match(player, /点击模拟触发/)
   assert.match(player, /客户端引导已按真实效果显示/)
+  assert.match(player, /setClientSimulation\(null\)[\s\S]*simulateInteraction\(\)/)
 })
 
 test('vendored browser models match the pinned Web Vision release', async () => {

@@ -52,7 +52,7 @@ export type ClientRuntimePreviewHandle = {
 export type ClientSimulationState = {
   cueId: string
   interactionType: string
-  status: 'available' | 'running'
+  status: 'available'
 }
 
 type Props = {
@@ -109,6 +109,7 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
     const lastPositionRef = useRef(0)
     const seekingRef = useRef(false)
     const authoringSeekInFlightRef = useRef(false)
+    const suppressSimulationUntilPlaybackRef = useRef(false)
     const pendingSeekRef = useRef<Promise<void>>(Promise.resolve())
     const seekGenerationRef = useRef(0)
     const previousVisionSignatureRef = useRef(visionSignature(gates))
@@ -138,6 +139,8 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
     async function loadAt(ms: number, selectedSourceIndex?: number) {
       const controller = runtimeWindow(iframeRef.current)?.PixoAdminPreview
       if (!controller?.seekPosition) return
+      onSimulationChange(null)
+      suppressSimulationUntilPlaybackRef.current = true
       lastPositionRef.current = ms
       seekingRef.current = true
       authoringSeekInFlightRef.current = true
@@ -163,6 +166,8 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
     async function reloadAt(ms: number, selectedSourceIndex?: number) {
       const controller = runtimeWindow(iframeRef.current)?.PixoAdminPreview
       if (!controller) return
+      onSimulationChange(null)
+      suppressSimulationUntilPlaybackRef.current = true
       lastPositionRef.current = ms
       seekingRef.current = true
       authoringSeekInFlightRef.current = true
@@ -191,6 +196,8 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
     useImperativeHandle(ref, () => ({
       seek: loadAt,
       previewPosition(ms: number) {
+        onSimulationChange(null)
+        suppressSimulationUntilPlaybackRef.current = true
         const frameWindow = runtimeWindow(iframeRef.current)
         const video = frameWindow?.document.getElementById('experience-video') as HTMLVideoElement | null
         if (!video) return
@@ -213,6 +220,7 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
       },
       async togglePlay() {
         await pendingSeekRef.current
+        suppressSimulationUntilPlaybackRef.current = false
         const frameWindow = runtimeWindow(iframeRef.current)
         const controller = frameWindow?.PixoAdminPreview
         if (controller?.toggleTransport) {
@@ -301,9 +309,17 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
         }
         if (message?.type !== 'pixo-runtime-event') return
         const detail = message.detail || {}
-        if (detail.name === 'seeked' && detail.source === 'authoring') {
-          authoringSeekInFlightRef.current = false
+        if (detail.name === 'seeked') {
+          onSimulationChange(null)
+          suppressSimulationUntilPlaybackRef.current = true
+          if (detail.source === 'authoring') authoringSeekInFlightRef.current = false
           return
+        }
+        if (
+          ['playbackStateChanged', 'mediaPlaybackStateChanged'].includes(String(detail.name || ''))
+          && detail.playbackState === 'playing'
+        ) {
+          suppressSimulationUntilPlaybackRef.current = false
         }
         if (detail.name === 'gateOpened') {
           onSimulationChange(null)
@@ -314,6 +330,7 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
           }
         }
         if (detail.name === 'gateBlocked') {
+          if (suppressSimulationUntilPlaybackRef.current) return
           onSimulationChange({
             cueId: String(detail.cueId || ''),
             interactionType: String(detail.type || 'interaction'),
@@ -321,11 +338,7 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
           })
         }
         if (detail.name === 'gateSimulationStarted') {
-          onSimulationChange({
-            cueId: String(detail.cueId || ''),
-            interactionType: String(detail.type || 'interaction'),
-            status: 'running',
-          })
+          onSimulationChange(null)
         }
         if (['gateResolved', 'replay', 'experienceCompleted'].includes(String(detail.name || ''))) {
           onSimulationChange(null)

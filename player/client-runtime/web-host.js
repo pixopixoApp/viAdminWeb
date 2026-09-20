@@ -141,6 +141,7 @@
   let microphoneActive = false;
   let microphoneMeter = null;
   let microphoneProcessingProfile = "legacy";
+  let visionSession = null;
 
   function now() {
     return Date.now();
@@ -164,6 +165,63 @@
 
   function status(value, extra) {
     return { status: value, ...(extra || {}) };
+  }
+
+  function postVisionPreflight(stateValue, result) {
+    if (!isAdminPreview || windowObject.parent === windowObject) return;
+    windowObject.parent.postMessage({
+      type: "pixo-web-preflight",
+      state: stateValue,
+      ...(result?.message ? { message: result.message } : {}),
+      ...(result?.reason ? { reason: result.reason } : {}),
+    }, windowObject.location.origin);
+  }
+
+  function getVisionSession() {
+    if (visionSession) return visionSession;
+    const visionApi = windowObject.PixoWebVision;
+    if (typeof visionApi?.createSession !== "function") return null;
+    visionSession = visionApi.createSession({
+      onSignal(detail) {
+        emit("vision", detail);
+      },
+    });
+    return visionSession;
+  }
+
+  function visionSupported() {
+    try {
+      return getVisionSession()?.supported?.() === true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function requestVisionPermission() {
+    const session = getVisionSession();
+    if (!session || !visionSupported()) {
+      return status("unavailable", { reason: "vision_api_unavailable" });
+    }
+    return session.requestPermission({ facing: "front" });
+  }
+
+  async function startVision(config = {}) {
+    const session = getVisionSession();
+    if (!session || !visionSupported()) {
+      return status("unavailable", { reason: "vision_api_unavailable" });
+    }
+    postVisionPreflight("loading");
+    const prepared = await session.prepare([String(config.target || "")]);
+    if (prepared.status !== "granted") {
+      postVisionPreflight("error", prepared);
+      return prepared;
+    }
+    postVisionPreflight("ready");
+    return session.start(config);
+  }
+
+  function stopVision() {
+    return visionSession?.stop?.() || status("stopped");
   }
 
   async function requestMotionPermission() {
@@ -419,7 +477,9 @@
       return requestMotionPermission();
     }
     if (normalized.includes("microphone")) return ensureMicrophone();
-    if (normalized.includes("camera")) return status("unavailable");
+    if (normalized === "vision" || normalized.includes("camera")) {
+      return requestVisionPermission();
+    }
     if (["haptics", "deviceinfo", "mediacontrol"].includes(normalized)) {
       return status("granted");
     }
@@ -475,6 +535,7 @@
               motion: needsMotion,
               microphoneLevel: Boolean(navigator.mediaDevices?.getUserMedia),
               cameraSignals: false,
+              vision: visionSupported(),
               haptics: typeof navigator.vibrate === "function",
               mediaControl: true,
               shareExperience: Boolean(experienceId),
@@ -494,6 +555,10 @@
           return status("unavailable");
         case "stopCameraSignals":
           return status("stopped");
+        case "startVision":
+          return startVision(paramsValue);
+        case "stopVision":
+          return stopVision();
         case "haptic":
           return haptic(paramsValue.style);
         case "mediaControl":
@@ -517,6 +582,8 @@
     windowObject.removeEventListener("resize", scheduleBrowserHostLayout);
     stopMotion();
     stopMicrophone();
+    visionSession?.dispose?.();
+    visionSession = null;
   }
 
   windowObject.addEventListener("pagehide", cleanup, { once: true });

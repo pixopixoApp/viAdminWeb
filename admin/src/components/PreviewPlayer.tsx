@@ -1414,7 +1414,7 @@ export default function PreviewPlayer({
         </div>
         {workspace && clientInteractionEnabled && clientSimulation ? (
           <aside
-            className={`client-simulation-card${clientSimulation.status === 'running' ? ' is-running' : ''}`}
+            className="client-simulation-card"
             aria-live="polite"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
@@ -1423,22 +1423,16 @@ export default function PreviewPlayer({
               <span className="client-simulation-indicator" aria-hidden="true" />
               桌面端模拟
             </span>
-            <strong>
-              {clientSimulation.status === 'running' ? '正在模拟持续触发' : '当前电脑无法真实触发'}
-            </strong>
-            <small>
-              {clientSimulation.status === 'running'
-                ? '将按真实互动区间继续播放'
-                : '客户端引导已按真实效果显示'}
-            </small>
+            <strong>当前电脑无法真实触发</strong>
+            <small>客户端引导已按真实效果显示</small>
             <button
               type="button"
-              disabled={clientSimulationPending || clientSimulation.status === 'running'}
+              disabled={clientSimulationPending}
               onClick={async () => {
+                setClientSimulation(null)
                 setClientSimulationPending(true)
-                const simulated = await clientRuntimeRef.current?.simulateInteraction()
-                if (!simulated) setClientSimulationPending(false)
-                else if (clientSimulation.status !== 'running') setClientSimulationPending(false)
+                await clientRuntimeRef.current?.simulateInteraction()
+                setClientSimulationPending(false)
               }}
             >
               <svg viewBox="0 0 20 20" aria-hidden="true">
