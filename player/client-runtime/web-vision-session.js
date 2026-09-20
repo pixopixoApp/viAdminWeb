@@ -287,9 +287,13 @@
       if (!this.activeConfig || !this.preview || this.frameHandle) return;
       if (typeof this.preview.requestVideoFrameCallback === "function") {
         this.frameMode = "video";
-        this.frameHandle = this.preview.requestVideoFrameCallback((_, metadata) => {
+        this.frameHandle = this.preview.requestVideoFrameCallback((timestampMs) => {
           this.frameHandle = 0;
-          this.captureFrame(metadata?.mediaTime ? metadata.mediaTime * 1000 : performance.now());
+          // MediaPipe VIDEO timestamps must increase for the lifetime of the
+          // recognizer. mediaTime restarts at zero whenever the camera element
+          // is reattached; the first zero previously fell back to performance.now(),
+          // making the next 33ms media timestamp go backwards and crash inference.
+          this.captureFrame(timestampMs);
         });
       } else {
         this.frameMode = "animation";
@@ -382,7 +386,6 @@
       this.activeConfig = null;
       if (this.preview) {
         this.preview.hidden = true;
-        this.preview.srcObject = null;
       }
       windowObject.clearTimeout(this.streamTimer);
       if (releaseStream) this.releaseStream();
@@ -406,8 +409,10 @@
     releaseStream() {
       windowObject.clearTimeout(this.streamTimer);
       this.streamTimer = 0;
-      this.stream?.getTracks?.().forEach((track) => track.stop());
+      const releasedStream = this.stream;
+      releasedStream?.getTracks?.().forEach((track) => track.stop());
       this.stream = null;
+      if (this.preview?.srcObject === releasedStream) this.preview.srcObject = null;
     }
 
     failActive(reason, message) {

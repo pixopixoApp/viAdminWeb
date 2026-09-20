@@ -108,6 +108,101 @@ test('camera preview preserves the semantic client vision contract', async () =>
   })
 })
 
+test('web vision frames use the monotonic callback clock across camera reattachment', async () => {
+  const callbacks = []
+  const context = {
+    URL,
+    console,
+    location: { href: 'http://127.0.0.1:5174/player/client-runtime/index.html' },
+    document: {
+      currentScript: {
+        src: 'http://127.0.0.1:5174/player/client-runtime/web-vision-session.js',
+      },
+    },
+    navigator: { mediaDevices: { getUserMedia() {} } },
+    WebAssembly: {},
+    Worker: function Worker() {},
+    createImageBitmap() {},
+    setTimeout,
+    clearTimeout,
+    requestAnimationFrame() { return 1 },
+    cancelAnimationFrame() {},
+  }
+  context.window = context
+  context.globalThis = context
+  vm.createContext(context)
+  vm.runInContext(
+    await readFile(new URL('web-vision-session.js', runtimeRoot), 'utf8'),
+    context,
+  )
+
+  const session = context.PixoWebVision.createSession()
+  const captured = []
+  session.activeConfig = { target: 'hand_open_palm' }
+  session.preview = {
+    requestVideoFrameCallback(callback) {
+      callbacks.push(callback)
+      return callbacks.length
+    },
+  }
+  session.captureFrame = (timestampMs) => captured.push(timestampMs)
+
+  session.scheduleFrame()
+  callbacks.shift()(5000, { mediaTime: 0 })
+  session.scheduleFrame()
+  callbacks.shift()(5033, { mediaTime: 0.033 })
+
+  assert.deepEqual(captured, [5000, 5033])
+})
+
+test('web vision keeps its warm stream attached until it is actually released', async () => {
+  const context = {
+    URL,
+    console,
+    location: { href: 'http://127.0.0.1:5174/player/client-runtime/index.html' },
+    document: {
+      currentScript: {
+        src: 'http://127.0.0.1:5174/player/client-runtime/web-vision-session.js',
+      },
+    },
+    navigator: { mediaDevices: { getUserMedia() {} } },
+    WebAssembly: {},
+    Worker: function Worker() {},
+    createImageBitmap() {},
+    setTimeout,
+    clearTimeout,
+    requestAnimationFrame() { return 1 },
+    cancelAnimationFrame() {},
+  }
+  context.window = context
+  context.globalThis = context
+  vm.createContext(context)
+  vm.runInContext(
+    await readFile(new URL('web-vision-session.js', runtimeRoot), 'utf8'),
+    context,
+  )
+
+  let stopped = false
+  const stream = {
+    getTracks() {
+      return [{ stop() { stopped = true } }]
+    },
+  }
+  const session = context.PixoWebVision.createSession()
+  session.stream = stream
+  session.preview = { hidden: false, srcObject: stream }
+  session.activeConfig = { target: 'hand_open_palm' }
+
+  session.stop()
+  assert.equal(session.preview.hidden, true)
+  assert.equal(session.preview.srcObject, stream)
+  assert.equal(stopped, false)
+
+  session.releaseStream()
+  assert.equal(stopped, true)
+  assert.equal(session.preview.srcObject, null)
+})
+
 test('browser host connects semantic vision to the web camera session', async () => {
   const calls = []
   const runtimeSignals = []
@@ -227,8 +322,9 @@ test('browser host connects semantic vision to the web camera session', async ()
   assert.equal(parentMessages[1][0].state, 'ready')
 
   signalVision({ status: 'matched', target: 'hand_open_palm', confidence: 0.91 })
-  assert.equal(runtimeSignals[0].name, 'vision')
-  assert.equal(runtimeSignals[0].data.target, 'hand_open_palm')
+  const matched = runtimeSignals.find((envelope) => envelope.data.status === 'matched')
+  assert.equal(matched.name, 'vision')
+  assert.equal(matched.data.target, 'hand_open_palm')
   assert.equal((await transport.post({
     kind: 'request',
     method: 'stopVision',
@@ -287,6 +383,7 @@ test('blocked desktop capabilities preserve guidance and use explicit authoring 
     new URL('../src/components/editor/ClientRuntimePreview.tsx', import.meta.url),
     'utf8',
   )
+  const previewHost = await readFile(new URL('admin-preview-host.js', runtimeRoot), 'utf8')
   const player = await readFile(
     new URL('../src/components/PreviewPlayer.tsx', import.meta.url),
     'utf8',
@@ -298,6 +395,8 @@ test('blocked desktop capabilities preserve guidance and use explicit authoring 
   assert.match(runtime, /function simulateActiveInteraction\(\)/)
   assert.match(runtime, /return domRuntime\.simulateActiveInteraction\(\)/)
   assert.match(runtime, /authoring_simulation/)
+  assert.match(runtime, /fatalVisionFailure/)
+  assert.match(runtime, /active\.capabilityBlocked[\s\S]*!isCameraCue\(active\.cue\)/)
   assert.match(runtime, /当前电脑无法真实触发，请使用播放器旁的模拟触发按钮/)
   assert.match(webHost, /isAdminPreview \? 400 : 1500/)
   assert.match(webHost, /PixoWebVision/)
@@ -306,6 +405,10 @@ test('blocked desktop capabilities preserve guidance and use explicit authoring 
   assert.match(preview, /suppressSimulationUntilPlaybackRef/)
   assert.match(preview, /detail\.name === 'seeked'/)
   assert.match(preview, /detail\.name === 'gateSimulationStarted'[\s\S]*onSimulationChange\(null\)/)
+  assert.doesNotMatch(preview, /state === 'ready'\) setFrameReadyVersion/)
+  assert.match(preview, /function activeRuntimeVideo/)
+  assert.match(previewHost, /function activeRuntimeVideo/)
+  assert.match(previewHost, /data-pixo-video-layer="incoming"/)
   assert.match(player, /桌面端模拟/)
   assert.match(player, /点击模拟触发/)
   assert.match(player, /客户端引导已按真实效果显示/)

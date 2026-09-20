@@ -217,7 +217,17 @@
       return prepared;
     }
     postVisionPreflight("ready");
-    return session.start(config);
+    const result = await session.start(config);
+    if (result.status === "active") {
+      emit("vision", {
+        status: "active",
+        timestamp: now(),
+        target: String(config.target || ""),
+      });
+    } else if (["denied", "unavailable", "error"].includes(result.status)) {
+      emit("vision", { ...result, target: String(config.target || "") });
+    }
+    return result;
   }
 
   function stopVision() {

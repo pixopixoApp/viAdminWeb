@@ -41,6 +41,13 @@
     }
   }
 
+  function activeRuntimeVideo() {
+    return windowObject.document.querySelector(
+      '.experience-video[data-pixo-video-layer="active"], '
+        + '.experience-video[data-pixo-video-layer="incoming"]',
+    ) || windowObject.document.getElementById("experience-video");
+  }
+
   function canonicalGate(source, sourceIndex) {
     const gate = record(source);
     return {
@@ -188,7 +195,7 @@
     const startedAt = windowObject.performance.now();
     while (windowObject.performance.now() - startedAt < 8000) {
       const state = windowObject.PixoRuntime?.getState?.();
-      const video = windowObject.document.getElementById("experience-video");
+      const video = activeRuntimeVideo();
       if (state?.mediaReady && !state.mediaSwapPending && video?.readyState >= 1) {
         return video;
       }
@@ -242,7 +249,7 @@
   }
 
   function previewPosition(positionMs) {
-    const video = windowObject.document.getElementById("experience-video");
+    const video = activeRuntimeVideo();
     if (!video) return 0;
     video.pause();
     const durationMs = Number.isFinite(video.duration) ? video.duration * 1000 : Infinity;
@@ -252,7 +259,7 @@
   }
 
   async function toggleTransport() {
-    const video = windowObject.document.getElementById("experience-video");
+    const video = activeRuntimeVideo();
     if (!video) return false;
     const playControl = windowObject.document.getElementById("play-control");
     if (playControl) playControl.click();

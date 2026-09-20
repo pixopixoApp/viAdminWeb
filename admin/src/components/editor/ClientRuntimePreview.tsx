@@ -74,6 +74,14 @@ function runtimeWindow(frame: HTMLIFrameElement | null) {
   return frame?.contentWindow as RuntimeWindow | null
 }
 
+function activeRuntimeVideo(frame: HTMLIFrameElement | null) {
+  const documentObject = runtimeWindow(frame)?.document
+  return documentObject?.querySelector<HTMLVideoElement>(
+    '.experience-video[data-pixo-video-layer="active"], '
+      + '.experience-video[data-pixo-video-layer="incoming"]',
+  ) || documentObject?.getElementById('experience-video') as HTMLVideoElement | null
+}
+
 function visionSignature(gates: Gate[]) {
   return JSON.stringify(gates.flatMap((gate) => (
     gate.gesture === 'camera_motion' || gate.gesture === 'camera_continuous'
@@ -198,8 +206,7 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
       previewPosition(ms: number) {
         onSimulationChange(null)
         suppressSimulationUntilPlaybackRef.current = true
-        const frameWindow = runtimeWindow(iframeRef.current)
-        const video = frameWindow?.document.getElementById('experience-video') as HTMLVideoElement | null
+        const video = activeRuntimeVideo(iframeRef.current)
         if (!video) return
         video.pause()
         const maximum = Number.isFinite(video.duration) ? video.duration * 1000 : Infinity
@@ -301,7 +308,6 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
         if (message?.type === 'pixo-web-preflight') {
           const state = String(message.state || '')
           setPreflight(state === 'loading' ? 'loading' : state === 'ready' ? 'ready' : 'error')
-          if (state === 'ready') setFrameReadyVersion((value) => value + 1)
           if (state === 'error') {
             onError(message.message || '摄像头识别模型加载失败。')
           }
@@ -356,8 +362,7 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
       let lastReportedDuration = -1
       let lastReportedPlaying = false
       const sample = () => {
-        const documentObject = runtimeWindow(iframeRef.current)?.document
-        const video = documentObject?.getElementById('experience-video') as HTMLVideoElement | null
+        const video = activeRuntimeVideo(iframeRef.current)
         if (video && !seekingRef.current && !scrubbingRef.current) {
           const positionMs = Math.max(0, video.currentTime * 1000)
           const measuredDuration = Number.isFinite(video.duration)

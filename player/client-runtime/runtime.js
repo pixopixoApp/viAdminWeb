@@ -4581,7 +4581,10 @@
     // following cue can bind it again.  Keep the semantic gate in place and retry;
     // never turn a visual-recognition test into a long-press fallback.
     function retryCameraInsteadOfFallback(active, reason) {
-      if (!active || active.resolved || !isCameraCue(active.cue)) return false;
+      if (!active
+        || active.resolved
+        || active.capabilityBlocked
+        || !isCameraCue(active.cue)) return false;
       active.capabilityStartPending = false;
       active.cameraStarted = false;
       // Native emits an event and resolves the matching RPC.  They describe the same failed
@@ -4904,6 +4907,15 @@
         return;
       }
       if (["denied", "unavailable", "error"].includes(detail.status)) {
+        const fatalVisionFailure = detail.status === "error"
+          && String(detail.reason || "").startsWith("vision_");
+        if (fatalVisionFailure) {
+          // Reopening the same browser stream cannot recover a detector/worker
+          // failure. Block once and offer the authoring simulation instead of
+          // repeatedly flashing and reacquiring the camera preview.
+          resolveOrDeferCapabilityFailure("capability_unavailable");
+          return;
+        }
         retryCameraInsteadOfFallback(
           active,
           detail.status === "denied" ? "permission_denied" : "capability_unavailable",
@@ -4971,7 +4983,7 @@
         const startResult = await nativeBridge.startVision(active.cue.detection.vision);
         active.capabilityStartPending = false;
         if (!activeMatches(activationId) || requestToken !== active.capabilityRequestToken) return;
-        if (!state.hostActive) return;
+        if (!state.hostActive || active.capabilityBlocked) return;
         if (!startResult || startResult.status !== "active") {
           retryCameraInsteadOfFallback(active, startResult && startResult.status === "denied"
             ? "permission_denied"
