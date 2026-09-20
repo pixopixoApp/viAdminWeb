@@ -40,6 +40,10 @@ const playerSource = await readFile(
   new URL('../src/components/PreviewPlayer.tsx', import.meta.url),
   'utf8',
 )
+const clientPreviewSource = await readFile(
+  new URL('../src/components/editor/ClientRuntimePreview.tsx', import.meta.url),
+  'utf8',
+)
 
 test('sustained ranges end at the earliest configured boundary', () => {
   const gate = { gesture: 'continuous_tap', gate_at_ms: 0, gate_end_ms: 8000 }
@@ -130,4 +134,12 @@ test('timeline and main video scrub by frame while occupied frames are replaced'
     assert.match(source, /existingIndex >= 0/)
     assert.doesNotMatch(source, /nearestAvailableInteractionFrame/)
   }
+})
+
+test('space remains a transport shortcut after adding another interaction', () => {
+  assert.match(workspaceSource, /event\.currentTarget\.blur\(\)/)
+  assert.match(playerSource, /addEventListener\('keydown', handleKeyDown, true\)/)
+  assert.match(playerSource, /addEventListener\('keyup', handleKeyUp, true\)/)
+  assert.match(clientPreviewSource, /selectedGateAtPlayhead/)
+  assert.match(clientPreviewSource, /selectedGateAtPlayhead \? selectedSourceIndex : undefined/)
 })

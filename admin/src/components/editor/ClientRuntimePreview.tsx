@@ -239,7 +239,15 @@ const ClientRuntimePreview = forwardRef<ClientRuntimePreviewHandle, Props>(
         return
       }
       if (!runtimeWindow(iframeRef.current)?.PixoAdminPreview) return
-      void reloadAt(lastPositionRef.current, selectedSourceIndex ?? undefined)
+      const selectedGate = selectedSourceIndex == null
+        ? undefined
+        : draft.gates.find((gate) => gate.sourceIndex === selectedSourceIndex)
+      const selectedGateAtPlayhead = selectedGate
+        && Math.abs(selectedGate.gate_at_ms - lastPositionRef.current) <= 1
+      void reloadAt(
+        lastPositionRef.current,
+        selectedGateAtPlayhead ? selectedSourceIndex : undefined,
+      )
       // Draft identity is the intentional reload trigger.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [draft, mounted, storageKey])

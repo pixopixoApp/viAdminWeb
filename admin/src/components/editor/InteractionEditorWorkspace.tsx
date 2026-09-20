@@ -146,12 +146,13 @@ export default function InteractionEditorWorkspace({
                       title={hasChildren
                         ? `${expanded ? '收起' : '展开'} ${option.label} 的二级互动`
                         : `添加 ${option.label} 到 ${formatTime(currentFrameMs)}`}
-                      onClick={() => {
+                      onClick={(event) => {
                         if (hasChildren) {
                           setExpandedType(expanded ? null : String(option.value))
                           return
                         }
                         onAddInteractionAt(String(option.value), currentFrameMs)
+                        event.currentTarget.blur()
                       }}
                       onDragStart={(event) => beginPaletteDrag(event, String(option.value))}
                     >
@@ -177,7 +178,10 @@ export default function InteractionEditorWorkspace({
                             disabled={!editing}
                             draggable={editing}
                             title={`添加 ${child.label} 到 ${formatTime(currentFrameMs)}`}
-                            onClick={() => onAddInteractionAt(String(child.value), currentFrameMs)}
+                            onClick={(event) => {
+                              onAddInteractionAt(String(child.value), currentFrameMs)
+                              event.currentTarget.blur()
+                            }}
                             onDragStart={(event) => beginPaletteDrag(event, String(child.value))}
                           >
                             <span>{child.label}</span>

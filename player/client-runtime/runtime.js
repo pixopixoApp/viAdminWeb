@@ -2851,7 +2851,20 @@
       if (!record) return;
       const sourceMatches = record.url === mediaUrl
         && normalizedVideoSource(video) === mediaUrl;
-      if (sourceMatches && record.ready && !record.failed) return;
+      if (sourceMatches && record.ready && !record.failed) {
+        setVideoLayer(video, standby ? "standby" : "active");
+        if (!standby && video === elements.video) {
+          const mediaGeneration = state.mediaGeneration;
+          windowObject.setTimeout(function restoreReusedMediaReadiness() {
+            if (state.destroyed
+              || video !== elements.video
+              || mediaGeneration !== state.mediaGeneration
+              || !videoRecordMatchesSource(video, record)) return;
+            handleMediaReady();
+          }, 0);
+        }
+        return;
+      }
       if (sourceMatches && record.loading && !record.failed) {
         setVideoLayer(video, standby ? "standby" : "active");
         return;

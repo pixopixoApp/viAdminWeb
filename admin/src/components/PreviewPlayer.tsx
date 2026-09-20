@@ -317,6 +317,7 @@ export default function PreviewPlayer({
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
       if ((event.code === 'Space' || event.key === ' ') && !event.repeat) {
         event.preventDefault()
+        event.stopPropagation()
         togglePlay()
         return
       }
@@ -326,8 +327,19 @@ export default function PreviewPlayer({
         stepBy(direction * (event.shiftKey ? SECOND_MS : EDITOR_FRAME_MS))
       }
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    const handleKeyUp = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      if (event.code !== 'Space' && event.key !== ' ') return
+      event.preventDefault()
+      event.stopPropagation()
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    window.addEventListener('keyup', handleKeyUp, true)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true)
+      window.removeEventListener('keyup', handleKeyUp, true)
+    }
     // Playback helpers are function declarations bound to the latest render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspace, progress, playing, activeSustained])
