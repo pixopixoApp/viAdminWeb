@@ -59,6 +59,41 @@ test('sustained ranges end at the earliest configured boundary', () => {
   )
 })
 
+test('gesture changes only preserve explicit ends between sustained interactions', () => {
+  const continuousTap = { gesture: 'continuous_tap' }
+  const continuousHold = { gesture: 'continuous_hold' }
+  const tap = { gesture: 'tap' }
+  const doubleTap = { gesture: 'double_tap' }
+
+  assert.equal(
+    interaction.shouldClearGateEndOnInteractionTypeChange(continuousTap, continuousHold),
+    false,
+  )
+  assert.equal(
+    interaction.shouldClearGateEndOnInteractionTypeChange(continuousTap, tap),
+    true,
+  )
+  assert.equal(
+    interaction.shouldClearGateEndOnInteractionTypeChange(tap, continuousTap),
+    true,
+  )
+  assert.equal(
+    interaction.shouldClearGateEndOnInteractionTypeChange(tap, doubleTap),
+    true,
+  )
+  assert.equal(
+    interaction.shouldClearGateEndOnInteractionTypeChange(tap, tap),
+    false,
+  )
+  assert.equal(
+    interaction.shouldClearGateEndOnInteractionTypeChange(
+      { gesture: 'tap', custom_action: true },
+      { gesture: 'tap', custom_action: false },
+    ),
+    true,
+  )
+})
+
 test('custom tap count is operator-authored and clamped to one through ninety-nine', () => {
   assert.equal(interaction.AUTHORING_GESTURE_TYPES.includes('multi_tap'), true)
   assert.equal(interaction.enforceInteractionTypeRules({ gesture: 'multi_tap' }).tap_count, 3)
@@ -83,6 +118,10 @@ test('manual annotation defaults to the classic editor and exposes expert mode',
   assert.match(entrySources[0], />\s*返回基础模式\s*</)
   assert.match(classicEditorSource, /<PreviewPlayer/)
   assert.match(classicEditorSource, /usesRotationDirection/)
+  assert.match(classicEditorSource, /期望结束/)
+  assert.match(classicEditorSource, /自动：下一节点\/片尾/)
+  assert.match(classicEditorSource, /把结束时间设为当前播放帧/)
+  assert.match(classicEditorSource, /恢复自动/)
   assert.doesNotMatch(classicEditorSource, /自定义动作 <span/)
 })
 
@@ -90,6 +129,8 @@ test('shared inspector distinguishes configured and effective ranges', () => {
   assert.match(inspectorSource, /期望结束/)
   assert.match(inspectorSource, /实际结束：/)
   assert.match(inspectorSource, /单点互动在当前帧触发，无需设置结束时间/)
+  assert.match(inspectorSource, /shouldClearGateEndOnInteractionTypeChange/)
+  assert.match(inspectorSource, /gate_end_ms: undefined/)
   assert.doesNotMatch(playerSource, /editor-create-end-handle/)
   assert.match(inspectorSource, /目标点击次数/)
   assert.match(inspectorSource, /gate_end_ms/)

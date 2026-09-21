@@ -24,6 +24,7 @@ import {
   isPinch,
   isSustainedPlaybackInteraction,
   pinchDirectionCopy,
+  shouldClearGateEndOnInteractionTypeChange,
   sustainedPlaybackEndMs,
   usesRotationDirection,
   type PinchDirection,
@@ -172,7 +173,7 @@ export function patchForGesture(value: string, current?: Interaction): Partial<I
       ? CAMERA_CONTINUOUS_DEFAULT_TARGET
       : 'hand_victory'
   )
-  return {
+  const patch: Partial<Interaction> = {
     ...(gestureValue === CONTINUOUS_SOUND_AUTHORING_TYPE
       ? continuousSoundInteractionPatch(preset || continuousSoundTarget(current))
       : { gesture: gestureValue }),
@@ -195,6 +196,13 @@ export function patchForGesture(value: string, current?: Interaction): Partial<I
       : {}),
     ...(['rotate', 'draw_circle'].includes(gestureValue) && preset
       ? { rotation_direction: preset as RotationDirection }
+      : {}),
+  }
+  const next = { ...current, ...patch } as Interaction
+  return {
+    ...patch,
+    ...(shouldClearGateEndOnInteractionTypeChange(current, next)
+      ? { gate_end_ms: undefined }
       : {}),
   }
 }

@@ -2736,6 +2736,34 @@ body {
   width: 100%;
 }
 
+.classic-interaction-time-settings {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--pixo-soft-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--pixo-panel-soft) 80%, #fff 20%);
+}
+
+.classic-interaction-node-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .classic-interaction-time-settings .interaction-time-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .classic-interaction-time-settings .interaction-time-row > span:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+[data-theme='dark'] .classic-interaction-time-settings {
+  background: #1d2025;
+}
+
 .interaction-effective-end,
 .interaction-time-note,
 .interaction-help {

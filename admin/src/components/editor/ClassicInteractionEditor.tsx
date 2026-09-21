@@ -1,4 +1,9 @@
 import {
+  AimOutlined,
+  InfoCircleOutlined,
+  WarningOutlined,
+} from '@ant-design/icons'
+import {
   Button,
   Card,
   Descriptions,
@@ -88,6 +93,11 @@ export default function ClassicInteractionEditor({
     onUpdateSelected({ gate_at_ms: Math.max(0, Math.round(playheadMs)) })
   }
 
+  function setEndToPlayhead() {
+    if (!selected || playheadMs < selected.gate_at_ms + 1) return
+    onUpdateSelected({ gate_end_ms: Math.round(playheadMs) })
+  }
+
   function chooseGesture(value: string) {
     if (!selected) return
     const patch = patchForGesture(value, selected)
@@ -140,48 +150,96 @@ export default function ClassicInteractionEditor({
           <Empty description="先在进度条或列表选中一个点，或在当前时刻加点" />
         ) : (
           <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Space wrap>
-              <Typography.Text type="secondary">时刻 (s)</Typography.Text>
-              <InputNumber
-                min={0}
-                step={0.033}
-                precision={3}
-                value={Number((selected.gate_at_ms / 1000).toFixed(3))}
-                onChange={(value) => onUpdateSelected({
-                  gate_at_ms: Math.max(0, Math.round(Number(value || 0) * 1000)),
-                })}
-              />
+            <div className="classic-interaction-time-settings">
+              <label className="interaction-time-row">
+                <span>开始时间</span>
+                <InputNumber
+                  aria-label="互动开始时间"
+                  min={0}
+                  max={isSustainedPlaybackInteraction(selected)
+                    && typeof selected.gate_end_ms === 'number'
+                    ? Number(((selected.gate_end_ms - 1) / 1000).toFixed(3))
+                    : undefined}
+                  step={0.033}
+                  precision={3}
+                  value={Number((selected.gate_at_ms / 1000).toFixed(3))}
+                  addonAfter="s"
+                  onChange={(value) => onUpdateSelected({
+                    gate_at_ms: Math.max(0, Math.round(Number(value || 0) * 1000)),
+                  })}
+                />
+                <Button
+                  size="small"
+                  icon={<AimOutlined />}
+                  disabled={isSustainedPlaybackInteraction(selected)
+                    && typeof selected.gate_end_ms === 'number'
+                    && playheadMs > selected.gate_end_ms - 1}
+                  aria-label="把开始时间设为当前播放帧"
+                  onClick={setGateToPlayhead}
+                >
+                  取当前帧
+                </Button>
+              </label>
+
               {isSustainedPlaybackInteraction(selected) ? (
                 <>
-                  <Typography.Text type="secondary">可选结束 (s)</Typography.Text>
-                  <InputNumber
-                    min={Number(((selected.gate_at_ms + 1) / 1000).toFixed(3))}
-                    step={0.033}
-                    precision={3}
-                    value={typeof selected.gate_end_ms === 'number'
-                      ? Number((selected.gate_end_ms / 1000).toFixed(3))
-                      : null}
-                    placeholder="下一节点/片尾"
-                    onChange={(value) => onUpdateSelected({
-                      gate_end_ms: value == null
-                        ? null
-                        : Math.max(
-                          selected.gate_at_ms + 1,
-                          Math.round(Number(value) * 1000),
-                        ),
-                    })}
-                  />
-                  <Typography.Text type={selectedEndClipped ? 'warning' : 'secondary'}>
-                    实际结束：{typeof selectedEffectiveEnd === 'number'
-                      ? `${(selectedEffectiveEnd / 1000).toFixed(3)}s`
-                      : '视频结束'}
-                    {selectedEndClipped ? '（已被下一节点或片尾截断）' : ''}
-                  </Typography.Text>
+                  <label className="interaction-time-row">
+                    <span>期望结束</span>
+                    <InputNumber
+                      aria-label="持续互动期望结束时间"
+                      min={Number(((selected.gate_at_ms + 1) / 1000).toFixed(3))}
+                      step={0.033}
+                      precision={3}
+                      value={typeof selected.gate_end_ms === 'number'
+                        ? Number((selected.gate_end_ms / 1000).toFixed(3))
+                        : null}
+                      placeholder="自动：下一节点/片尾"
+                      addonAfter="s"
+                      onChange={(value) => onUpdateSelected({
+                        gate_end_ms: value == null
+                          ? null
+                          : Math.max(
+                            selected.gate_at_ms + 1,
+                            Math.round(Number(value) * 1000),
+                          ),
+                      })}
+                    />
+                    <Button
+                      size="small"
+                      icon={<AimOutlined />}
+                      disabled={playheadMs < selected.gate_at_ms + 1}
+                      aria-label="把结束时间设为当前播放帧"
+                      onClick={setEndToPlayhead}
+                    >
+                      取当前帧
+                    </Button>
+                    {typeof selected.gate_end_ms === 'number' ? (
+                      <Button
+                        size="small"
+                        aria-label="恢复自动结束时间"
+                        onClick={() => onUpdateSelected({ gate_end_ms: null })}
+                      >
+                        恢复自动
+                      </Button>
+                    ) : null}
+                  </label>
+                  <div className={`interaction-effective-end${selectedEndClipped ? ' is-warning' : ''}`}>
+                    {selectedEndClipped ? <WarningOutlined /> : <InfoCircleOutlined />}
+                    <span>
+                      {typeof selected.gate_end_ms === 'number' ? '' : '自动模式 · '}
+                      实际结束：{typeof selectedEffectiveEnd === 'number'
+                        ? `${(selectedEffectiveEnd / 1000).toFixed(3)}s`
+                        : '视频结束'}
+                    </span>
+                    {selectedEndClipped ? <strong>下一节点或片尾已截断超出部分</strong> : null}
+                  </div>
                 </>
               ) : null}
-              <Button size="small" onClick={setGateToPlayhead}>取当前播放时刻</Button>
-              <Button size="small" danger onClick={onRemoveSelected}>删除此点</Button>
-            </Space>
+
+              <div className="classic-interaction-node-actions">
+                <Button size="small" danger onClick={onRemoveSelected}>删除此点</Button>
+              </div>
+            </div>
 
             <div>
               <Typography.Text type="secondary">互动动作</Typography.Text>

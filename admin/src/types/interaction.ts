@@ -210,6 +210,20 @@ export function isSustainedPlaybackInteraction(
     || isContinuousVoice(value)
 }
 
+export function shouldClearGateEndOnInteractionTypeChange(
+  current: Pick<Interaction, 'gesture' | 'custom_action'> | undefined | null,
+  next: Pick<Interaction, 'gesture' | 'custom_action'>,
+) {
+  if (!current) return false
+  const typeChanged = current.gesture !== next.gesture
+    || Boolean(current.custom_action) !== Boolean(next.custom_action)
+  if (!typeChanged) return false
+  return !(
+    isSustainedPlaybackInteraction(current)
+    && isSustainedPlaybackInteraction(next)
+  )
+}
+
 export function sustainedPlaybackEndMs(
   value: { gate_at_ms: number; gate_end_ms?: number },
   nextGateAtMs?: number,
