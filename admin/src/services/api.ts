@@ -231,6 +231,27 @@ export function purgeRun(id: string) {
   )
 }
 
+export type BatchRunActionResult = {
+  succeeded: string[]
+  failed: Array<{ id: string; error: string }>
+}
+
+/** 批量从垃圾箱恢复视频 */
+export function batchRestoreRuns(ids: string[]) {
+  return api<BatchRunActionResult>('/api/v1/trash/batch-restore', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  })
+}
+
+/** 批量彻底删除垃圾箱中的视频（不可恢复） */
+export function batchPurgeRuns(ids: string[]) {
+  return api<BatchRunActionResult>('/api/v1/trash/batch-purge', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  })
+}
+
 export function getRun(id: string) {
   return api<RunDetail>(`/api/v1/runs/${id}`)
 }
@@ -710,6 +731,8 @@ export const runsApi = {
   trash: trashRun,
   restore: restoreRun,
   purge: purgeRun,
+  batchRestore: batchRestoreRuns,
+  batchPurge: batchPurgeRuns,
   updateRunFeedWeight,
   updateRunTitle,
   updateRunCover,
