@@ -75,6 +75,28 @@ test('admin preview compiles gates through the client interaction catalog', asyn
   assert.equal('active_until_ms' in taps, false)
 })
 
+test('single-video preview waits indefinitely for ordinary interactions', async () => {
+  const context = await previewContext({
+    itemId: 'double-tap-draft',
+    mediaUrl: '/video.mp4',
+    durationMs: 5000,
+    gates: [{
+      sourceIndex: 0,
+      gesture: 'double_tap',
+      gate_at_ms: 1000,
+    }],
+  })
+
+  const spec = context.PixoAdminPreview.buildSpec(JSON.parse(
+    context.sessionStorage.getItem('pixo-admin:draft:test'),
+  ))
+  const interaction = spec.body.video[0].interactions[0]
+  assert.equal(interaction.pause_video, true)
+  assert.equal(interaction.detection.response_window_ms, 0)
+  assert.deepEqual(JSON.parse(JSON.stringify(interaction.on_success)), { action: 'continue' })
+  assert.deepEqual(JSON.parse(JSON.stringify(interaction.on_miss)), { action: 'continue' })
+})
+
 test('camera preview preserves the semantic client vision contract', async () => {
   const context = await previewContext({
     itemId: 'vision-draft',

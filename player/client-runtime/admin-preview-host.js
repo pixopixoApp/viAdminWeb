@@ -116,6 +116,11 @@
     }
 
     const sustained = sustainedTypes.has(type);
+    // Manual annotation is a single-video flow: every cue pauses and waits until
+    // the operator completes it. Catalog response windows describe gesture
+    // defaults, but must not become a gate-level miss deadline here. Timed
+    // success/failure windows belong to the separate Story compiler.
+    detection.response_window_ms = 0;
     const interaction = {
       id: `admin-${gate.sourceIndex}`,
       type,
