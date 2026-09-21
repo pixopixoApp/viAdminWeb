@@ -2296,6 +2296,20 @@
     return Boolean(successTarget && missTarget && successTarget !== missTarget);
   }
 
+  function resultActionsDiffer(cue) {
+    if (!isRecord(cue) || !isRecord(cue.on_success) || !isRecord(cue.on_miss)) {
+      return false;
+    }
+    return ["action", "target_video_id", "timing"].some(function differs(field) {
+      return (cue.on_success[field] || null) !== (cue.on_miss[field] || null);
+    });
+  }
+
+  function responseDeadlineForCue(cue, configuredMs) {
+    if (!resultActionsDiffer(cue) || isSustainedPlaybackCue(cue)) return 0;
+    return configuredMs;
+  }
+
   function extractExperience(input) {
     const raw = parseExperience(input);
     const body = isRecord(raw.body) ? raw.body : null;
@@ -4636,7 +4650,8 @@
     }
 
     function armWallDeadline(active, durationMs) {
-      active.responseWindowMs = durationMs;
+      const effectiveDurationMs = responseDeadlineForCue(active.cue, durationMs);
+      active.responseWindowMs = effectiveDurationMs;
       active.responseElapsedMs = 0;
       active.responseTimerInitialized = true;
       windowObject.clearTimeout(active.deadlineTimer);
@@ -4648,11 +4663,11 @@
           cueId: active.cue.id,
           activationId: active.activationId,
           segmentIndex: state.segmentIndex,
-          responseWindowMs: durationMs,
+          responseWindowMs: effectiveDurationMs,
         });
       }
-      if (durationMs === 0) return;
-      scheduleWallDeadline(active, durationMs);
+      if (effectiveDurationMs === 0) return;
+      scheduleWallDeadline(active, effectiveDurationMs);
     }
 
     function freezeWallDeadline(active) {
@@ -5688,7 +5703,10 @@
         responseElapsedMs: 0,
         responseTimerInitialized: false,
         inputReadyEmitted: false,
-        responseWindowMs: cue.detection.response_window_ms,
+        responseWindowMs: responseDeadlineForCue(
+          cue,
+          cue.detection.response_window_ms,
+        ),
         tapWindow: calculateTapWindow(
           cue.detection.response_window_ms,
           cue.offset_time_ms,
@@ -5783,7 +5801,7 @@
         segmentIndex: state.segmentIndex,
         interactionIndex: currentCues().indexOf(cue),
         offsetTimeMs: cue.offset_time_ms,
-        responseWindowMs: cue.detection.response_window_ms,
+        responseWindowMs: active.responseWindowMs,
         place: cue.detection.place,
         pauseVideo: cue.pause_video,
       });
@@ -7763,6 +7781,8 @@
     isClapRelease,
     calculateResponseWindowProgress,
     isTimedStoryBranchCue,
+    resultActionsDiffer,
+    responseDeadlineForCue,
     successResumeDelayMs,
     normalizeResultAction,
     normalizeCue,

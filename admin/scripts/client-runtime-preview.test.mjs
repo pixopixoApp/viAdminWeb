@@ -42,6 +42,22 @@ async function previewContext(draft) {
   return context
 }
 
+async function runtimeTesting() {
+  const context = { console }
+  context.window = context
+  context.globalThis = context
+  vm.createContext(context)
+  vm.runInContext(
+    await readFile(new URL('interaction-catalog.js', runtimeRoot), 'utf8'),
+    context,
+  )
+  vm.runInContext(
+    await readFile(new URL('runtime.js', runtimeRoot), 'utf8'),
+    context,
+  )
+  return context.PixoRuntime.testing
+}
+
 test('admin preview compiles gates through the client interaction catalog', async () => {
   const context = await previewContext({
     itemId: 'draft-one',
@@ -95,6 +111,23 @@ test('single-video preview waits indefinitely for ordinary interactions', async 
   assert.equal(interaction.detection.response_window_ms, 0)
   assert.deepEqual(JSON.parse(JSON.stringify(interaction.on_success)), { action: 'continue' })
   assert.deepEqual(JSON.parse(JSON.stringify(interaction.on_miss)), { action: 'continue' })
+})
+
+test('runtime refuses a legacy deadline when success and miss do the same thing', async () => {
+  const testing = await runtimeTesting()
+  const singleVideoCue = {
+    type: 'double_tap',
+    on_success: { action: 'continue' },
+    on_miss: { action: 'continue' },
+  }
+  const storyCue = {
+    type: 'double_tap',
+    on_success: { action: 'jump_video', target_video_id: 'success' },
+    on_miss: { action: 'jump_video', target_video_id: 'failure' },
+  }
+
+  assert.equal(testing.responseDeadlineForCue(singleVideoCue, 650), 0)
+  assert.equal(testing.responseDeadlineForCue(storyCue, 5000), 5000)
 })
 
 test('camera preview preserves the semantic client vision contract', async () => {
