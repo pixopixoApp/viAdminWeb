@@ -1,61 +1,37 @@
-import {
-  Button,
-  Card,
-  Descriptions,
-  Empty,
-  Input,
-  InputNumber,
-  Select,
-  Space,
-  Tag,
-  Typography,
-  message,
-} from 'antd'
+import { ExperimentOutlined, RollbackOutlined } from '@ant-design/icons'
+import { Button, Card, Empty, Input, Select, Space, Tag, Typography, message } from 'antd'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
-import { annotateApi, runsApi } from '../services/api'
-import type { Interaction, SaveStatus } from '../types/interaction'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { isServiceUnavailableError } from '../apiError'
+import ClassicInteractionEditor from '../components/editor/ClassicInteractionEditor'
+import InteractionEditorWorkspace from '../components/editor/InteractionEditorWorkspace'
+import InteractionInspector, { patchForGesture } from '../components/editor/InteractionInspector'
+import { adminInteractionLabel } from '../components/editor/interactionCopy'
 import {
-  AUTHORING_GESTURE_TYPES,
-  CAMERA_CONTINUOUS_DEFAULT_TARGET,
-  CONTINUOUS_SOUND_AUTHORING_TYPE,
-  cameraContinuousTargetCopy,
-  continuousSoundInteractionPatch,
-  continuousSoundTarget,
-  continuousSoundTargetCopy,
+  EDITOR_FRAME_MS,
+  snapToEditorFrame,
+} from '../components/editor/timelineUtils'
+import useInteractionHistory from '../components/editor/useInteractionHistory'
+import ServiceBusyCard from '../components/ServiceBusyCard'
+import { normalizeVisionConfig } from '../components/VisionInteractionFields'
+import { annotateApi, runsApi } from '../services/api'
+import type { Interaction, InteractionPatch, SaveStatus } from '../types/interaction'
+import {
   enforceInteractionTypeRules,
-  gestureAuthoringLabel,
-  isCameraContinuous,
-  isContinuousSound,
-  isContinuousTap,
-  isRotate,
   isPinch,
-  normalizePinchDirection,
-  pinchDirectionCopy,
   isSustainedPlaybackInteraction,
+  normalizePinchDirection,
   normalizeRotationDirection,
+  usesRotationDirection,
   versionOptionLabel,
 } from '../types/interaction'
 import type { AnnotateState, VersionInfo } from '../types/run'
-import PreviewPlayer from '../components/PreviewPlayer'
-import ServiceBusyCard from '../components/ServiceBusyCard'
-import SoundInteractionFields from '../components/SoundInteractionFields'
-import { isServiceUnavailableError } from '../apiError'
-import VisionInteractionFields, {
-  normalizeVisionConfig,
-  VISION_TARGET_HINTS,
-} from '../components/VisionInteractionFields'
-import RotationDirectionFields from '../components/RotationDirectionFields'
-import PinchDirectionFields from '../components/PinchDirectionFields'
-
-const GESTURES = AUTHORING_GESTURE_TYPES.map((value) => ({
-  value,
-  label: gestureAuthoringLabel(value),
-}))
 
 export default function AnnotatePage() {
   const { id, version } = useParams()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const expertMode = searchParams.get('mode') === 'expert'
   const [state, setState] = useState<AnnotateState | null>(null)
   const [displayTitle, setDisplayTitle] = useState('')
   const [sourceFilename, setSourceFilename] = useState('')
@@ -73,6 +49,30 @@ export default function AnnotatePage() {
   const [messageApi, contextHolder] = message.useMessage()
   const skipAutosave = useRef(true)
   const saveGen = useRef(0)
+  const playheadMsRef = useRef(0)
+  playheadMsRef.current = playheadMs
+
+  const restoreSelection = useCallback((nextRows: Interaction[]) => {
+    if (nextRows.length === 0) {
+      setSelectedIndex(null)
+      return
+    }
+    const nearest = nextRows.reduce((best, row, index) => (
+      Math.abs(row.gate_at_ms - playheadMsRef.current)
+        < Math.abs(nextRows[best].gate_at_ms - playheadMsRef.current)
+        ? index
+        : best
+    ), 0)
+    setSelectedIndex(nearest)
+  }, [])
+  const {
+    commitRows,
+    undo,
+    redo,
+    resetHistory,
+    canUndo,
+    canRedo,
+  } = useInteractionHistory(setRows, restoreSelection)
 
   const load = useCallback(async () => {
     if (!id || !version) return
@@ -80,8 +80,8 @@ export default function AnnotatePage() {
     setLoadUnavailable(false)
     try {
       const [data, detail] = await Promise.all([
-        annotateApi.getState(id!, version!),
-        runsApi.get(id!).catch(() => null),
+        annotateApi.getState(id, version),
+        runsApi.get(id).catch(() => null),
       ])
       if (!data.editing) {
         messageApi.info('该版本已定稿')
@@ -90,100 +90,93 @@ export default function AnnotatePage() {
       }
       skipAutosave.current = true
       setState(data)
-      setDisplayTitle(
-        String(
-          detail?.run?.title ||
-            detail?.media?.title ||
-            detail?.media?.filename ||
-            `手动标注 · ${data.label}`,
-        ),
-      )
+      setDisplayTitle(String(
+        detail?.run?.title
+        || detail?.media?.title
+        || detail?.media?.filename
+        || `手动标注 · ${data.label}`,
+      ))
       setSourceFilename(String(detail?.media?.filename || ''))
       setPublishedVersion(detail?.run?.published_version || null)
       setVersionInfos(detail?.version_infos || [])
-      const nextRows = [...(data.timeline?.interactions || [])].map(
-        enforceInteractionTypeRules,
-      ).sort(
-        (a, b) => a.gate_at_ms - b.gate_at_ms,
-      )
+      const nextRows = [...(data.timeline?.interactions || [])]
+        .map(enforceInteractionTypeRules)
+        .sort((left, right) => left.gate_at_ms - right.gate_at_ms)
       setRows(nextRows)
+      resetHistory()
       setNote(data.note || '')
       setSelectedIndex(nextRows.length > 0 ? 0 : null)
       setSaveStatus('idle')
       setLoading(false)
-    } catch (err) {
-      messageApi.error(err instanceof Error ? err.message : '加载失败')
-      if (isServiceUnavailableError(err)) {
-        setLoadUnavailable(true)
-      } else {
-        navigate(`/runs/${id}`, { replace: true })
-      }
+    } catch (error) {
+      messageApi.error(error instanceof Error ? error.message : '加载失败')
+      if (isServiceUnavailableError(error)) setLoadUnavailable(true)
+      else navigate(`/runs/${id}`, { replace: true })
       setLoading(false)
     }
-  }, [id, version, messageApi, navigate])
+  }, [id, messageApi, navigate, resetHistory, version])
 
   useEffect(() => {
     void load()
   }, [load])
 
-  const timelinePayload = useMemo(
-    () => ({
-      ...(state?.timeline || {}),
-      interactions: rows.map((r) => ({
-        gesture: r.gesture,
-        gate_at_ms: Math.round(r.gate_at_ms),
-        ...(!isSustainedPlaybackInteraction(r) && typeof r.gate_end_ms === 'number'
-          ? { gate_end_ms: Math.round(r.gate_end_ms) }
-          : {}),
-        ...(r.hint ? { hint: r.hint } : {}),
-        ...(r.pause_video === false ? { pause_video: false } : { pause_video: true }),
-        ...(isRotate(r)
-          ? { rotation_direction: normalizeRotationDirection(r.rotation_direction) }
-          : {}),
-        ...(isPinch(r) ? { pinch_direction: normalizePinchDirection(r.pinch_direction) } : {}),
-        ...(['camera_motion', 'camera_continuous'].includes(r.gesture)
-          ? {
-              vision: normalizeVisionConfig(r.vision, r.gesture),
-              vision_resolution: r.vision_resolution || { target_source: 'operator' as const },
-            }
-          : {}),
-        ...(r.custom_action ? { custom_action: true } : {}),
-        ...(r.action_description ? { action_description: r.action_description } : {}),
-        ...(r.gameplay_description ? { gameplay_description: r.gameplay_description } : {}),
-        ...(typeof r.reaction_start_ms === 'number' ? { reaction_start_ms: r.reaction_start_ms } : {}),
-        ...(typeof r.reaction_end_ms === 'number' ? { reaction_end_ms: r.reaction_end_ms } : {}),
-      })),
-    }),
-    [rows, state?.timeline],
-  )
+  const timelinePayload = useMemo(() => ({
+    ...(state?.timeline || {}),
+    interactions: rows.map((row) => ({
+      gesture: row.gesture,
+      gate_at_ms: Math.round(row.gate_at_ms),
+      ...(typeof row.gate_end_ms === 'number'
+        ? { gate_end_ms: Math.round(row.gate_end_ms) }
+        : {}),
+      ...(row.gesture === 'multi_tap' ? { tap_count: row.tap_count ?? 3 } : {}),
+      ...(row.hint ? { hint: row.hint } : {}),
+      ...(row.pause_video === false ? { pause_video: false } : { pause_video: true }),
+      ...(usesRotationDirection(row)
+        ? { rotation_direction: normalizeRotationDirection(row.rotation_direction) }
+        : {}),
+      ...(isPinch(row)
+        ? { pinch_direction: normalizePinchDirection(row.pinch_direction) }
+        : {}),
+      ...(['camera_motion', 'camera_continuous'].includes(row.gesture)
+        ? {
+            vision: normalizeVisionConfig(row.vision, row.gesture),
+            vision_resolution: row.vision_resolution || { target_source: 'operator' as const },
+          }
+        : {}),
+      ...(row.custom_action ? { custom_action: true } : {}),
+      ...(row.action_description ? { action_description: row.action_description } : {}),
+      ...(row.gameplay_description ? { gameplay_description: row.gameplay_description } : {}),
+      ...(typeof row.reaction_start_ms === 'number'
+        ? { reaction_start_ms: row.reaction_start_ms }
+        : {}),
+      ...(typeof row.reaction_end_ms === 'number'
+        ? { reaction_end_ms: row.reaction_end_ms }
+        : {}),
+    })),
+  }), [rows, state?.timeline])
 
   const persist = useCallback(async () => {
     if (!id || !version) return
-    const gen = ++saveGen.current
+    const generation = ++saveGen.current
     setSaveStatus('saving')
     try {
-      const data = await annotateApi.saveState(id!, version!, timelinePayload, note)
-      if (gen !== saveGen.current) return
+      const data = await annotateApi.saveState(id, version, timelinePayload, note)
+      if (generation !== saveGen.current) return
       skipAutosave.current = true
       setState(data)
-      const nextRows = [...(data.timeline?.interactions || [])].map(
-        enforceInteractionTypeRules,
-      ).sort(
-        (a, b) => a.gate_at_ms - b.gate_at_ms,
-      )
+      const nextRows = [...(data.timeline?.interactions || [])]
+        .map(enforceInteractionTypeRules)
+        .sort((left, right) => left.gate_at_ms - right.gate_at_ms)
       setRows(nextRows)
       setNote(data.note || '')
-      setSelectedIndex((prev) => {
-        if (prev == null) return nextRows.length ? 0 : null
-        return Math.min(prev, Math.max(0, nextRows.length - 1))
-      })
+      restoreSelection(nextRows)
       setSaveStatus('saved')
-    } catch (err) {
-      if (gen !== saveGen.current) return
+    } catch (error) {
+      if (generation !== saveGen.current) return
       setSaveStatus('error')
-      messageApi.error(err instanceof Error ? err.message : '自动保存失败')
+      messageApi.error(error instanceof Error ? error.message : '自动保存失败')
     }
-  }, [id, version, timelinePayload, note, messageApi])
+  }, [id, messageApi, note, restoreSelection, timelinePayload, version])
 
   useEffect(() => {
     if (skipAutosave.current) {
@@ -191,25 +184,24 @@ export default function AnnotatePage() {
       return
     }
     setSaveStatus('dirty')
-    const timer = window.setTimeout(() => {
-      void persist()
-    }, 500)
+    const timer = window.setTimeout(() => void persist(), 500)
     return () => window.clearTimeout(timer)
-  }, [rows, note, persist])
+  }, [note, persist, rows])
 
   async function onSwitchVersion(nextVersion: string) {
     if (!id || !version || nextVersion === version) return
-    const target = versionInfos.find((v) => v.version === nextVersion)
+    const target = versionInfos.find((item) => item.version === nextVersion)
     setSwitching(true)
     try {
-      await runsApi.switchRunVersion(id!, nextVersion)
-      if (target?.editing) {
-        navigate(`/runs/${id}/annotate/${nextVersion}`, { replace: true })
-      } else {
-        navigate(`/runs/${id}`, { replace: true })
-      }
-    } catch (err) {
-      messageApi.error(err instanceof Error ? err.message : '切换失败')
+      await runsApi.switchRunVersion(id, nextVersion)
+      navigate(
+        target?.editing
+          ? `/runs/${id}/annotate/${nextVersion}${expertMode ? '?mode=expert' : ''}`
+          : `/runs/${id}`,
+        { replace: true },
+      )
+    } catch (error) {
+      messageApi.error(error instanceof Error ? error.message : '切换失败')
     } finally {
       setSwitching(false)
     }
@@ -220,11 +212,11 @@ export default function AnnotatePage() {
     const text = next.trim()
     if (!text || text === displayTitle) return
     try {
-      const updated = await runsApi.updateRunTitle(id!, text)
+      const updated = await runsApi.updateRunTitle(id, text)
       setDisplayTitle(updated.title || text)
       messageApi.success('标题已更新')
-    } catch (err) {
-      messageApi.error(err instanceof Error ? err.message : '标题保存失败')
+    } catch (error) {
+      messageApi.error(error instanceof Error ? error.message : '标题保存失败')
     }
   }
 
@@ -236,388 +228,363 @@ export default function AnnotatePage() {
     }
     setFinalizing(true)
     try {
-      await annotateApi.finalize(id!, version!, timelinePayload, note)
+      await annotateApi.finalize(id, version, timelinePayload, note)
       messageApi.success(`已定稿 ${version}`)
       navigate(`/runs/${id}`, { replace: true })
-    } catch (err) {
-      messageApi.error(err instanceof Error ? err.message : '定稿失败')
+    } catch (error) {
+      messageApi.error(error instanceof Error ? error.message : '定稿失败')
     } finally {
       setFinalizing(false)
     }
   }
 
-  function updateSelected(patch: Partial<Interaction> & { gate_end_ms?: number | null }) {
-    if (selectedIndex == null) return
-    setRows((prev) => {
-      const cur = prev[selectedIndex]
-      if (!cur) return prev
-      const gate_at_ms = Math.round(Number(patch.gate_at_ms ?? cur.gate_at_ms) || 0)
-      let gate_end_ms: number | undefined
-      if ('gate_end_ms' in patch) {
-        gate_end_ms =
-          patch.gate_end_ms == null ? undefined : Math.round(Number(patch.gate_end_ms) || 0)
-      } else {
-        gate_end_ms = cur.gate_end_ms
+  function updateInteractionAt(
+    targetIndex: number,
+    patch: InteractionPatch,
+  ) {
+    commitRows((previous) => {
+      const current = previous[targetIndex]
+      if (!current) return previous
+      const hasPatchedEnd = 'gate_end_ms' in patch
+      const { gate_end_ms: patchEnd, ...patchWithoutEnd } = patch
+      const gateAtMs = Math.round(Number(patch.gate_at_ms ?? current.gate_at_ms) || 0)
+      const patchedEnd = hasPatchedEnd
+        ? patchEnd == null
+          ? undefined
+          : Math.round(Number(patchEnd) || 0)
+        : current.gate_end_ms
+      let updated = enforceInteractionTypeRules({
+        ...current,
+        ...patchWithoutEnd,
+        gate_at_ms: gateAtMs,
+        ...(patchedEnd === undefined ? {} : { gate_end_ms: patchedEnd }),
+      })
+      if (patchedEnd === undefined) delete updated.gate_end_ms
+      else {
+        const minimum = isSustainedPlaybackInteraction(updated) ? gateAtMs + 1 : gateAtMs
+        if (patchedEnd < minimum) return previous
+        updated = { ...updated, gate_end_ms: patchedEnd }
       }
-      if (typeof gate_end_ms === 'number' && gate_end_ms < gate_at_ms) {
-        gate_end_ms = undefined
+      if (previous.some((row, index) => index !== targetIndex && row.gate_at_ms === gateAtMs)) {
+        messageApi.warning('该时刻已有互动点')
+        return previous
       }
-      let updated: Interaction = {
-        ...cur,
-        ...patch,
-        gate_at_ms,
-        ...(gate_end_ms !== undefined ? { gate_end_ms } : { gate_end_ms: undefined }),
-      }
-      updated = enforceInteractionTypeRules(updated)
-      if (gate_end_ms === undefined) delete updated.gate_end_ms
-      const next = prev.map((r, i) => (i === selectedIndex ? updated : r)).sort(
-        (a, b) => a.gate_at_ms - b.gate_at_ms,
-      )
+      const next = previous
+        .map((row, index) => (index === targetIndex ? updated : row))
+        .sort((left, right) => left.gate_at_ms - right.gate_at_ms)
       setSelectedIndex(next.indexOf(updated))
       return next
     })
   }
 
-  function addAtPlayhead() {
-    const ms = Math.max(0, Math.round(playheadMs))
-    if (rows.some((r) => r.gate_at_ms === ms)) {
-      messageApi.warning('该时刻已有互动点')
-      return
-    }
-    const item: Interaction = { gate_at_ms: ms, gesture: 'tap', hint: '' }
-    setRows((prev) => {
-      const next = [...prev, item].sort((a, b) => a.gate_at_ms - b.gate_at_ms)
+  function updateSelected(patch: InteractionPatch) {
+    if (selectedIndex != null) updateInteractionAt(selectedIndex, patch)
+  }
+
+  function addInteractionAt(gestureValue: string, atMs: number) {
+    const mediaDurationMs = Number(state?.timeline?.media?.duration_ms || 0) || undefined
+    commitRows((previous) => {
+      const snappedMs = snapToEditorFrame(atMs, mediaDurationMs)
+      const existingIndex = previous.findIndex((row) => (
+        Math.round(row.gate_at_ms / EDITOR_FRAME_MS)
+          === Math.round(snappedMs / EDITOR_FRAME_MS)
+      ))
+      const existing = existingIndex >= 0 ? previous[existingIndex] : undefined
+      let item = enforceInteractionTypeRules({
+        gate_at_ms: existing?.gate_at_ms ?? snappedMs,
+        gesture: 'tap',
+        hint: '',
+        ...(existing?.gameplay_description
+          ? { gameplay_description: existing.gameplay_description }
+          : {}),
+        ...(typeof existing?.reaction_start_ms === 'number'
+          ? { reaction_start_ms: existing.reaction_start_ms }
+          : {}),
+        ...(typeof existing?.reaction_end_ms === 'number'
+          ? { reaction_end_ms: existing.reaction_end_ms }
+          : {}),
+        ...(existing?.cue ? { cue: existing.cue } : {}),
+        ...patchForGesture(gestureValue),
+      } as Interaction)
+      if (
+        existing
+        && isSustainedPlaybackInteraction(existing)
+        && isSustainedPlaybackInteraction(item)
+        && typeof existing.gate_end_ms === 'number'
+      ) {
+        item = { ...item, gate_end_ms: existing.gate_end_ms }
+      }
+      const next = (existingIndex >= 0
+        ? previous.map((row, index) => (index === existingIndex ? item : row))
+        : [...previous, item])
+        .sort((left, right) => left.gate_at_ms - right.gate_at_ms)
       setSelectedIndex(next.indexOf(item))
+      if (existing) {
+        messageApi.success(
+          `已将当前帧的「${adminInteractionLabel(existing)}」替换为「${adminInteractionLabel(item)}」，可撤销`,
+        )
+      }
       return next
     })
   }
 
   function removeSelected() {
     if (selectedIndex == null) return
-    setRows((prev) => {
-      const next = prev.filter((_, i) => i !== selectedIndex)
+    commitRows((previous) => {
+      const next = previous.filter((_, index) => index !== selectedIndex)
       setSelectedIndex(next.length === 0 ? null : Math.min(selectedIndex, next.length - 1))
       return next
     })
   }
 
-  function setGateToPlayhead() {
-    if (selectedIndex == null) return
-    updateSelected({ gate_at_ms: Math.max(0, Math.round(playheadMs)) })
+  function setExpertMode(enabled: boolean) {
+    const next = new URLSearchParams(searchParams)
+    if (enabled) next.set('mode', 'expert')
+    else next.delete('mode')
+    setSearchParams(next, { replace: true })
   }
 
   if (loading && !state) return <Card loading />
   if (loadUnavailable && !state) return <ServiceBusyCard onRetry={load} />
   if (!state || !id) return <Empty />
 
-  const selected = selectedIndex != null ? rows[selectedIndex] : null
+  const selected = selectedIndex == null ? null : rows[selectedIndex] || null
   const durationMs = Number(state.timeline?.media?.duration_ms || 0) || undefined
-  const saveLabel =
-    saveStatus === 'saving'
-      ? '保存中…'
-      : saveStatus === 'saved'
-        ? '已自动保存'
-        : saveStatus === 'dirty'
-          ? '未保存'
-          : saveStatus === 'error'
-            ? '保存失败'
-            : ''
-
-  const currentInfo = versionInfos.find((v) => v.version === version)
+  const selectedNextGate = selectedIndex == null ? undefined : rows[selectedIndex + 1]?.gate_at_ms
+  const saveLabel = saveStatus === 'saving'
+    ? '保存中…'
+    : saveStatus === 'saved'
+      ? '已自动保存'
+      : saveStatus === 'dirty'
+        ? '未保存'
+        : saveStatus === 'error'
+          ? '保存失败'
+          : ''
+  const currentInfo = versionInfos.find((item) => item.version === version)
   const kindLabel = (currentInfo?.kind || 'manual') === 'manual' ? '人工标注' : 'AI 生成'
   const barNote = (note || currentInfo?.note || '').trim()
 
+  const projectPanel = (
+    <div className="editor-project-panel">
+      <Typography.Text strong>项目信息</Typography.Text>
+      <dl>
+        <div><dt>文件</dt><dd>{sourceFilename || '-'}</dd></div>
+        <div><dt>版本</dt><dd>{state.label}</dd></div>
+        <div><dt>时长</dt><dd>{durationMs == null ? '-' : `${(durationMs / 1000).toFixed(2)}s`}</dd></div>
+        <div><dt>节点</dt><dd>{rows.length}</dd></div>
+      </dl>
+      <Typography.Text type="secondary">版本备注</Typography.Text>
+      <Input.TextArea
+        rows={5}
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
+        placeholder="可选，自动保存"
+        maxLength={500}
+        showCount
+      />
+    </div>
+  )
+
+  if (!expertMode) {
+    return (
+      <>
+        {contextHolder}
+        <Space
+          style={{
+            marginBottom: 16,
+            width: '100%',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+          }}
+          wrap
+        >
+          <div>
+            <Typography.Title
+              level={4}
+              style={{ margin: 0 }}
+              className="page-title"
+              editable={{
+                tooltip: '点击修改标题',
+                onChange: (value) => void onSaveTitle(value),
+                triggerType: ['text', 'icon'],
+              }}
+            >
+              {displayTitle || `手动标注 · ${state.label}`}
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              <Link to="/">返回列表</Link>
+              {sourceFilename ? ` · 文件 ${sourceFilename}` : ''}
+              {saveLabel ? ` · ${saveLabel}` : ''}
+            </Typography.Text>
+            <div style={{ marginTop: 10 }}>
+              <Tag color={publishedVersion ? 'green' : 'blue'}>
+                {publishedVersion ? '已发布' : '待发布'}
+              </Tag>
+              <Tag>基础模式</Tag>
+            </div>
+          </div>
+          <Space wrap>
+            {saveStatus === 'error' ? (
+              <Button size="small" onClick={() => void persist()}>重试保存</Button>
+            ) : null}
+            <Button
+              icon={<ExperimentOutlined />}
+              onClick={() => setExpertMode(true)}
+            >
+              专家模式
+            </Button>
+            <Button type="primary" loading={finalizing} onClick={() => void onFinalize()}>
+              定稿
+            </Button>
+          </Space>
+        </Space>
+
+        {versionInfos.length > 0 ? (
+          <div
+            className="version-result-bar"
+            style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8 }}
+          >
+            <Space size="middle" wrap>
+              <Typography.Text strong>查看结果</Typography.Text>
+              <Typography.Text type="secondary">版本</Typography.Text>
+              <Select
+                style={{ width: 180 }}
+                value={version}
+                loading={switching}
+                options={versionInfos.map((item) => ({
+                  value: item.version,
+                  label: versionOptionLabel(item.label, item.version, publishedVersion),
+                }))}
+                onChange={(value) => void onSwitchVersion(value)}
+              />
+              <Typography.Text type="secondary">
+                {kindLabel}{barNote ? ` · ${barNote}` : ''}
+              </Typography.Text>
+            </Space>
+          </div>
+        ) : null}
+
+        <ClassicInteractionEditor
+          runId={id}
+          stateLabel={state.label}
+          sourceFilename={sourceFilename}
+          rows={rows}
+          selectedIndex={selectedIndex}
+          durationMs={durationMs}
+          playheadMs={playheadMs}
+          note={note}
+          onNoteChange={setNote}
+          onSelectIndex={setSelectedIndex}
+          onPlayheadChange={setPlayheadMs}
+          onAddAtPlayhead={() => addInteractionAt('tap', playheadMs)}
+          onUpdateSelected={updateSelected}
+          onRemoveSelected={removeSelected}
+        />
+      </>
+    )
+  }
+
   return (
-    <>
+    <div className="interaction-editor-page">
       {contextHolder}
       <Space
-        style={{ marginBottom: 16, width: '100%', justifyContent: 'space-between', alignItems: 'flex-start' }}
+        className="interaction-editor-pagebar"
+        style={{ width: '100%', justifyContent: 'space-between', alignItems: 'center' }}
         wrap
       >
-        <div>
-          <Typography.Title
-            level={4}
-            style={{ margin: 0 }}
-            className="page-title"
-            editable={{
-              tooltip: '点击修改标题',
-              onChange: (v) => void onSaveTitle(v),
-              triggerType: ['text', 'icon'],
-            }}
-          >
-            {displayTitle || `手动标注 · ${state.label}`}
-          </Typography.Title>
-          <Typography.Text type="secondary">
-            <Link to="/">返回列表</Link>
-            {sourceFilename ? ` · 文件 ${sourceFilename}` : ''}
-            {saveLabel ? ` · ${saveLabel}` : ''}
-          </Typography.Text>
-          <div style={{ marginTop: 10 }}>
-            <Tag color={publishedVersion ? 'green' : 'blue'}>
-              {publishedVersion ? '已发布' : '待发布'}
-            </Tag>
+        <Space size="middle">
+          <Link to="/">返回列表</Link>
+          <div>
+            <Typography.Title
+              level={4}
+              style={{ margin: 0 }}
+              className="page-title"
+              editable={{
+                tooltip: '点击修改标题',
+                onChange: (value) => void onSaveTitle(value),
+                triggerType: ['text', 'icon'],
+              }}
+            >
+              {displayTitle || `手动标注 · ${state.label}`}
+            </Typography.Title>
+            <Typography.Text type="secondary">
+              {sourceFilename ? `文件 ${sourceFilename}` : ''}
+              {saveLabel ? ` · ${saveLabel}` : ''}
+            </Typography.Text>
           </div>
-        </div>
+          <Tag color={publishedVersion ? 'green' : 'blue'}>
+            {publishedVersion ? '已发布' : '待发布'}
+          </Tag>
+          {versionInfos.length > 0 ? (
+            <div className="editor-version-inline">
+              <Typography.Text strong>版本</Typography.Text>
+              <Select
+                value={version}
+                loading={switching}
+                options={versionInfos.map((item) => ({
+                  value: item.version,
+                  label: versionOptionLabel(item.label, item.version, publishedVersion),
+                }))}
+                onChange={(value) => void onSwitchVersion(value)}
+              />
+              <Typography.Text
+                className="editor-version-inline-note"
+                type="secondary"
+                title={barNote}
+              >
+                {kindLabel}{barNote ? ` · ${barNote}` : ''}
+              </Typography.Text>
+            </div>
+          ) : null}
+        </Space>
         <Space wrap>
           {saveStatus === 'error' ? (
-            <Button size="small" onClick={() => void persist()}>
-              重试保存
-            </Button>
+            <Button size="small" onClick={() => void persist()}>重试保存</Button>
           ) : null}
+          <Button
+            icon={<RollbackOutlined />}
+            onClick={() => setExpertMode(false)}
+          >
+            返回基础模式
+          </Button>
           <Button type="primary" loading={finalizing} onClick={() => void onFinalize()}>
             定稿
           </Button>
         </Space>
       </Space>
 
-      {versionInfos.length > 0 ? (
-        <div
-          className="version-result-bar"
-          style={{
-            marginBottom: 16,
-            padding: '10px 14px',
-            borderRadius: 8,
-          }}
-        >
-          <Space size="middle" wrap>
-            <Typography.Text strong>查看结果</Typography.Text>
-            <Typography.Text type="secondary">版本</Typography.Text>
-            <Select
-              style={{ width: 180 }}
-              value={version}
-              loading={switching}
-              options={versionInfos.map((v) => ({
-                value: v.version,
-                label: versionOptionLabel(v.label, v.version, publishedVersion),
-              }))}
-              onChange={(v) => void onSwitchVersion(v)}
-            />
-            <Typography.Text type="secondary">
-              {kindLabel}
-              {barNote ? ` · ${barNote}` : ''}
-            </Typography.Text>
-          </Space>
-        </div>
-      ) : null}
-
-      <Card className="page-card" title="基本信息" size="small">
-        <Descriptions column={2} size="small">
-          <Descriptions.Item label="类型">人工 · 编辑中</Descriptions.Item>
-          <Descriptions.Item label="当前版本">{state.label}</Descriptions.Item>
-          <Descriptions.Item label="时长">
-            {durationMs != null ? `${(durationMs / 1000).toFixed(2)}s` : '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="节点数">{rows.length}</Descriptions.Item>
-          <Descriptions.Item label="备注" span={2}>
-            <Input.TextArea
-              rows={2}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="版本备注（可选，自动保存）"
-              maxLength={500}
-              showCount
-            />
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
-
-      <Card className="page-card" title="标注预览" size="small">
-        <PreviewPlayer
-          runId={id}
-          gates={rows}
-          durationMs={durationMs}
-          mode="annotate"
-          selectedIndex={selectedIndex}
-          onSelectGate={setSelectedIndex}
-          onPlayheadChange={setPlayheadMs}
-          onAddAtPlayhead={addAtPlayhead}
-        />
-      </Card>
-
-      <Card className="page-card" title="选中互动" size="small">
-        {!selected ? (
-          <Empty description="先在进度条/列表选中一个点，或点击「在当前时刻加点」" />
-        ) : (
-          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            <Space wrap>
-              <Typography.Text type="secondary">时刻 (s)</Typography.Text>
-              <InputNumber
-                min={0}
-                step={0.033}
-                precision={3}
-                value={Number((selected.gate_at_ms / 1000).toFixed(3))}
-                onChange={(n) =>
-                  updateSelected({ gate_at_ms: Math.max(0, Math.round(Number(n || 0) * 1000)) })
-                }
-              />
-              {isSustainedPlaybackInteraction(selected) ? (
-                <Typography.Text type="secondary">
-                  作用区间：当前节点 → {rows[(selectedIndex ?? -1) + 1]
-                    ? `${(rows[(selectedIndex ?? -1) + 1].gate_at_ms / 1000).toFixed(2)}s 的下一节点`
-                    : '视频结束'}
-                </Typography.Text>
-              ) : (
-                <>
-                  <Typography.Text type="secondary">结束 (s)</Typography.Text>
-                  <InputNumber
-                    min={Number((selected.gate_at_ms / 1000).toFixed(3))}
-                    step={0.033}
-                    precision={3}
-                    value={
-                      typeof selected.gate_end_ms === 'number'
-                        ? Number((selected.gate_end_ms / 1000).toFixed(3))
-                        : null
-                    }
-                    onChange={(n) =>
-                      updateSelected({
-                        gate_end_ms:
-                          n == null
-                            ? undefined
-                            : Math.max(selected.gate_at_ms, Math.round(Number(n) * 1000)),
-                      })
-                    }
-                  />
-                </>
-              )}
-              <Button size="small" onClick={setGateToPlayhead}>
-                取当前播放时刻
-              </Button>
-              <Button size="small" danger onClick={removeSelected}>
-                删除此点
-              </Button>
-            </Space>
-
-            <div>
-              <Typography.Text type="secondary">互动动作</Typography.Text>
-              <div className="gesture-grid" style={{ marginTop: 8 }}>
-                {GESTURES.map((g) => (
-                  <button
-                    key={g.value}
-                    type="button"
-                    className={
-                      !selected.custom_action && (
-                        g.value === CONTINUOUS_SOUND_AUTHORING_TYPE
-                          ? isContinuousSound(selected)
-                          : selected.gesture === g.value
-                      ) ? 'on' : undefined
-                    }
-                    onClick={() =>
-                      updateSelected({
-                        ...(g.value === CONTINUOUS_SOUND_AUTHORING_TYPE
-                          ? continuousSoundInteractionPatch(continuousSoundTarget(selected))
-                          : { gesture: g.value }),
-                        custom_action: false,
-                        action_description: undefined,
-                        ...(['camera_motion', 'camera_continuous'].includes(g.value)
-                          ? {
-                              vision: normalizeVisionConfig(undefined, g.value),
-                              vision_resolution: { target_source: 'operator' },
-                              hint: VISION_TARGET_HINTS[
-                                g.value === 'camera_continuous'
-                                  ? CAMERA_CONTINUOUS_DEFAULT_TARGET
-                                  : 'hand_victory'
-                              ],
-                            }
-                          : {}),
-                      })
-                    }
-                  >
-                    {g.label} <span className="gesture-code">{g.value}</span>
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  className={selected.custom_action ? 'on custom-action' : 'custom-action'}
-                  onClick={() =>
-                    updateSelected({ gesture: 'tap', custom_action: true })
-                  }
-                >
-                  自定义动作 <span className="gesture-code">按点击处理</span>
-                </button>
-              </div>
-              {selected.custom_action ? (
-                <Input
-                  style={{ marginTop: 10 }}
-                  value={selected.action_description || ''}
-                  maxLength={80}
-                  showCount
-                  onChange={(e) => updateSelected({ action_description: e.target.value })}
-                  placeholder="描述用户需要执行的动作，例如：摸一摸小猫"
-                />
-              ) : null}
-              {!selected.custom_action && ['camera_motion', 'camera_continuous'].includes(selected.gesture) ? (
-                <VisionInteractionFields
-                  value={selected.vision}
-                  interactionType={selected.gesture as 'camera_motion' | 'camera_continuous'}
-                  onChange={(vision) =>
-                    updateSelected({
-                      vision,
-                      vision_resolution: { target_source: 'operator' },
-                      hint: VISION_TARGET_HINTS[vision.target],
-                    })
-                  }
-                />
-              ) : null}
-              {!selected.custom_action && isContinuousSound(selected) ? (
-                <SoundInteractionFields value={selected} onChange={updateSelected} />
-              ) : null}
-              {!selected.custom_action && isRotate(selected) ? (
-                <RotationDirectionFields
-                  value={selected.rotation_direction}
-                  onChange={(rotation_direction) => updateSelected({ rotation_direction })}
-                />
-              ) : null}
-              {!selected.custom_action && isPinch(selected) ? (
-                <PinchDirectionFields value={selected.pinch_direction}
-                  onChange={(pinch_direction) => updateSelected({ pinch_direction, hint: pinchDirectionCopy(pinch_direction).hint })} />
-              ) : null}
-              {isSustainedPlaybackInteraction(selected) ? (
-                <Typography.Paragraph type="secondary" style={{ margin: '10px 0 0' }}>
-                  {isCameraContinuous(selected)
-                    ? `该类型固定暂停进入；点击预览里的「${cameraContinuousTargetCopy(selected.vision?.target).simulate}」开始或续播，停止 1100ms 后暂停。${cameraContinuousTargetCopy(selected.vision?.target).editorHelp}。`
-                    : isContinuousSound(selected)
-                    ? `该类型固定暂停进入；预览中按住画面模拟声音，松开 450ms 后暂停。${continuousSoundTargetCopy(continuousSoundTarget(selected)).editorHelp}。`
-                    : isContinuousTap(selected)
-                    ? '该类型固定暂停进入、全画面识别；首次点击立即播放，每次点击续期 500ms，停止点击后暂停。'
-                    : '该类型固定暂停进入、全画面识别；抬手立即暂停，停止移动 500ms 后暂停。'}
-                </Typography.Paragraph>
-              ) : null}
-            </div>
-
-            <div>
-              <Typography.Text type="secondary">
-                Hint（{['camera_motion', 'camera_continuous'].includes(selected.gesture) || isContinuousSound(selected) ? '随识别目标自动生成' : '播放器提示，最多 40 字'}）
-              </Typography.Text>
-              <Input
-                style={{ marginTop: 8 }}
-                disabled={
-                  ['camera_motion', 'camera_continuous'].includes(selected.gesture) ||
-                  isContinuousSound(selected) ||
-                  isSustainedPlaybackInteraction(selected)
-                }
-                value={selected.hint || ''}
-                maxLength={40}
-                showCount
-                onChange={(e) => updateSelected({ hint: e.target.value })}
-                placeholder="例如：点击屏幕继续"
-              />
-            </div>
-
-            <div>
-              <Typography.Text type="secondary">玩法描述（仅供记录）</Typography.Text>
-              <Input.TextArea
-                style={{ marginTop: 8 }}
-                rows={3}
-                value={selected.gameplay_description || ''}
-                maxLength={500}
-                showCount
-                onChange={(e) => updateSelected({ gameplay_description: e.target.value })}
-                placeholder="记录这个互动点的设计目的、预期反馈或运营说明；仅保存在标注备注中，不会进入播放器使用的玩法 JSON"
-              />
-            </div>
-          </Space>
+      <InteractionEditorWorkspace
+        runId={id}
+        rows={rows}
+        durationMs={durationMs}
+        editing
+        selectedIndex={selectedIndex}
+        playheadMs={playheadMs}
+        onSelectIndex={setSelectedIndex}
+        onPlayheadChange={setPlayheadMs}
+        onAddInteractionAt={addInteractionAt}
+        onUpdateInteractionAt={updateInteractionAt}
+        onRemoveSelected={removeSelected}
+        inspector={(
+          <InteractionInspector
+            selected={selected}
+            selectedIndex={selectedIndex}
+            nextGateAtMs={selectedNextGate}
+            durationMs={durationMs}
+            playheadMs={playheadMs}
+            editing
+            onUpdate={updateSelected}
+            onRemove={removeSelected}
+            showGameplayDescription
+          />
         )}
-      </Card>
-    </>
+        contextTitle="项目信息"
+        contextPanel={projectPanel}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={undo}
+        onRedo={redo}
+      />
+    </div>
   )
 }

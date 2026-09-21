@@ -16,12 +16,8 @@ const soundFieldsSource = await readFile(
   new URL('../src/components/SoundInteractionFields.tsx', import.meta.url),
   'utf8',
 )
-const clipEditorSource = await readFile(
-  new URL('../src/components/story-edit/ClipEditor.tsx', import.meta.url),
-  'utf8',
-)
-const annotatePageSource = await readFile(
-  new URL('../src/pages/AnnotatePage.tsx', import.meta.url),
+const inspectorSource = await readFile(
+  new URL('../src/components/editor/InteractionInspector.tsx', import.meta.url),
   'utf8',
 )
 
@@ -53,10 +49,8 @@ test('both editors require the continuous sound target step', () => {
   assert.match(interactionSource, /持续吹气（识别音量）/)
   assert.match(interactionSource, /持续发声（识别音调）/)
 
-  for (const source of [clipEditorSource, annotatePageSource]) {
-    assert.match(source, /AUTHORING_GESTURE_TYPES/)
-    assert.match(source, /CONTINUOUS_SOUND_AUTHORING_TYPE/)
-    assert.match(source, /isContinuousSound\(selected\)/)
-    assert.match(source, /<SoundInteractionFields/)
-  }
+  assert.match(inspectorSource, /AUTHORING_GESTURE_TYPES/)
+  assert.match(inspectorSource, /CONTINUOUS_SOUND_AUTHORING_TYPE/)
+  assert.match(inspectorSource, /isContinuousSound\(selected\)/)
+  assert.match(inspectorSource, /<SoundInteractionFields/)
 })

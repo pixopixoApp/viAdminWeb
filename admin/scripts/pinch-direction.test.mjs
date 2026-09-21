@@ -34,10 +34,10 @@ test('both directions use loose travel but reject the opposite direction', () =>
 
 test('direction guides reset invisibly and are present in every editor', async () => {
   const guide = await readFile(new URL('../src/components/PinchDirectionFields.tsx', import.meta.url), 'utf8')
+  const inspector = await readFile(new URL('../src/components/editor/InteractionInspector.tsx', import.meta.url), 'utf8')
   assert.match(guide, /data-direction/)
   assert.match(guide, /prefers-reduced-motion/)
   assert.match(guide, /opacity:\s*0/)
-  for (const path of ['pages/AnnotatePage.tsx', 'components/story-edit/ClipEditor.tsx']) {
-    assert.match(await readFile(new URL(`../src/${path}`, import.meta.url), 'utf8'), /PinchDirectionFields/)
-  }
+  assert.match(inspector, /PinchDirectionFields/)
+  assert.match(inspector, /pinchDirectionCopy/)
 })

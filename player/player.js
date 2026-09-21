@@ -372,6 +372,7 @@ function startPanSensor() {
   panSensorStarted = true;
   const input = createTiltInput({
     onReading: ({ gammaDegrees }) => {
+      if (!Number.isFinite(gammaDegrees)) return;
       const tilt = panController.updateFromGamma(gammaDegrees);
       if (Math.abs(tilt) > 0.2) dismissPanHint();
     },
@@ -482,15 +483,17 @@ const CAPABILITIES = {
   },
   'motion.tilt': (interaction) => {
     const detector = createTiltDetector({ direction: interaction.primary.direction });
-    const feed = ({ gammaDegrees, atMs }) => applyDetector(
+    const feed = ({ gammaDegrees, betaDegrees, atMs }) => applyDetector(
       interaction,
-      detector.update({ gammaDegrees, atMs }),
+      detector.update({ gammaDegrees, betaDegrees, atMs }),
     );
     const input = createTiltInput({
       onReading: feed,
       onUnavailable: () => degradeCapability(interaction, '此设备不支持倾斜感应'),
     });
-    showDock({ label: interaction.primary.direction === 'left' ? '左倾' : '右倾' });
+    showDock({ label: ({
+      left: '左倾', right: '右倾', forward: '前倾', backward: '后倾',
+    })[interaction.primary.direction] });
     return { input, feed, needsGesture: input.needsPermissionGesture };
   },
   'motion.shake': (interaction) => {
@@ -1185,11 +1188,13 @@ if (new URLSearchParams(location.search).get('sim') === '1') {
   createKeyboardSimulator({
     onReading(reading) {
       if (reading.signal === 'motion.tilt' && panController) {
-        panController.updateFromGamma(reading.gammaDegrees);
+        if (Number.isFinite(reading.gammaDegrees)) {
+          panController.updateFromGamma(reading.gammaDegrees);
+        }
       }
       if (!capability || capability.signal !== reading.signal) return;
       capability.feed?.(reading);
     },
   }).start();
-  meta.append(' · 模拟模式：←/→ 倾斜，S 摇动，M 出声，C 镜头动作');
+  meta.append(' · 模拟模式：方向键倾斜，S 摇动，M 出声，C 镜头动作');
 }

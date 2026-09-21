@@ -7,7 +7,7 @@ import {
 
 export type { VisionConfig } from '../types/interaction'
 
-const HAND_TARGETS = [
+export const VISION_HAND_TARGETS = [
   ['hand_victory', '比耶'],
   ['hand_thumb_up', '点赞'],
   ['hand_thumb_down', '踩'],
@@ -16,7 +16,7 @@ const HAND_TARGETS = [
   ['hand_pointing_up', '食指向上'],
   ['hand_i_love_you', '我爱你手势'],
 ]
-const FACE_TARGETS = [
+export const VISION_FACE_TARGETS = [
   ['face_smile', '微笑'],
   ['face_wink_left', '左眼眨眼（以本人为准）'],
   ['face_wink_right', '右眼眨眼（以本人为准）'],
@@ -27,7 +27,7 @@ const FACE_TARGETS = [
   ['face_brow_furrow', '皱眉'],
   ['face_cheek_puff', '鼓腮'],
 ]
-const CONTINUOUS_TARGETS = Object.entries(CAMERA_CONTINUOUS_TARGET_COPY)
+export const VISION_CONTINUOUS_TARGETS = Object.entries(CAMERA_CONTINUOUS_TARGET_COPY)
   .map(([target, copy]) => [target, copy.label])
 
 export const VISION_TARGET_HINTS: Record<string, string> = {
@@ -98,7 +98,7 @@ export function normalizeVisionConfig(
       : CAMERA_CONTINUOUS_DEFAULT_TARGET
     return { ...DEFAULT_CONTINUOUS_VISION, ...value, target }
   }
-  const validTargets = new Set([...HAND_TARGETS, ...FACE_TARGETS].map(([target]) => target))
+  const validTargets = new Set([...VISION_HAND_TARGETS, ...VISION_FACE_TARGETS].map(([target]) => target))
   const target = value?.target && validTargets.has(value.target)
     ? value.target
     : DEFAULT_VISION.target
@@ -135,11 +135,13 @@ export default function VisionInteractionFields({
   return (
     <div className="vision-interaction-fields">
       <Space direction="vertical" size={10} style={{ width: '100%' }}>
-        <Typography.Text strong>第二步：选择具体识别目标（必选）</Typography.Text>
+        <Typography.Text strong>
+          {continuous ? '第二步：选择具体识别目标（必选）' : '识别目标'}
+        </Typography.Text>
         <Typography.Text type="secondary">
           {continuous
             ? '`camera_continuous` 是持续摄像头交互大类；识别脉冲会续播 1100ms。Android 真机端侧识别，不上传或保存摄像头画面。'
-            : '`camera_motion` 只是镜头识别大类；请在下方选择具体手势或表情。Android 真机端侧识别，不上传或保存摄像头画面。'}
+            : '当前识别目标可在此调整。Android 真机端侧识别，不上传或保存摄像头画面。'}
         </Typography.Text>
         <Space wrap>
           <Typography.Text type="secondary">具体手势 / 表情</Typography.Text>
@@ -151,10 +153,10 @@ export default function VisionInteractionFields({
             onChange={selectTarget}
             options={[
               ...(continuous
-                ? [{ label: '持续动作', options: CONTINUOUS_TARGETS.map(([value, label]) => ({ value, label })) }]
+                ? [{ label: '持续动作', options: VISION_CONTINUOUS_TARGETS.map(([value, label]) => ({ value, label })) }]
                 : [
-                    { label: '手势', options: HAND_TARGETS.map(([value, label]) => ({ value, label })) },
-                    { label: '表情', options: FACE_TARGETS.map(([value, label]) => ({ value, label })) },
+                    { label: '手势', options: VISION_HAND_TARGETS.map(([value, label]) => ({ value, label })) },
+                    { label: '表情', options: VISION_FACE_TARGETS.map(([value, label]) => ({ value, label })) },
                   ]),
             ]}
           />

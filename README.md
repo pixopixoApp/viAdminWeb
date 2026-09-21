@@ -6,6 +6,8 @@ Pixo 运营后台的独立前端、预览播放器与 Web 部署配置。后端 
 
 - `admin/`：React + TypeScript + Vite 运营后台。
 - `player/`：运营后台内嵌使用的互动视频预览播放器。
+- `player/client-runtime/`：客户端 Runtime 快照，以及浏览器摄像头、麦克风和
+  设备动作桥接；后台真实体验模式直接执行这套 Runtime，不另写一套判定。
 - `deploy/`：生产镜像与 Nginx 反向代理配置。
 
 ## 开发
@@ -28,6 +30,20 @@ npm run build
 ```
 
 构建结果位于 `admin/dist/`，仅用于镜像构建，不提交到 Git。生产镜像通过 `deploy/Dockerfile.web` 使用锁定的 npm 依赖构建，并由 `deploy/nginx.conf` 提供静态页面、`/player/` 预览资源及 `/api/` API 反向代理。
+
+## 同步客户端 Runtime
+
+Android Runtime 或网站 Web Vision 更新后，在仓库根目录运行：
+
+```bash
+./scripts/sync_client_runtime.sh
+```
+
+脚本默认从同一 Pixo 工作区的 `pixo-android-sustained-ranges` 工作树读取客户端
+Runtime，并从 `archive/Pixo-website` 读取 Web Vision 实现与锁定模型；也可通过
+`PIXO_ANDROID_RUNTIME_DIR` 和 `PIXO_WEBSITE_DIR` 指定其他来源。同步结果需和后台代码
+一起提交，因此生产镜像不依赖相邻仓库。摄像头帧和识别结果只在浏览器 Worker 内处理，
+不上传服务器；只有包含摄像头互动的预览才会延迟加载模型并请求权限。
 
 ## AI 生成视频（Seedance / Vidu）
 

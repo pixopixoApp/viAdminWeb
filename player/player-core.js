@@ -29,6 +29,7 @@ const DIRECTIONAL_SIGNALS = new Set([
 ]);
 
 const DIRECTIONS = new Set(['left', 'right', 'up', 'down']);
+const TILT_DIRECTIONS = new Set(['left', 'right', 'forward', 'backward']);
 
 function directionForDelta(dx, dy) {
   if (Math.max(Math.abs(dx), Math.abs(dy)) < 36) return null;
@@ -94,11 +95,14 @@ export function validatePlayableTimeline(value) {
       throw new TypeError(`${label}.primary.signal is unsupported by this Player`);
     }
     const direction = interaction.primary?.direction ?? null;
-    if (signal === 'motion.tilt' && direction !== 'left' && direction !== 'right') {
-      throw new TypeError(`${label}.primary.direction must be left or right for tilt`);
+    if (signal === 'motion.tilt' && !TILT_DIRECTIONS.has(direction)) {
+      throw new TypeError(`${label}.primary.direction must be left, right, forward, or backward for tilt`);
     }
     const directional = DIRECTIONAL_SIGNALS.has(signal);
-    if (directional !== DIRECTIONS.has(direction)) {
+    const supportedDirection = signal === 'motion.tilt'
+      ? TILT_DIRECTIONS.has(direction)
+      : DIRECTIONS.has(direction);
+    if (directional !== supportedDirection) {
       throw new TypeError(`${label}.primary.direction does not match its signal`);
     }
     if (interaction.fallback?.signal !== 'ui.continue'
@@ -110,7 +114,9 @@ export function validatePlayableTimeline(value) {
   return value;
 }
 
-const DIRECTION_LABELS = Object.freeze({ left: '左', right: '右', up: '上', down: '下' });
+const DIRECTION_LABELS = Object.freeze({
+  left: '左', right: '右', up: '上', down: '下', forward: '前', backward: '后',
+});
 
 // detail 只承载指令之外的增量信息(时长、权限、判定边界);没有增量就留空,Player 会隐藏该行。
 const SIGNAL_HINTS = Object.freeze({
@@ -232,18 +238,20 @@ export function createCameraMotionDetector({ thresholdEnergy = 0.06, sustainMs =
 }
 
 export function createTiltDetector({ direction, thresholdDegrees = 18, sustainMs = 400 } = {}) {
-  if (direction !== 'left' && direction !== 'right') {
-    throw new TypeError('direction must be left or right');
+  if (!TILT_DIRECTIONS.has(direction)) {
+    throw new TypeError('direction must be left, right, forward, or backward');
   }
   if (!Number.isFinite(thresholdDegrees) || thresholdDegrees <= 0) {
     throw new TypeError('thresholdDegrees must be positive');
   }
-  const sign = direction === 'right' ? 1 : -1;
+  const sign = direction === 'right' || direction === 'forward' ? 1 : -1;
+  const axis = direction === 'forward' || direction === 'backward' ? 'betaDegrees' : 'gammaDegrees';
   const sustain = createSustainDetector({ threshold: thresholdDegrees, sustainMs });
   return Object.freeze({
-    update({ gammaDegrees, atMs }) {
-      if (!Number.isFinite(gammaDegrees)) throw new TypeError('gammaDegrees must be finite');
-      return sustain.update({ value: gammaDegrees * sign, atMs });
+    update({ gammaDegrees, betaDegrees, atMs }) {
+      const degrees = axis === 'betaDegrees' ? betaDegrees : gammaDegrees;
+      if (!Number.isFinite(degrees)) throw new TypeError(`${axis} must be finite`);
+      return sustain.update({ value: degrees * sign, atMs });
     },
   });
 }

@@ -23,8 +23,18 @@ import SeedanceVideoPage from './pages/SeedanceVideoPage'
 import TrashPage from './pages/TrashPage'
 import ServiceBusyCard from './components/ServiceBusyCard'
 
+const LOCAL_EDITOR_DEMO_PATH =
+  '/runs/00000000-0000-4000-8000-000000000018/annotate/0.0.2'
+
+function isLocalEditorDemo() {
+  return import.meta.env.DEV
+    && ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+    && window.location.pathname === LOCAL_EDITOR_DEMO_PATH
+}
+
 function Private({ children }: { children: React.ReactNode }) {
   const { me, loading, refresh, serviceUnavailable } = useAuth()
+  if (isLocalEditorDemo()) return <>{children}</>
   if (!getToken()) return <Navigate to="/login" replace />
   if (loading) return null
   if (serviceUnavailable && !me) {

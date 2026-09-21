@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "android_revision": "c073f29ea7e9cc058698f91c742c6b9ac21c50cb",
+  "sdk": {
+    "package": "@mediapipe/tasks-vision",
+    "version": "1.0.1",
+    "integrity": "sha512-rvRE2FmAZ6ZxKSw7wq+e+jQDpN3t1B/tD2mJz9SmAzb1msoDkd4dMoE4wAh8Z30Um0PQwLiHr9QtomhmXk3aUQ==",
+    "license": "Apache-2.0"
+  },
+  "models": {
+    "face_landmarker.task": {
+      "bytes": 3758596,
+      "sha256": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff"
+    },
+    "gesture_recognizer.task": {
+      "bytes": 8373440,
+      "sha256": "97952348cf6a6a4915c2ea1496b4b37ebabc50cbbf80571435643c455f2b0482"
+    }
+  },
+  "one_shot_targets": [
+    "hand_victory",
+    "hand_thumb_up",
+    "hand_thumb_down",
+    "hand_open_palm",
+    "hand_closed_fist",
+    "hand_pointing_up",
+    "hand_i_love_you",
+    "face_smile",
+    "face_wink_left",
+    "face_wink_right",
+    "face_blink",
+    "face_mouth_open",
+    "face_mouth_pucker",
+    "face_brow_raise",
+    "face_brow_furrow",
+    "face_cheek_puff"
+  ],
+  "continuous_targets": {
+    "hand_finger_snap": "finger_snap_v1",
+    "hand_finger_gun_recoil": "finger_gun_recoil_v1"
+  },
+  "preview_profiles": {
+    "hand_victory": { "min_confidence": 0.82, "stable_for_ms": 400 },
+    "hand_thumb_up": { "min_confidence": 0.60, "stable_for_ms": 250 },
+    "hand_thumb_down": { "min_confidence": 0.82, "stable_for_ms": 400 },
+    "hand_open_palm": { "min_confidence": 0.55, "stable_for_ms": 250 },
+    "hand_closed_fist": { "min_confidence": 0.82, "stable_for_ms": 400 },
+    "hand_pointing_up": { "min_confidence": 0.55, "stable_for_ms": 250 },
+    "hand_i_love_you": { "min_confidence": 0.60, "stable_for_ms": 250 },
+    "face_smile": { "min_confidence": 0.50, "stable_for_ms": 150 },
+    "face_wink_left": { "min_confidence": 0.50, "stable_for_ms": 150 },
+    "face_wink_right": { "min_confidence": 0.50, "stable_for_ms": 150 },
+    "face_blink": { "min_confidence": 0.50, "stable_for_ms": 150 },
+    "face_mouth_open": { "min_confidence": 0.50, "stable_for_ms": 150 },
+    "face_mouth_pucker": { "min_confidence": 0.50, "stable_for_ms": 150 },
+    "face_brow_raise": { "min_confidence": 0.65, "stable_for_ms": 250 },
+    "face_brow_furrow": { "min_confidence": 0.50, "stable_for_ms": 150 },
+    "face_cheek_puff": { "min_confidence": 0.50, "stable_for_ms": 150 }
+  }
+}

@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' file:; img-src 'self' file: data: blob: https: http:; media-src 'self' file: blob: https: http:; connect-src 'self' file: https: http:; object-src 'none'; base-uri 'none'">
+  <title>Pixo Client Preview</title>
+  <link rel="stylesheet" href="runtime.css">
+  <link rel="stylesheet" href="web-runtime.css">
+  <link rel="stylesheet" href="admin-preview.css">
+</head>
+<body>
+  <main id="pixo-app" class="runtime" data-runtime-state="loading" aria-busy="true">
+    <div id="experience-video-stack" class="experience-video-stack">
+      <video id="experience-video" class="experience-video" data-pixo-video-layer="active" playsinline preload="auto" disablepictureinpicture aria-label="Interactive video"></video>
+      <video id="experience-video-standby-a" class="experience-video" data-pixo-video-layer="standby" playsinline preload="auto" muted disablepictureinpicture aria-hidden="true"></video>
+      <video id="experience-video-standby-b" class="experience-video" data-pixo-video-layer="standby" playsinline preload="auto" muted disablepictureinpicture aria-hidden="true"></video>
+    </div>
+    <div class="video-shade" aria-hidden="true"></div>
+    <div class="first-run-onboarding-scrim" aria-hidden="true"></div>
+    <canvas
+      id="erase-fog-layer"
+      class="erase-fog-layer"
+      aria-hidden="true"
+      hidden
+    ></canvas>
+
+    <header class="hud" aria-label="Experience status">
+      <div class="hud-copy">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <p class="eyebrow">Pixo interactive</p>
+          <h1 id="experience-title">Loading experience</h1>
+        </div>
+      </div>
+      <button id="play-control" class="icon-button" type="button" aria-label="Play video">
+        <svg class="icon icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10-6.5z"></path></svg>
+        <svg class="icon icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zm6 0h4v14h-4z"></path></svg>
+      </button>
+    </header>
+
+    <section class="timeline" aria-label="Video progress">
+      <div class="timeline-track" aria-hidden="true">
+        <div id="timeline-fill" class="timeline-fill"></div>
+        <div id="timeline-markers" class="timeline-markers"></div>
+      </div>
+      <div class="timeline-labels"><span id="current-time">0:00</span><span id="duration-time">0:00</span></div>
+    </section>
+
+    <section id="interaction-place-grid" class="interaction-place-grid" aria-hidden="true">
+      <span class="interaction-place-cell" data-place="left_top"><span>left_top</span></span>
+      <span class="interaction-place-cell" data-place="middle_top"><span>middle_top</span></span>
+      <span class="interaction-place-cell" data-place="right_top"><span>right_top</span></span>
+      <span class="interaction-place-cell" data-place="left_middle"><span>left_middle</span></span>
+      <span class="interaction-place-cell" data-place="middle_middle"><span>middle_middle</span></span>
+      <span class="interaction-place-cell" data-place="right_middle"><span>right_middle</span></span>
+      <span class="interaction-place-cell" data-place="left_bottom"><span>left_bottom</span></span>
+      <span class="interaction-place-cell" data-place="middle_bottom"><span>middle_bottom</span></span>
+      <span class="interaction-place-cell" data-place="right_bottom"><span>right_bottom</span></span>
+    </section>
+
+    <section
+      id="interaction-caption"
+      class="interaction-caption cue-card"
+      aria-labelledby="cue-title"
+      aria-describedby="cue-instruction"
+      hidden
+    >
+      <span class="cue-copy">
+        <span id="cue-title" class="cue-title">Get ready</span>
+        <span id="cue-instruction" class="cue-instruction">Follow the cue to continue.</span>
+        <span id="tap-count" class="tap-count" role="status" aria-live="polite" hidden></span>
+      </span>
+      <span id="cue-countdown" class="cue-countdown" role="timer"
+        aria-label="Time remaining" aria-live="off" hidden>
+        <span class="cue-countdown-row">
+          <span class="cue-countdown-label">Time left</span>
+          <span id="cue-countdown-time" class="cue-countdown-time"></span>
+        </span>
+        <span class="cue-countdown-track" aria-hidden="true">
+          <span id="cue-countdown-fill" class="cue-countdown-fill"></span>
+        </span>
+      </span>
+      <span id="cue-progress-fill" hidden></span>
+    </section>
+
+    <section id="interaction-layer" class="interaction-layer" data-place="middle_bottom" aria-label="Current interaction" hidden>
+      <button
+        id="interaction-target"
+        class="interaction-target"
+        type="button"
+        aria-labelledby="cue-title"
+        aria-describedby="cue-instruction"
+      >
+        <span class="interaction-animation-slot" aria-hidden="true">
+          <span class="interaction-region-halo"></span>
+          <span id="interaction-gesture-visual" class="gesture-visual interaction-gesture-visual"></span>
+          <span class="hold-meter"><span id="hold-meter-fill"></span></span>
+        </span>
+        <span id="sound-meter" class="sound-meter" aria-hidden="true" hidden>
+          <span class="sound-meter-heading">
+            <span id="sound-meter-label">Sound level</span>
+          </span>
+          <span class="sound-meter-slot">
+            <span id="sound-meter-target-band" class="sound-meter-target-band">
+              <span id="sound-meter-threshold-label">Target</span>
+            </span>
+            <svg
+              class="sound-meter-chart"
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+              focusable="false"
+              aria-hidden="true"
+            >
+              <polyline id="sound-meter-curve" points=""></polyline>
+            </svg>
+            <span id="sound-meter-current" class="sound-meter-current"></span>
+          </span>
+        </span>
+        <span id="interaction-label" class="sr-only">Interact</span>
+      </button>
+      <p id="voice-debug" class="voice-debug" hidden></p>
+    </section>
+
+    <section id="start-panel" class="start-panel" aria-labelledby="start-title" hidden>
+      <div class="start-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5z"></path></svg></div>
+      <p class="eyebrow">Interactive video</p>
+      <h2 id="start-title">Ready to play?</h2>
+      <p id="start-description">Tap start, then follow each cue.</p>
+      <button id="start-button" class="primary-button" type="button" data-motioncue-start>Start experience</button>
+    </section>
+
+    <section id="completion-panel" class="completion-panel" aria-labelledby="completion-title" hidden>
+      <div class="completion-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.2 4.2L19 7"></path></svg></div>
+      <p class="eyebrow">Experience complete</p>
+      <h2 id="completion-title">Nice work</h2>
+      <p id="completion-summary">You completed the interaction timeline.</p>
+      <div class="completion-actions">
+        <button id="share-button" class="primary-button" type="button" hidden>Share</button>
+        <button id="replay-button" class="secondary-button" type="button">Replay</button>
+      </div>
+    </section>
+
+    <div id="live-region" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div id="alert-region" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
+    <div id="feedback" class="feedback" role="status" aria-live="polite" aria-atomic="true" hidden>
+      <span class="feedback-icon" aria-hidden="true"></span><span id="feedback-text"></span>
+    </div>
+    <noscript>This experience requires JavaScript.</noscript>
+  </main>
+  <script src="compatibility.js" defer></script>
+  <script src="web-microphone-meter.js" defer></script>
+  <script src="web-share.js" defer></script>
+  <script src="web-vision-session.js" defer></script>
+  <script src="interaction-catalog.js" defer></script>
+  <script src="admin-preview-host.js" defer></script>
+  <script src="web-host.js" defer></script>
+  <script src="pixo-native-client.js" defer></script>
+  <script src="motion-guidance.js" defer></script>
+  <script src="runtime.js" defer></script>
+</body>
+</html>

@@ -50,9 +50,10 @@ export function createTiltInput({ onReading, onUnavailable } = {}) {
         eventName: 'deviceorientation',
         onReading,
         onUnavailable,
-        map: (event) => (Number.isFinite(event.gamma)
+        map: (event) => (Number.isFinite(event.gamma) || Number.isFinite(event.beta)
           ? {
-            gammaDegrees: event.gamma,
+            ...(Number.isFinite(event.gamma) ? { gammaDegrees: event.gamma } : {}),
+            ...(Number.isFinite(event.beta) ? { betaDegrees: event.beta } : {}),
             ...(Number.isFinite(event.alpha) ? { alphaDegrees: event.alpha } : {}),
           }
           : null),
@@ -178,7 +179,8 @@ export function createMicInput({
 /**
  * Desktop walkthrough aid (?sim=1): maps keys onto synthetic sensor readings so
  * every capability can be exercised without real hardware.
- * Arrow left/right = tilt, S = shake pulse, M (hold) = mic level, C (hold) = camera motion.
+ * Arrow keys = four-way tilt, S = shake pulse, M (hold) = mic level,
+ * C (hold) = camera motion.
  */
 export function createKeyboardSimulator({ onReading } = {}) {
   if (typeof onReading !== 'function') throw new TypeError('onReading must be a function');
@@ -188,6 +190,8 @@ export function createKeyboardSimulator({ onReading } = {}) {
     const atMs = performance.now();
     if (held.has('ArrowLeft')) onReading({ signal: 'motion.tilt', gammaDegrees: -30, atMs });
     if (held.has('ArrowRight')) onReading({ signal: 'motion.tilt', gammaDegrees: 30, atMs });
+    if (held.has('ArrowUp')) onReading({ signal: 'motion.tilt', betaDegrees: 30, atMs });
+    if (held.has('ArrowDown')) onReading({ signal: 'motion.tilt', betaDegrees: -30, atMs });
     if (held.has('KeyM')) onReading({ signal: 'microphone.level', level: 0.5, atMs });
     if (held.has('KeyC')) onReading({ signal: 'camera.motion', energy: 0.2, atMs });
   };

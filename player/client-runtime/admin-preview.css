@@ -1,0 +1,22 @@
+html[data-pixo-admin-preview="true"] .timeline {
+  display: none;
+}
+
+html[data-pixo-admin-preview="true"] .pixo-web-vision-preview {
+  top: 12px;
+  right: 12px;
+  width: min(30vw, 116px);
+  border-radius: 12px;
+}
+
+html[data-pixo-admin-preview="true"] .feedback {
+  max-width: calc(100% - 32px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-pixo-admin-preview="true"] *,
+  html[data-pixo-admin-preview="true"] *::before,
+  html[data-pixo-admin-preview="true"] *::after {
+    scroll-behavior: auto !important;
+  }
+}
