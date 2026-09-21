@@ -68,7 +68,7 @@ test('admin preview pins the same immutable Runtime release as Web and Android',
     'utf8',
   ))
 
-  assert.equal(config.runtime_version, '0.33.0')
+  assert.equal(config.runtime_version, '0.34.0')
   assert.equal(lock.runtime_version, config.runtime_version)
   for (const [file, expected] of Object.entries(lock.files)) {
     const bytes = await readFile(new URL(file, runtimeRoot))
@@ -102,7 +102,7 @@ test('admin preview compiles gates through the client interaction catalog', asyn
     context.sessionStorage.getItem('pixo-admin:draft:test'),
   ))
   const [hold, taps] = spec.body.video[0].interactions
-  assert.equal(spec.body.experience_spec_version, '1.9')
+  assert.equal(spec.body.experience_spec_version, '1.10')
   assert.equal(hold.active_until_ms, 3000)
   assert.equal(hold.detection.response_window_ms, 0)
   assert.equal(taps.detection.required_tap_count, 7)
@@ -418,7 +418,7 @@ test('admin preview exposes and compiles forward and backward tilt', async () =>
   const spec = context.PixoAdminPreview.buildSpec(JSON.parse(
     context.sessionStorage.getItem('pixo-admin:draft:test'),
   ))
-  assert.equal(spec.body.experience_spec_version, '1.9')
+  assert.equal(spec.body.experience_spec_version, '1.10')
   assert.deepEqual(
     JSON.parse(JSON.stringify(spec.body.video[0].interactions.map((item) => item.type))),
     ['tilt_forward', 'tilt_backward'],

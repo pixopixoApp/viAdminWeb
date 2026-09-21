@@ -1,5 +1,5 @@
 {
-  "runtime_version": "0.33.0",
+  "runtime_version": "0.34.0",
   "release_channel": "stable",
   "entrypoint": "runtime.html",
   "experience_spec_versions": [
@@ -12,7 +12,8 @@
     "1.6",
     "1.7",
     "1.8",
-    "1.9"
+    "1.9",
+    "1.10"
   ],
   "bridge": {
     "min_version": 1,

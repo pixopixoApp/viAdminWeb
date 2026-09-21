@@ -183,6 +183,7 @@ export type AnnotateState = {
   editing: boolean
   note: string
   timeline: {
+    tilt_semantics?: 'user_relative_v2'
     interactions?: import('./interaction').Interaction[]
     media?: { duration_ms?: number; width?: number; height?: number }
   }

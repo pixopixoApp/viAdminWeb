@@ -185,7 +185,7 @@
         title: clean(draft.title, "Client preview"),
         description: "Follow each cue to continue.",
         content_type: "runtime",
-        experience_spec_version: "1.9",
+        experience_spec_version: "1.10",
         video: [{
           video_id: "admin-preview-video",
           title: clean(draft.title, "Client preview"),

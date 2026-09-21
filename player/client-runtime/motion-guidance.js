@@ -25,7 +25,7 @@
     continuous_tap: ["tap", "Keep tapping", 0, .35], hold: ["hold", "Press & hold", 0, 2.4], continuous_hold: ["hold", "Hold to play", 0, 2.4], hold_charge: ["charge", "Hold to charge", 0, 2.4],
     continuous_swipe: ["flow", "Swipe back & forth", 0, .6], draw_circle: ["circle", "Draw a circle", 0, 1.65], erase: ["erase", "Rub to erase", 0, 1.8],
     hold_still: ["still", "Hold phone still", 0, 2.4], tilt_left: ["tilt", "Tilt phone left", 0, 1.9], tilt_right: ["tilt", "Tilt phone right", 0, 1.9],
-    tilt_forward: ["pitch", "Tilt phone forward", 0, 1.9], tilt_backward: ["pitch", "Tilt phone backward", 0, 1.9],
+    tilt_forward: ["pitch", "Tilt forward: top away", 0, 1.9], tilt_backward: ["pitch", "Tilt back: top toward", 0, 1.9],
     shake: ["shake", "Shake phone", 0, .65], mic_level: ["voice", "Make a sound", 0, 1.7], mic_level_continuous: ["voice", "Keep pitch steady", 0, 1.2],
     mic_blow: ["blow", "Blow into mic", 0, 1.65], mic_blow_continuous: ["blow", "Keep blowing", 0, .8],
     mic_clap: ["clap", "Clap once", 0, 1.8], mic_quiet: ["quiet", "Stay quiet", 0, 2.4],
@@ -60,7 +60,13 @@
       model.copy = model.sign < 0 ? "Counterclockwise" : "Clockwise";
       model.id = model.sign < 0 ? "rotate_counterclockwise" : "rotate_clockwise";
     }
-    if (type === "tilt_left" || type === "tilt_backward") model.sign = -1;
+    if (type === "tilt_left") model.sign = -1;
+    if (type === "tilt_forward" || type === "tilt_backward") {
+      const legacy = cue.tilt_semantics === "legacy_beta_v1";
+      model.sign = type === "tilt_forward"
+        ? (legacy ? 1 : -1)
+        : (legacy ? -1 : 1);
+    }
     if (type === "camera_motion" || type === "camera_continuous") {
       model.target = detection.vision && detection.vision.target || (type === "camera_continuous" ? "hand_finger_snap" : "hand_open_palm");
       model.id = `${type}.${model.target || "unknown"}`;
