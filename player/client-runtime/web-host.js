@@ -125,6 +125,15 @@
   );
   const needsMotion = WEB_MOTION_INTERACTIONS_ENABLED
     && [...interactionTypes].some((type) => motionTypes.has(type));
+  const visionTargets = [...new Set(
+    (experienceSpec?.body?.video || []).flatMap((video) => (
+      Array.isArray(video?.interactions) ? video.interactions : []
+    )).flatMap((interaction) => {
+      if (!["camera_motion", "camera_continuous"].includes(interaction?.type)) return [];
+      const target = interaction?.detection?.vision?.target;
+      return typeof target === "string" && target.trim() ? [target.trim()] : [];
+    }),
+  )];
 
   let motionPermissionPromise = null;
   let motionActive = false;
@@ -597,4 +606,9 @@
   }
 
   windowObject.addEventListener("pagehide", cleanup, { once: true });
+  if (visionTargets.length) {
+    windowObject.queueMicrotask(() => {
+      getVisionSession()?.prepare?.(visionTargets).catch(() => {});
+    });
+  }
 })(window);

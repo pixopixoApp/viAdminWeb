@@ -3,10 +3,14 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-WORKSPACE_DIR=$(CDPATH= cd -- "$REPO_DIR/../.." && pwd)
+WORKSPACE_DIR=$(CDPATH= cd -- "$REPO_DIR/.." && pwd)
 
 ANDROID_RUNTIME_DIR=${PIXO_ANDROID_RUNTIME_DIR:-$WORKSPACE_DIR/.worktrees/pixo-android-sustained-ranges/pixo-runtime/src}
-WEBSITE_DIR=${PIXO_WEBSITE_DIR:-$WORKSPACE_DIR/archive/Pixo-website}
+DEFAULT_WEBSITE_DIR=$WORKSPACE_DIR/.worktrees/pixo-website-sustained-ranges
+if [ ! -d "$DEFAULT_WEBSITE_DIR" ]; then
+  DEFAULT_WEBSITE_DIR=$WORKSPACE_DIR/archive/Pixo-website
+fi
+WEBSITE_DIR=${PIXO_WEBSITE_DIR:-$DEFAULT_WEBSITE_DIR}
 OUTPUT_DIR=$REPO_DIR/player/client-runtime
 VISION_PACKAGE_DIR=$WEBSITE_DIR/node_modules/@mediapipe/tasks-vision
 
@@ -42,10 +46,13 @@ do
 done
 
 require_file "$VISION_PACKAGE_DIR/vision_bundle.mjs"
+require_file "$WEBSITE_DIR/vendor/pixo-runtime/runtime.config.json"
+require_file "$WEBSITE_DIR/vendor/pixo-runtime/release-lock.json"
 require_file "$WEBSITE_DIR/vendor/pixo-vision/models/face_landmarker.task"
 require_file "$WEBSITE_DIR/vendor/pixo-vision/models/gesture_recognizer.task"
 
 mkdir -p "$OUTPUT_DIR/fonts"
+mkdir -p "$OUTPUT_DIR/contracts"
 mkdir -p "$OUTPUT_DIR/vision/models"
 mkdir -p "$OUTPUT_DIR/vision/wasm"
 
@@ -55,6 +62,11 @@ cp "$ANDROID_RUNTIME_DIR/motion-guidance.js" "$OUTPUT_DIR/motion-guidance.js"
 cp "$ANDROID_RUNTIME_DIR/pixo-native-client.js" "$OUTPUT_DIR/pixo-native-client.js"
 cp "$ANDROID_RUNTIME_DIR/runtime.css" "$OUTPUT_DIR/runtime.css"
 cp "$ANDROID_RUNTIME_DIR/runtime.js" "$OUTPUT_DIR/runtime.js"
+cp "$ANDROID_RUNTIME_DIR/runtime.html" "$OUTPUT_DIR/runtime.html"
+cp "$ANDROID_RUNTIME_DIR/contracts/"* "$OUTPUT_DIR/contracts/"
+cp "$WEBSITE_DIR/vendor/pixo-runtime/pixo-logo.png" "$OUTPUT_DIR/pixo-logo.png"
+cp "$WEBSITE_DIR/vendor/pixo-runtime/runtime.config.json" "$OUTPUT_DIR/runtime.config.json"
+cp "$WEBSITE_DIR/vendor/pixo-runtime/release-lock.json" "$OUTPUT_DIR/release-lock.json"
 cp "$ANDROID_RUNTIME_DIR/fonts/"*.ttf "$OUTPUT_DIR/fonts/"
 cp "$ANDROID_RUNTIME_DIR/runtime.html" "$OUTPUT_DIR/index.html"
 

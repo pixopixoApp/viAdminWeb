@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "android_revision": "4097893741f902e4328c8be8c62de2d16892597f",
+  "android_base_revision": "bd4101ef6028f96ff11172eff1a9e262c08f8949",
+  "runtime_version": "0.33.0",
+  "runtime_bundle_sha256": "11a0c5208808537a003ec708a30a405f73c7b9a97e4027b5024f59db1a6496c8",
+  "guidance": "spatial",
+  "files": {
+    "compatibility.js": "1f8ddaa060e569e5ed140da71c16614c7c06d97d40a20fb22da4ea8c8d28d35b",
+    "contracts/bridge-v1.md": "e2fed4b47635dd683a9e2a2132273b3ee08d25a37146b1922ac0ce7512e1ea74",
+    "contracts/bridge-v1.schema.json": "05281f8ce33e260695ad9253b0589765cb18966fc29b12305b48988058356ba9",
+    "fonts/inter-bold.ttf": "288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f",
+    "fonts/inter-medium.ttf": "97ad806f526e41546d46365bb3a393145f75b7b1568913db74549ad8b8dba872",
+    "fonts/inter-regular.ttf": "40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82",
+    "fonts/inter-semibold.ttf": "78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3",
+    "interaction-catalog.js": "94313a4235d5329656e3ae53406fdd633de070848016d1106bfa8071977ae41c",
+    "motion-guidance.js": "95518437ed87da4f3c8a0ddd4874a2e69c17c40e1c118217726929a7ddf7841f",
+    "pixo-logo.png": "eb1545240d85a60e5f87b7b278168863d91197984b69e9cfd623c2ea3ecc2103",
+    "pixo-native-client.js": "7bea7b2b204d7137b4e657617ace0410afff65d5695cb54f1189388823fc64b6",
+    "runtime.config.json": "29b1b63bb39058878991b30620fc25988dbbcdc2c572a88e8444d0abe4e336ca",
+    "runtime.css": "6fd4cc1defcb9a07696e52ed7998fc860785938c1574a3eeddc26fb13df17134",
+    "runtime.html": "ce47b19d2e3eba39d08244e2db47d9f0298ecfacfc1bd984435df6df4ee1306f",
+    "runtime.js": "476931a064bc5baa2d62c5a884a7f5550b0d0300a27e838bfa45acd468ea2ab5"
+  }
+}

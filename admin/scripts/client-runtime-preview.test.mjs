@@ -58,6 +58,24 @@ async function runtimeTesting() {
   return context.PixoRuntime.testing
 }
 
+test('admin preview pins the same immutable Runtime release as Web and Android', async () => {
+  const config = JSON.parse(await readFile(
+    new URL('runtime.config.json', runtimeRoot),
+    'utf8',
+  ))
+  const lock = JSON.parse(await readFile(
+    new URL('release-lock.json', runtimeRoot),
+    'utf8',
+  ))
+
+  assert.equal(config.runtime_version, '0.33.0')
+  assert.equal(lock.runtime_version, config.runtime_version)
+  for (const [file, expected] of Object.entries(lock.files)) {
+    const bytes = await readFile(new URL(file, runtimeRoot))
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), expected, file)
+  }
+})
+
 test('admin preview compiles gates through the client interaction catalog', async () => {
   const context = await previewContext({
     itemId: 'draft-one',
