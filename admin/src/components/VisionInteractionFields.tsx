@@ -47,7 +47,7 @@ export const VISION_TARGET_HINTS: Record<string, string> = {
   face_brow_raise: '对镜头抬起眉毛',
   face_brow_furrow: '对镜头皱起眉头',
   face_cheek_puff: '对镜头鼓起双腮',
-  hand_finger_snap: '持续弹动拇指和中指以播放',
+  hand_finger_snap: '用拇指压住中指蓄力，持续向前弹开以播放',
   hand_finger_gun_recoil: '保持手枪手势并持续做后坐力动作以播放',
 }
 

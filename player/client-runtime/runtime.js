@@ -44,7 +44,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createPixoRuntime(host) {
   "use strict";
 
-  const VERSION = "0.34.0";
+  const VERSION = "0.35.0";
   const EXPERIENCE_SPEC_VERSION = "1.10";
   const SUPPORTED_EXPERIENCE_SPEC_VERSIONS = new Set([
     "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9",
@@ -104,6 +104,8 @@
   const MAX_RESPONSE_WINDOW_MS = 60000;
   const INPUT_DEBOUNCE_MS = 250;
   const FEEDBACK_DURATION_MS = 720;
+  const MEDIA_READY_TIMEOUT_MS = 8000;
+  const MEDIA_LOAD_RETRY_DELAYS_MS = Object.freeze([400, 1200]);
   const VOICE_PERMISSION_TIMEOUT_MS = 120000;
   // Camera success is based only on semantic native Vision events.  Coarse frame/luma telemetry
   // is intentionally never accepted as a content-recognition success signal.
@@ -2654,6 +2656,7 @@
       expectedMediaUrl: "",
       pendingMediaSwap: null,
       pendingMediaActivationTimer: 0,
+      mediaLoadWatchdogTimer: 0,
       mediaSwapSequence: 0,
       mediaEndDeferred: false,
       pendingResultAction: null,
@@ -2766,6 +2769,9 @@
         ready: false,
         failed: false,
         loading: false,
+        retryAttempt: 0,
+        retryTimer: 0,
+        retrying: false,
       }];
     }));
 
@@ -2906,12 +2912,134 @@
       }
     }
 
+    function clearMediaLoadWatchdog() {
+      if (!state.mediaLoadWatchdogTimer) return;
+      windowObject.clearTimeout(state.mediaLoadWatchdogTimer);
+      state.mediaLoadWatchdogTimer = 0;
+    }
+
+    function clearVideoRetry(record) {
+      if (!record) return;
+      if (record.retryTimer) windowObject.clearTimeout(record.retryTimer);
+      record.retryTimer = 0;
+      record.retrying = false;
+    }
+
+    function resetVideoRetry(record) {
+      clearVideoRetry(record);
+      record.retryAttempt = 0;
+    }
+
+    function mediaFailureDetail(video, record, reason) {
+      const mediaError = video && video.error;
+      return {
+        mediaFailureReason: reason,
+        mediaErrorCode: mediaError && Number.isFinite(Number(mediaError.code))
+          ? Number(mediaError.code)
+          : 0,
+        mediaNetworkState: video && Number.isFinite(Number(video.networkState))
+          ? Number(video.networkState)
+          : null,
+        mediaReadyState: video && Number.isFinite(Number(video.readyState))
+          ? Number(video.readyState)
+          : null,
+        mediaRetryCount: record ? record.retryAttempt : 0,
+      };
+    }
+
+    function mediaFailureTargetsCurrentGeneration(video, record) {
+      if (!video || !record || state.destroyed || !videoRecordMatchesSource(video, record)) {
+        return false;
+      }
+      const pending = state.pendingMediaSwap;
+      return video === elements.video || Boolean(
+        pending
+        && pending.video === video
+        && pending.mediaGeneration === state.mediaGeneration
+        && pending.mediaUrl === record.url,
+      );
+    }
+
+    function retryOrFailCurrentMedia(video, reason) {
+      const record = videoRecords.get(video);
+      if (!mediaFailureTargetsCurrentGeneration(video, record)) return false;
+      clearMediaLoadWatchdog();
+      if (record.retrying || record.retryTimer) return true;
+
+      const retryIndex = record.retryAttempt;
+      if (retryIndex < MEDIA_LOAD_RETRY_DELAYS_MS.length) {
+        const delayMs = MEDIA_LOAD_RETRY_DELAYS_MS[retryIndex];
+        const mediaGeneration = state.mediaGeneration;
+        const mediaUrl = record.url;
+        record.retryAttempt += 1;
+        record.failed = false;
+        record.loading = true;
+        record.retrying = true;
+        state.mediaPhase = "retrying";
+        elements.app.setAttribute("aria-busy", "true");
+        emitRuntimeEvent("mediaRetry", {
+          ...mediaFailureDetail(video, record, reason),
+          delayMs,
+          mediaGeneration,
+          videoId: currentSegment() ? currentSegment().id : null,
+        });
+        record.retryTimer = windowObject.setTimeout(function retryMediaLoad() {
+          record.retryTimer = 0;
+          if (state.destroyed
+            || mediaGeneration !== state.mediaGeneration
+            || record.url !== mediaUrl
+            || !mediaFailureTargetsCurrentGeneration(video, record)) {
+            record.retrying = false;
+            return;
+          }
+          try {
+            video.pause();
+            video.removeAttribute("src");
+            video.load();
+            video.src = mediaUrl;
+            record.failed = false;
+            record.loading = true;
+            video.load();
+          } catch (error) {
+            record.retrying = false;
+            retryOrFailCurrentMedia(video, "reload_exception");
+            return;
+          }
+          record.retrying = false;
+          armMediaLoadWatchdog(mediaGeneration);
+        }, delayMs);
+        return true;
+      }
+
+      clearVideoRetry(record);
+      clearPendingMediaActivation();
+      state.pendingMediaSwap = null;
+      showFatal(
+        new Error("The experience video could not be loaded after retrying."),
+        mediaFailureDetail(video, record, reason),
+      );
+      return true;
+    }
+
+    function armMediaLoadWatchdog(mediaGeneration) {
+      clearMediaLoadWatchdog();
+      state.mediaLoadWatchdogTimer = windowObject.setTimeout(function mediaLoadTimedOut() {
+        state.mediaLoadWatchdogTimer = 0;
+        if (state.destroyed
+          || mediaGeneration !== state.mediaGeneration
+          || isCurrentMediaReady()) return;
+        const pending = state.pendingMediaSwap;
+        retryOrFailCurrentMedia(pending ? pending.video : elements.video, "media_ready_timeout");
+      }, MEDIA_READY_TIMEOUT_MS);
+    }
+
     function configureVideoPlayer(video, mediaUrl, standby) {
       const record = videoRecords.get(video);
       if (!record) return;
       const sourceMatches = record.url === mediaUrl
         && normalizedVideoSource(video) === mediaUrl;
       if (sourceMatches && record.ready && !record.failed) {
+        resetVideoRetry(record);
         setVideoLayer(video, standby ? "standby" : "active");
         if (!standby && video === elements.video) {
           const mediaGeneration = state.mediaGeneration;
@@ -2930,6 +3058,7 @@
         return;
       }
       video.pause();
+      resetVideoRetry(record);
       setVideoLayer(video, standby ? "standby" : "active");
       video.preload = "auto";
       if (standby) {
@@ -3121,6 +3250,7 @@
         && normalizedVideoSource(currentVideo).length > 0;
       if (!canPreserveCurrentFrame) {
         configureVideoPlayer(currentVideo, state.expectedMediaUrl, false);
+        armMediaLoadWatchdog(state.mediaGeneration);
         return state.mediaGeneration;
       }
 
@@ -3142,6 +3272,7 @@
       }) || standbyPlayers[0];
       if (!targetVideo) {
         configureVideoPlayer(currentVideo, state.expectedMediaUrl, false);
+        armMediaLoadWatchdog(state.mediaGeneration);
         return state.mediaGeneration;
       }
 
@@ -3155,6 +3286,7 @@
       if (targetRecord && targetRecord.ready && !targetRecord.failed) {
         queuePreparedVideoActivation(targetVideo, state.mediaGeneration);
       }
+      armMediaLoadWatchdog(state.mediaGeneration);
       return state.mediaGeneration;
     }
 
@@ -3162,6 +3294,7 @@
       if (!state.experience || state.destroyed) return;
       if (!mediaEventMatchesCurrentGeneration()) return;
       if (isCurrentMediaReady()) return;
+      clearMediaLoadWatchdog();
       const durationMs = Number(elements.video.duration || 0) * 1000;
       try {
         const mediaEndCueIndexes = currentCues()
@@ -3214,6 +3347,7 @@
     function handleVideoReady(video) {
       const record = videoRecords.get(video);
       if (!record || !videoRecordMatchesSource(video, record)) return;
+      resetVideoRetry(record);
       record.ready = true;
       record.failed = false;
       record.loading = false;
@@ -3230,17 +3364,14 @@
 
     function handleVideoError(video) {
       const record = videoRecords.get(video);
+      if (!record || state.destroyed || !videoRecordMatchesSource(video, record)) return;
+      if (record.retrying || record.retryTimer) return;
       if (record) {
         record.ready = false;
         record.failed = true;
         record.loading = false;
       }
-      const pending = state.pendingMediaSwap;
-      if (video === elements.video || (pending && pending.video === video)) {
-        clearPendingMediaActivation();
-        state.pendingMediaSwap = null;
-        showFatal(new Error("The experience video could not be loaded."));
-      }
+      retryOrFailCurrentMedia(video, "media_element_error");
     }
 
     function showFeedback(message, tone, assertive, durationMs, animationName, placement) {
@@ -7375,7 +7506,8 @@
       };
     }
 
-    function showFatal(error) {
+    function showFatal(error, detail) {
+      clearMediaLoadWatchdog();
       state.phase = "failed";
       const message = error && error.message ? error.message : "Unable to load this experience.";
       setCueUiVisible(false);
@@ -7388,7 +7520,7 @@
       if (elements.startDescription) elements.startDescription.textContent = message;
       if (elements.startButton) elements.startButton.hidden = true;
       if (elements.alertRegion) announce(message, true);
-      emitRuntimeEvent("error", { message });
+      emitRuntimeEvent("error", { message, ...(detail || {}) });
     }
 
     function getStateSnapshot() {
@@ -7526,6 +7658,7 @@
       windowObject.clearTimeout(state.replayTimer);
       windowObject.clearTimeout(state.feedbackTimer);
       clearPendingMediaActivation();
+      clearMediaLoadWatchdog();
       state.pendingMediaSwap = null;
       state.mediaSwapSequence += 1;
       videoPlayers.forEach(function releaseVideoPlayer(video) {
@@ -7534,6 +7667,7 @@
         video.load();
         const record = videoRecords.get(video);
         if (record) {
+          clearVideoRetry(record);
           record.url = "";
           record.ready = false;
           record.failed = false;

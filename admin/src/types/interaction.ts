@@ -89,14 +89,14 @@ export const CAMERA_CONTINUOUS_TARGET_COPY: Record<string, {
   editorHelp: string
 }> = {
   hand_finger_snap: {
-    label: '持续弹指（拇指＋中指）',
-    hint: '持续弹动拇指和中指以播放',
-    detected: '已识别弹指',
-    simulate: '模拟弹指',
-    retry: '请再次模拟弹指',
-    idlePrompt: '点击下方按钮模拟一次识别到的弹指',
-    ariaLabel: '模拟持续弹指以播放，停止弹指 1100 毫秒后暂停',
-    editorHelp: '真机由前置摄像头端侧识别弹指',
+    label: '持续弹中指（拇指蓄力）',
+    hint: '用拇指压住中指蓄力，持续向前弹开以播放',
+    detected: '已识别弹中指',
+    simulate: '模拟弹中指',
+    retry: '请再次模拟弹中指',
+    idlePrompt: '点击下方按钮模拟一次识别到的弹中指',
+    ariaLabel: '模拟持续弹中指以播放，停止动作 1100 毫秒后暂停',
+    editorHelp: '真机由前置摄像头端侧识别中指向前弹开的动作',
   },
   hand_finger_gun_recoil: {
     label: '持续手枪后坐力（拇指＋食指）',

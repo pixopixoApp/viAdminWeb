@@ -13,7 +13,7 @@
   const HANDS = {
     hand_victory: "V sign", hand_thumb_up: "Thumbs up", hand_thumb_down: "Thumbs down",
     hand_open_palm: "Open palm", hand_closed_fist: "Make a fist", hand_pointing_up: "Point up",
-    hand_i_love_you: "Thumb, index, pinky", hand_finger_snap: "Keep snapping fingers", hand_finger_gun_recoil: "Finger gun, repeat",
+    hand_i_love_you: "Thumb, index, pinky", hand_finger_snap: "Keep flicking", hand_finger_gun_recoil: "Finger gun, repeat",
   };
   const FACES = {
     face_smile: "Smile", face_wink_left: "Wink your left eye", face_wink_right: "Wink your right eye",
@@ -82,7 +82,7 @@
     model.description = model.target === "hand_finger_gun_recoil"
       ? "Extend your index finger, raise your thumb and curl the other three fingers. Repeatedly raise your wrist and return to keep the video playing."
       : model.target === "hand_i_love_you" ? "Extend your thumb, index finger and little finger. Bend your middle and ring fingers."
-      : model.target === "hand_finger_snap" ? "Press your thumb against your middle finger, then snap your middle finger toward your palm. Keep snapping to keep the video playing."
+      : model.target === "hand_finger_snap" ? "Press your middle finger against your thumb, then flick it forward. Keep flicking to keep the video playing."
       : model.kind === "rotate" ? `Rotate your phone ${model.sign < 0 ? "counterclockwise" : "clockwise"} as you face its screen.`
       : model.kind === "pitch" ? `${model.copy} as you face its screen.`
       : model.kind === "scrub" ? `Swipe back and forth, then release on the ${DIRECTIONS[match[2]][2]} side.`
@@ -340,8 +340,8 @@
       ["C",30,30,23,41,18,47],["C",14,53,14,59,14,64],["C",5,66,-5,66,-14,64],
     ],
   };
-  // A side view exposes thumb/middle pad contact. Finger bones rotate at fixed-length
-  // joints; the palm and wrist do not stretch with the release.
+  // A side view exposes the thumb holding the flexed middle finger before a forward flick.
+  // Finger bones rotate at fixed-length joints; the palm and wrist do not stretch.
   function jointChain(origin,lengths,angles) {
     const points=[origin];
     lengths.forEach((length,i)=>{ const p=points[points.length-1]; points.push([p[0]+Math.cos(angles[i])*length,p[1]+Math.sin(angles[i])*length]); });
@@ -372,11 +372,32 @@
     ctx.save(); ctx.globalCompositeOperation="destination-out"; ctx.globalAlpha=1;
     trace(ctx,commands); ctx.closePath(); ctx.fillStyle="#000"; ctx.fill(); ctx.restore();
   }
-  function snappingHand(ctx,color,amount,reduced) {
+  function middleFingerFlickHand(ctx,color,amount,reduced) {
     const v=reduced ? 0 : amount;
-    const index=jointChain([-24,3],[26,20,11],[-1.95-v*.5,-1.2+v*1.4,-.6+v*1.4]);
-    articulatedFinger(ctx,index,color,9.5,.1,.38);
-    const middle=jointChain([-20,8],[29,22,13],[-2.02-v*.68,-1.05+v*1.45,-.6+v*1.55]);
+    // The index finger stays relaxed behind the action. The middle finger begins bent against
+    // the thumb, then all three phalanges align outward instead of curling into the palm.
+    const index=jointChain([-24,3],[26,20,11],[-1.95,-1.18,-.58]);
+    articulatedFinger(ctx,index,color,9.5,.1,.34);
+    const loadedAngles=[-2.02,-1.05,-.6];
+    const releasedAngles=[-2.12,-2.08,-2.02];
+    const middleAngles=loadedAngles.map((angle,i)=>mix(angle,releasedAngles[i],v));
+    const middle=jointChain([-20,8],[29,22,13],middleAngles);
+    const loadedChain=jointChain([-20,8],[29,22,13],loadedAngles);
+    const releasedChain=jointChain([-20,8],[29,22,13],releasedAngles);
+    const loadedTip=loadedChain[loadedChain.length-1];
+    const releasedTip=releasedChain[releasedChain.length-1];
+    if(reduced || v>.08 && v<.9) {
+      const path=sample(t=>cubic(
+        loadedTip,
+        [loadedTip[0]-8,loadedTip[1]-11],
+        [releasedTip[0]+12,releasedTip[1]+8],
+        releasedTip,
+        t,
+      ),28);
+      const alpha=reduced ? .48 : .5*Math.sin(v*Math.PI);
+      ribbon(ctx,path,color,6,alpha,true);
+      directionTip(ctx,path,color,reduced ? .62 : .58*Math.sin(v*Math.PI),5);
+    }
     articulatedFinger(ctx,middle,color,11.5,.16,.75);
     const palm=[
       ["M",54,49],["C",35,48,17,46,1,44],["C",-20,43,-36,35,-38,18],
@@ -398,12 +419,7 @@
     crease(ctx,[["M",-34,22],["C",-29,14,-23,13,-16,19],["Q",-13,24,-21,26]],color,.32,1.1);
     crease(ctx,[["M",0,7],["C",1,19,14,28,28,26]],color,.27,1);
     crease(ctx,[["M",-9,17],["C",-7,29,0,35,10,37]],color,.18,1);
-    if(v>.65) crease(ctx,[["M",-40,0],["C",-33,-6,-22,4,-20,11]],color,(v-.65)*.85,1.1);
-    if(reduced || v>.08 && v<.85) {
-      const path=sample(t=>cubic([-19,-30],[-36,-25],[-39,-12],[-33,0],t),28);
-      ribbon(ctx,path,color,6,reduced ? .4 : .4*Math.sin(v*Math.PI),true);
-      directionTip(ctx,path,color,reduced ? .55 : .5*Math.sin(v*Math.PI),5);
-    }
+    if(v>.65) crease(ctx,[["M",-40,0],["C",-34,-8,-24,-3,-20,6]],color,(v-.65)*.7,1.1);
   }
   function trace(ctx,commands,warp) {
     ctx.beginPath();
@@ -442,7 +458,7 @@
     ctx.save(); ctx.translate(x,y); ctx.scale(height/144,height/144); ctx.rotate(angle);
     if(target==="hand_thumb_down") ctx.rotate(Math.PI);
     if(gun) ctx.rotate(Math.PI*.5);
-    if(snap) { snappingHand(ctx,color,reduced ? 0 : amount,reduced); ctx.restore(); return; }
+    if(snap) { middleFingerFlickHand(ctx,color,reduced ? 0 : amount,reduced); ctx.restore(); return; }
     shape(ctx,commands,color,.2,.62,warp);
     if(!["hand_closed_fist","hand_thumb_up","hand_thumb_down"].includes(target))
       crease(ctx,[["M",-15,20],["C",-5,12,7,15,19,9]],color,.24,1,warp);

@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "android_revision": "e23f143f2ec97c1ae77a349ddac3fdfdbf5b416a",
+  "android_revision": "29e9e8e7277a7032247c9b35156ddc7dc62fb7b3",
   "android_base_revision": "bd4101ef6028f96ff11172eff1a9e262c08f8949",
-  "runtime_version": "0.34.0",
-  "runtime_bundle_sha256": "bb548f01198901588dd2005e8b3629440e68df669b55032092f7b4a739edd839",
+  "runtime_version": "0.35.0",
+  "runtime_bundle_sha256": "9b58b5e01a5347e5603ecc734ea085e994afc7d1ddcbe69bcafbb1452a8fbdfc",
   "guidance": "spatial",
   "files": {
     "compatibility.js": "1f8ddaa060e569e5ed140da71c16614c7c06d97d40a20fb22da4ea8c8d28d35b",
@@ -14,12 +14,12 @@
     "fonts/inter-regular.ttf": "40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82",
     "fonts/inter-semibold.ttf": "78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3",
     "interaction-catalog.js": "250a40f74342b7af117d66a6ebb586528fc8d72306cca348cb3a8f91500c0552",
-    "motion-guidance.js": "e8cba8877f2e5b3ce01aa5bdc54a884f9c2462ec07c24fb0f95b4e7260978b6c",
+    "motion-guidance.js": "ced76c48470a13aa0e13f434db71d78b7d044781c80250a4bb692083a09a5c8e",
     "pixo-logo.png": "eb1545240d85a60e5f87b7b278168863d91197984b69e9cfd623c2ea3ecc2103",
     "pixo-native-client.js": "7bea7b2b204d7137b4e657617ace0410afff65d5695cb54f1189388823fc64b6",
-    "runtime.config.json": "23f65b776083277f2c460304811da0f594991018163f98b126deb320eacb42c7",
+    "runtime.config.json": "a9a6033924292852cc834a1a12b87849fe41bdb92c631c991ea92ee4236ddd83",
     "runtime.css": "6fd4cc1defcb9a07696e52ed7998fc860785938c1574a3eeddc26fb13df17134",
     "runtime.html": "ce47b19d2e3eba39d08244e2db47d9f0298ecfacfc1bd984435df6df4ee1306f",
-    "runtime.js": "f837b14de9711e7215720f2616deb5173616aa3b6e463a1678b26743828d16ef"
+    "runtime.js": "565cf6be1237e464fbc63fc37f6d20d1db5f76ad991bd2ff019b0f56804240b9"
   }
 }

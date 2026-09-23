@@ -68,7 +68,7 @@ test('admin preview pins the same immutable Runtime release as Web and Android',
     'utf8',
   ))
 
-  assert.equal(config.runtime_version, '0.34.0')
+  assert.equal(config.runtime_version, '0.35.0')
   assert.equal(lock.runtime_version, config.runtime_version)
   for (const [file, expected] of Object.entries(lock.files)) {
     const bytes = await readFile(new URL(file, runtimeRoot))

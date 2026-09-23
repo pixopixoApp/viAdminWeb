@@ -284,8 +284,10 @@ export class FingerSnapDetector {
         && timestampMs - this.lastCloseContactMs <= this.thresholds.releaseWindowMs;
       const rapidMiddleExtension = observation.middleTipSpeed >= this.thresholds.middleTipSpeed
         && observation.middleFlexionDelta <= -0.03;
+      // Keep the legacy class/target name for published specs. Product semantics are a forward
+      // middle-finger flick, so palm-directed finger snaps must not pass on separation alone.
       const rapidRelease = rapidMiddleExtension
-        || observation.separationSpeed >= this.thresholds.separationSpeed;
+        && observation.separationSpeed >= this.thresholds.separationSpeed;
       const separated = observation.contactRatio >= this.thresholds.contactExitRatio;
       if (separated && rapidRelease && recentlyLoaded && canEmit) {
         this.phase = "WAITING_FOR_REARM";
