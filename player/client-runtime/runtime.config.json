@@ -1,5 +1,5 @@
 {
-  "runtime_version": "0.35.0",
+  "runtime_version": "0.35.1",
   "release_channel": "stable",
   "entrypoint": "runtime.html",
   "experience_spec_versions": [

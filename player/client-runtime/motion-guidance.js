@@ -72,7 +72,7 @@
       model.id = `${type}.${model.target || "unknown"}`;
       model.kind = FACES[model.target] ? "face" : HANDS[model.target] ? "hand" : "fallback";
       model.copy = FACES[model.target] || HANDS[model.target] || "Follow the prompt";
-      model.period = model.sustained ? model.target === "hand_finger_snap" ? .9 : .75 : /wink|blink/.test(model.target) ? 1.55 : 2.1;
+      model.period = model.sustained ? model.target === "hand_finger_snap" ? .98 : .75 : /wink|blink/.test(model.target) ? 1.55 : 2.1;
       if(type === "camera_motion") {
         const stable=Number(detection.vision && detection.vision.stable_for_ms);
         model.poseHold=(stable>=150 && stable<=3000 ? stable : 400)/1000+.06;
@@ -340,8 +340,8 @@
       ["C",30,30,23,41,18,47],["C",14,53,14,59,14,64],["C",5,66,-5,66,-14,64],
     ],
   };
-  // A side view exposes the thumb holding the flexed middle finger before a forward flick.
-  // Finger bones rotate at fixed-length joints; the palm and wrist do not stretch.
+  // Camera-facing dorsal hand geometry. The thumb holds the middle fingernail during loading;
+  // index, ring and little fingers remain open while the middle finger flicks forward.
   function jointChain(origin,lengths,angles) {
     const points=[origin];
     lengths.forEach((length,i)=>{ const p=points[points.length-1]; points.push([p[0]+Math.cos(angles[i])*length,p[1]+Math.sin(angles[i])*length]); });
@@ -372,54 +372,88 @@
     ctx.save(); ctx.globalCompositeOperation="destination-out"; ctx.globalAlpha=1;
     trace(ctx,commands); ctx.closePath(); ctx.fillStyle="#000"; ctx.fill(); ctx.restore();
   }
-  function middleFingerFlickHand(ctx,color,amount,reduced) {
+  function fingerNail(ctx,joints,color,alpha) {
+    if(!joints || joints.length<2) return;
+    const tip=joints[joints.length-1],before=joints[joints.length-2];
+    const angle=Math.atan2(tip[1]-before[1],tip[0]-before[0]);
+    ctx.save(); ctx.translate(tip[0],tip[1]); ctx.rotate(angle);
+    rounded(ctx,-9,-3.2,10,6.4,3.2);
+    ctx.fillStyle=rgba(INK,.12); ctx.fill();
+    ctx.strokeStyle=rgba(color,alpha); ctx.lineWidth=.9; ctx.stroke(); ctx.restore();
+  }
+  function middleFingerFlickHand(ctx,color,amount,reduced,phase) {
     const v=reduced ? 0 : amount;
-    // The index finger stays relaxed behind the action. The middle finger begins bent against
-    // the thumb, then all three phalanges align outward instead of curling into the palm.
-    const index=jointChain([-24,3],[26,20,11],[-1.95,-1.18,-.58]);
-    articulatedFinger(ctx,index,color,9.5,.1,.34);
-    const loadedAngles=[-2.02,-1.05,-.6];
-    const releasedAngles=[-2.12,-2.08,-2.02];
-    const middleAngles=loadedAngles.map((angle,i)=>mix(angle,releasedAngles[i],v));
-    const middle=jointChain([-20,8],[29,22,13],middleAngles);
-    const loadedChain=jointChain([-20,8],[29,22,13],loadedAngles);
-    const releasedChain=jointChain([-20,8],[29,22,13],releasedAngles);
+    const motionProgress=(releaseDelay,returnDelay)=>{
+      if(reduced) return 0;
+      const releaseStart=.33+releaseDelay,releaseEnd=.435+releaseDelay;
+      if(phase<releaseStart) return 0;
+      if(phase<releaseEnd) return ease((phase-releaseStart)/(releaseEnd-releaseStart));
+      const returnStart=.64+returnDelay;
+      if(phase<returnStart) return 1;
+      return 1-ease((phase-returnStart)/(1-returnStart));
+    };
+    // A restrained follow-through keeps the wrist alive without moving the instruction target.
+    const reaction=reduced || phase<.31 || phase>.59 ? 0 : Math.sin((phase-.31)/.28*Math.PI);
+    ctx.save(); ctx.translate(0,-reaction*1.6); ctx.rotate(reaction*.014);
+    // Keep the three uninvolved fingers open, as in the authored reference footage. Nails and
+    // knuckles make the back-of-hand view explicit instead of reading as a sideways finger snap.
+    const index=jointChain([-22,0],[31,27,18],[-1.9,-1.78+reaction*.035,-1.68+reaction*.025]);
+    const ringFinger=jointChain([10,-1],[29,24,16],[-1.47+reaction*.04,-1.43+reaction*.025,-1.38]);
+    const little=jointChain([24,3],[25,20,14],[-1.27+reaction*.035,-1.3+reaction*.02,-1.25]);
+    [little,ringFinger,index].forEach((finger,i)=>{
+      articulatedFinger(ctx,finger,color,i===2 ? 13.2 : i===1 ? 12.2 : 10.8,.15,.57);
+      fingerNail(ctx,finger,color,.36);
+    });
+
+    // Loaded: the middle finger folds back across the hand and its nail meets the thumb pad.
+    // Released: the same fixed-length joints rapidly align toward the fingertips.
+    const loadedAngles=[-2.0,2.25,1.5];
+    const releasedAngles=[-1.72,-1.68,-1.62];
+    const middleProgress=loadedAngles.map((_,i)=>motionProgress(i*.018,(2-i)*.018));
+    const middleAngles=loadedAngles.map((angle,i)=>mix(angle,releasedAngles[i],middleProgress[i]));
+    const middle=jointChain([-7,-3],[28,24,16],middleAngles);
+    const loadedChain=jointChain([-7,-3],[28,24,16],loadedAngles);
+    const releasedChain=jointChain([-7,-3],[28,24,16],releasedAngles);
     const loadedTip=loadedChain[loadedChain.length-1];
     const releasedTip=releasedChain[releasedChain.length-1];
     if(reduced || v>.08 && v<.9) {
       const path=sample(t=>cubic(
         loadedTip,
-        [loadedTip[0]-8,loadedTip[1]-11],
-        [releasedTip[0]+12,releasedTip[1]+8],
+        [loadedTip[0]+3,loadedTip[1]-19],
+        [releasedTip[0]-4,releasedTip[1]+20],
         releasedTip,
         t,
       ),28);
-      const alpha=reduced ? .48 : .5*Math.sin(v*Math.PI);
+      const alpha=reduced ? .38 : .38*Math.sin(v*Math.PI);
       ribbon(ctx,path,color,6,alpha,true);
-      directionTip(ctx,path,color,reduced ? .62 : .58*Math.sin(v*Math.PI),5);
+      directionTip(ctx,path,color,reduced ? .55 : .5*Math.sin(v*Math.PI),5);
     }
-    articulatedFinger(ctx,middle,color,11.5,.16,.75);
+    articulatedFinger(ctx,middle,color,13.8,.18,.78);
+    fingerNail(ctx,middle,color,.52);
+
+    // The palm and wrist stay fixed while the fingers articulate above them.
     const palm=[
-      ["M",54,49],["C",35,48,17,46,1,44],["C",-20,43,-36,35,-38,18],
-      ["C",mix(-40,-46,v),mix(8,3,v),mix(-36,-48,v),mix(-4,-12,v),mix(-25,-37,v),mix(-4,-12,v)],
-      ["C",mix(-19,-29,v),mix(-3,-16,v),-15,mix(4,-9,v),-12,9],["C",-6,12,-1,6,1,0],
-      ["C",3,-10,-5,-25,-8,-35],["C",-13,-46,-7,-54,-1,-48],
-      ["C",4,-45,3,-35,8,-26],["C",16,-12,17,-3,27,5],
-      ["C",34,13,42,14,55,16],["L",54,49],
+      ["M",-14,64],["C",-14,51,-24,44,-29,32],["C",-34,20,-32,7,-24,-2],
+      ["C",-13,-11,13,-10,25,1],["C",34,12,35,29,24,43],
+      ["C",16,52,14,58,14,64],["C",5,65,-5,65,-14,64],
     ];
-    const angle=v*.27;
-    // Only the thumb's two phalanges move; the thenar base stays attached.
-    const body=palm.map((c,i)=>i>=6 && i<=9 ? c.map((n,j)=>{
-      if(!j) return n;
-      const x=c[j%2 ? j : j-1]-12,y=c[j%2 ? j+1 : j]-8;
-      return j%2 ? 12+x*Math.cos(angle)-y*Math.sin(angle) : 8+x*Math.sin(angle)+y*Math.cos(angle);
-    }) : c);
-    occlude(ctx,body); shape(ctx,body,color,.17,.67);
-    crease(ctx,[["M",-35,5],["C",-28,-3,-18,0,-15,6],["Q",-14,10,-20,10]],color,.4,1.15);
-    crease(ctx,[["M",-34,22],["C",-29,14,-23,13,-16,19],["Q",-13,24,-21,26]],color,.32,1.1);
-    crease(ctx,[["M",0,7],["C",1,19,14,28,28,26]],color,.27,1);
-    crease(ctx,[["M",-9,17],["C",-7,29,0,35,10,37]],color,.18,1);
-    if(v>.65) crease(ctx,[["M",-40,0],["C",-34,-8,-24,-3,-20,6]],color,(v-.65)*.7,1.1);
+    occlude(ctx,palm); shape(ctx,palm,color,.18,.68);
+
+    // The thumb pad covers the middle fingernail in the loaded pose, then opens to the side as
+    // the middle finger releases. It deliberately has no visible thumbnail in the loaded pose.
+    const thumbProgress=motionProgress(-.018,.012);
+    const thumbLoaded=[-2.65,-1.15,.1],thumbReleased=[-2.85,-2.95,-2.85];
+    const thumbAngles=thumbLoaded.map((angle,i)=>mix(angle,thumbReleased[i],thumbProgress));
+    const thumb=jointChain([-29,25],[20,14,9],thumbAngles);
+    articulatedFinger(ctx,thumb,color,14.5,.21,.76);
+
+    [-22,-7,10,24].forEach((xx,i)=>{
+      crease(ctx,[["M",xx-5,-2+i*.6],["Q",xx,-6+i*.4,xx+5,-2+i*.6]],color,.3,1);
+    });
+    crease(ctx,[["M",-22,17],["C",-10,10,5,12,17,8]],color,.26,1.1);
+    crease(ctx,[["M",-19,28],["C",-8,23,2,27,11,35]],color,.18,1);
+    if(v<.3) ring(ctx,loadedTip[0]-1,loadedTip[1]+1,4.5,color,(1-v/.3)*.34,0,TAU,1);
+    ctx.restore();
   }
   function trace(ctx,commands,warp) {
     ctx.beginPath();
@@ -448,7 +482,7 @@
     if(color!==INK) { ctx.strokeStyle=rgba(INK,alpha*.65); ctx.lineWidth=width+1.4; ctx.stroke(); }
     ctx.strokeStyle=rgba(color,alpha); ctx.lineWidth=width; ctx.stroke(); ctx.restore();
   }
-  function hand(ctx,x,y,target,color,amount,height,angle = 0,reduced = false) {
+  function hand(ctx,x,y,target,color,amount,height,angle = 0,reduced = false,phase = 0) {
     const snap=target==="hand_finger_snap",gun=target==="hand_finger_gun_recoil";
     const pose=target==="hand_thumb_down" ? "hand_thumb_up" : target;
     const commands=HAND_CONTOURS[pose] || HAND_CONTOURS.hand_open_palm;
@@ -458,7 +492,7 @@
     ctx.save(); ctx.translate(x,y); ctx.scale(height/144,height/144); ctx.rotate(angle);
     if(target==="hand_thumb_down") ctx.rotate(Math.PI);
     if(gun) ctx.rotate(Math.PI*.5);
-    if(snap) { middleFingerFlickHand(ctx,color,reduced ? 0 : amount,reduced); ctx.restore(); return; }
+    if(snap) { middleFingerFlickHand(ctx,color,reduced ? 0 : amount,reduced,phase); ctx.restore(); return; }
     shape(ctx,commands,color,.2,.62,warp);
     if(!["hand_closed_fist","hand_thumb_up","hand_thumb_down"].includes(target))
       crease(ctx,[["M",-15,20],["C",-5,12,7,15,19,9]],color,.24,1,warp);
@@ -759,7 +793,8 @@
     } else if(model.kind==="hand") {
       const gun=model.target==="hand_finger_gun_recoil",v=!model.sustained && (actual || reduced) ? 1 : frame.amount;
       const lift=gun ? v*layout.handSize*.11 : 0;
-      hand(ctx,x,y-lift,model.target,color,reduced && gun ? 0 : v,layout.handSize,gun ? -v*.16 : 0,reduced);
+      const handAngle=gun ? -v*.16 : model.target==="hand_finger_snap" ? -.36 : 0;
+      hand(ctx,x,y-lift,model.target,color,reduced && gun ? 0 : v,layout.handSize,handAngle,reduced,frame.phase);
       if(gun) {
         const path=sample(t=>[x+layout.handSize*.43+t*layout.handSize*.14,y-layout.handSize*.05-t*layout.handSize*.22],24);
         flowPath(ctx,path,v,WHITE,12,false,reduced);

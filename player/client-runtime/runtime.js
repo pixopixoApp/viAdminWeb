@@ -44,7 +44,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function createPixoRuntime(host) {
   "use strict";
 
-  const VERSION = "0.35.0";
+  const VERSION = "0.35.1";
   const EXPERIENCE_SPEC_VERSION = "1.10";
   const SUPPORTED_EXPERIENCE_SPEC_VERSIONS = new Set([
     "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8", "1.9",
