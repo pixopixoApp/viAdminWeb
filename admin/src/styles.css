@@ -1657,6 +1657,202 @@ body {
   letter-spacing: -0.02em;
 }
 
+.run-list-filter-row {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.seo-failure-alert {
+  margin-bottom: 12px;
+  padding-block: 6px;
+}
+
+.trigger-filter-selected-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 2px;
+  padding: 0 5px;
+  border-radius: 9px;
+  color: #0047ab;
+  background: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.trigger-filter-panel {
+  width: 390px;
+  max-width: calc(100vw - 40px);
+}
+
+.trigger-filter-header,
+.trigger-filter-group-label,
+.trigger-filter-primary-row,
+.trigger-filter-options button {
+  display: flex;
+  align-items: center;
+}
+
+.trigger-filter-header {
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 0 4px 6px 10px;
+  border-bottom: 1px solid var(--pixo-soft-border);
+}
+
+.trigger-filter-groups {
+  max-height: min(520px, 70vh);
+  overflow: auto;
+}
+
+.trigger-filter-groups.ant-collapse > .ant-collapse-item {
+  border-bottom-color: var(--pixo-soft-border);
+}
+
+.trigger-filter-groups.ant-collapse > .ant-collapse-item > .ant-collapse-header {
+  align-items: center;
+  padding: 8px 10px;
+}
+
+.trigger-filter-groups .ant-collapse-content-box {
+  padding: 0 8px 8px !important;
+}
+
+.trigger-filter-group-label {
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+}
+
+.trigger-filter-group-label small {
+  color: var(--pixo-text-muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.trigger-filter-options,
+.trigger-filter-option,
+.trigger-filter-secondary {
+  display: grid;
+  gap: 4px;
+}
+
+.trigger-filter-primary-row {
+  min-width: 0;
+  gap: 4px;
+}
+
+.trigger-filter-primary-row > button:first-child,
+.trigger-filter-secondary > button {
+  flex: 1 1 auto;
+  justify-content: space-between;
+  min-width: 0;
+  min-height: 38px;
+  padding: 5px 8px;
+  border: 1px solid var(--pixo-soft-border);
+  border-radius: 8px;
+  color: var(--pixo-text-strong);
+  background: var(--pixo-panel-soft);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.trigger-filter-options button > span:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.trigger-filter-options button strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trigger-filter-options button small {
+  overflow: hidden;
+  color: var(--pixo-text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trigger-filter-options button b {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 20px;
+  margin-left: 8px;
+  padding: 0 6px;
+  border-radius: 10px;
+  color: var(--pixo-text-muted);
+  background: rgba(127, 137, 150, 0.12);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.trigger-filter-primary-row > button:first-child:hover:not(:disabled),
+.trigger-filter-primary-row > button:first-child:focus-visible,
+.trigger-filter-secondary > button:hover:not(:disabled),
+.trigger-filter-secondary > button:focus-visible,
+.trigger-filter-options button.is-selected {
+  border-color: #4777b8;
+  color: #0047ab;
+  background: var(--pixo-row-selected);
+  outline: none;
+}
+
+[data-theme='dark'] .trigger-filter-primary-row > button:first-child:hover:not(:disabled),
+[data-theme='dark'] .trigger-filter-primary-row > button:first-child:focus-visible,
+[data-theme='dark'] .trigger-filter-secondary > button:hover:not(:disabled),
+[data-theme='dark'] .trigger-filter-secondary > button:focus-visible,
+[data-theme='dark'] .trigger-filter-options button.is-selected {
+  color: #b9d1f4;
+}
+
+.trigger-filter-options button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.trigger-filter-primary-row .trigger-filter-expand {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 38px;
+  flex: 0 0 34px;
+  padding: 0;
+  border: 1px solid var(--pixo-soft-border);
+  border-radius: 8px;
+  color: var(--pixo-text-muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.trigger-filter-primary-row .trigger-filter-expand:hover,
+.trigger-filter-primary-row .trigger-filter-expand:focus-visible {
+  color: #0047ab;
+  border-color: #4777b8;
+  outline: none;
+}
+
+.trigger-filter-secondary {
+  margin-left: 18px;
+  padding-left: 8px;
+  border-left: 1px solid var(--pixo-row-selected-border);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trigger-filter-panel * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* 登录 / 修改密码页 */
 .auth-page {
   min-height: 100vh;

@@ -1,6 +1,7 @@
 import { DeleteOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Segmented, Space, Typography } from 'antd'
 import { Link } from 'react-router-dom'
+import InteractionTriggerFilter from './InteractionTriggerFilter'
 
 export type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected'
 export type SourceFilter = 'all' | 'pgc' | 'ugc' | 'manual_upload'
@@ -45,6 +46,8 @@ interface RunFilterBarProps {
   processStatusFilter: ProcessStatusFilter
   ownStatusFilter: OwnStatusFilter
   keyword: string
+  triggerFilter: string
+  triggerCounts: Record<string, number>
   engineReady: boolean
   isManualUpload: boolean
   onSourceChange: (value: SourceFilter) => void
@@ -52,6 +55,7 @@ interface RunFilterBarProps {
   onProcessStatusChange: (value: ProcessStatusFilter) => void
   onOwnStatusChange: (value: OwnStatusFilter) => void
   onKeywordChange: (value: string) => void
+  onTriggerChange: (value: string) => void
   onCreateStory: () => void
   onUpload: () => void
 }
@@ -64,6 +68,8 @@ export default function RunFilterBar({
   processStatusFilter,
   ownStatusFilter,
   keyword,
+  triggerFilter,
+  triggerCounts,
   engineReady,
   isManualUpload,
   onSourceChange,
@@ -71,6 +77,7 @@ export default function RunFilterBar({
   onProcessStatusChange,
   onOwnStatusChange,
   onKeywordChange,
+  onTriggerChange,
   onCreateStory,
   onUpload,
 }: RunFilterBarProps) {
@@ -129,25 +136,31 @@ export default function RunFilterBar({
         ) : null}
       </Space>
       {manageAll ? (
-        <Segmented<SourceFilter>
-          value={sourceFilter}
-          options={sourceOptions}
-          onChange={(value) => onSourceChange(value as SourceFilter)}
-          style={{ marginBottom: 16 }}
-        />
-      ) : null}
-      {!isManualUpload && manageAll ? (
-        <Space wrap style={{ margin: '0 0 16px 12px' }}>
-          <Segmented<StatusFilter>
-            value={statusFilter}
-            options={statusFilterOptions}
-            onChange={(value) => onStatusChange(value as StatusFilter)}
+        <Space wrap className="run-list-filter-row">
+          <Segmented<SourceFilter>
+            value={sourceFilter}
+            options={sourceOptions}
+            onChange={(value) => onSourceChange(value as SourceFilter)}
           />
-          <Segmented<ProcessStatusFilter>
-            value={processStatusFilter}
-            options={processStatusFilterOptions}
-            onChange={(value) => onProcessStatusChange(value as ProcessStatusFilter)}
-          />
+          {!isManualUpload ? (
+            <>
+              <Segmented<StatusFilter>
+                value={statusFilter}
+                options={statusFilterOptions}
+                onChange={(value) => onStatusChange(value as StatusFilter)}
+              />
+              <Segmented<ProcessStatusFilter>
+                value={processStatusFilter}
+                options={processStatusFilterOptions}
+                onChange={(value) => onProcessStatusChange(value as ProcessStatusFilter)}
+              />
+              <InteractionTriggerFilter
+                value={triggerFilter}
+                counts={triggerCounts}
+                onChange={onTriggerChange}
+              />
+            </>
+          ) : null}
         </Space>
       ) : null}
       {!manageAll ? (

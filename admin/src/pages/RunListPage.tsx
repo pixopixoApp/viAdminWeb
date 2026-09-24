@@ -39,6 +39,8 @@ export default function RunListPage() {
   const [processStatusFilter, setProcessStatusFilter] = useState<ProcessStatusFilter>('all')
   const [ownStatusFilter, setOwnStatusFilter] = useState<OwnStatusFilter>('all')
   const [keyword, setKeyword] = useState('')
+  const [triggerFilter, setTriggerFilter] = useState('')
+  const [seoFailureOnly, setSeoFailureOnly] = useState(false)
   const sourceParam = searchParams.get('source')
   const sourceFilter: SourceFilter = sourceOptions.some((option) => option.value === sourceParam) &&
     (sourceParam !== 'manual_upload' || manageAll)
@@ -54,7 +56,17 @@ export default function RunListPage() {
   const [seoStatus, setSeoStatus] = useState<{ pending: number; running: number; ready: number; failed: number } | null>(null)
   const [seoBackfilling, setSeoBackfilling] = useState(false)
 
-  // 前端叠加过滤：关键字 + 处理（生成）状态。审核状态与来源由后端粗筛。
+  const triggerCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    rows.forEach((row) => {
+      new Set(row.interaction_triggers || []).forEach((trigger) => {
+        counts[trigger] = (counts[trigger] || 0) + 1
+      })
+    })
+    return counts
+  }, [rows])
+
+  // 前端叠加过滤：关键字、处理状态、互动触发器与 SEO 异常。
   const visibleRows = useMemo(() => {
     let list = rows
     const kw = keyword.trim().toLowerCase()
@@ -67,8 +79,14 @@ export default function RunListPage() {
     if (processStatusFilter !== 'all') {
       list = list.filter((row) => normalizeProcessStatus(row) === processStatusFilter)
     }
+    if (triggerFilter) {
+      list = list.filter((row) => row.interaction_triggers?.includes(triggerFilter))
+    }
+    if (seoFailureOnly) {
+      list = list.filter((row) => row.seo?.status === 'failed')
+    }
     return list
-  }, [rows, keyword, processStatusFilter])
+  }, [rows, keyword, processStatusFilter, seoFailureOnly, triggerFilter])
 
   // admin/manager 全量加载后在前端分页；operator 等角色由后端分页，总数用后端 total
   const tableTotal = manageAll ? visibleRows.length : total
@@ -143,7 +161,12 @@ export default function RunListPage() {
         body: JSON.stringify({ force: false, limit: 2000 }),
       })
       messageApi.success(`已加入 ${result.queued_count} 条 SEO 生成任务`)
-      setSeoStatus((current) => current ? { ...current, pending: current.pending + result.queued_count } : current)
+      setSeoFailureOnly(false)
+      setSeoStatus((current) => current ? {
+        ...current,
+        pending: current.pending + result.queued_count,
+        failed: 0,
+      } : current)
     } catch (error) {
       messageApi.error(error instanceof Error ? error.message : 'SEO 补全任务创建失败')
     } finally {
@@ -154,6 +177,10 @@ export default function RunListPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (seoStatus && seoStatus.failed === 0) setSeoFailureOnly(false)
+  }, [seoStatus])
 
   const openUpload = useCallback(async () => {
     setOpen(true)
@@ -304,6 +331,8 @@ export default function RunListPage() {
         processStatusFilter={processStatusFilter}
         ownStatusFilter={ownStatusFilter}
         keyword={keyword}
+        triggerFilter={triggerFilter}
+        triggerCounts={triggerCounts}
         engineReady={engineReady}
         isManualUpload={sourceFilter === 'manual_upload'}
         onSourceChange={selectSource}
@@ -311,25 +340,27 @@ export default function RunListPage() {
         onProcessStatusChange={(value) => { setProcessStatusFilter(value); setPage(1) }}
         onOwnStatusChange={(value) => { setOwnStatusFilter(value); setPage(1) }}
         onKeywordChange={(value) => { setKeyword(value); setPage(1) }}
+        onTriggerChange={(value) => { setTriggerFilter(value); setPage(1) }}
         onCreateStory={handleCreateStory}
         onUpload={() => void openUpload()}
       />
-      {manageAll && seoStatus ? (
+      {manageAll && sourceFilter !== 'manual_upload' && seoStatus?.failed ? (
         <Alert
-          style={{ marginBottom: 16 }}
-          type={seoStatus.failed ? 'warning' : 'info'}
+          className="seo-failure-alert"
+          type="warning"
           showIcon
           message={(
             <Space wrap>
-              <span>Google SEO 状态</span>
-              <Tag color="green">可收录 {seoStatus.ready}</Tag>
-              <Tag color="blue">排队 {seoStatus.pending}</Tag>
-              <Tag color="processing">生成中 {seoStatus.running}</Tag>
-              <Tag color={seoStatus.failed ? 'red' : 'default'}>失败 {seoStatus.failed}</Tag>
-              <Button size="small" loading={seoBackfilling} onClick={() => void handleSeoBackfill()}>补全待生成作品</Button>
+              <span>SEO 生成异常</span>
+              <Tag color="red">{seoStatus.failed} 个视频</Tag>
+              <Button size="small" onClick={() => setSeoFailureOnly((current) => !current)}>
+                {seoFailureOnly ? '查看全部视频' : '查看失败视频'}
+              </Button>
+              <Button size="small" loading={seoBackfilling} onClick={() => void handleSeoBackfill()}>
+                重新排队
+              </Button>
             </Space>
           )}
-          description="只有审核通过、分发开启、CDN 就绪且 SEO 元数据完整的作品才会进入 sitemap。"
         />
       ) : null}
       {manageAll && sourceFilter === 'manual_upload' ? (
