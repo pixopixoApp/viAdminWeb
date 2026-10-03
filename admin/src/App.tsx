@@ -13,8 +13,7 @@ import SettingsPage from './pages/SettingsPage'
 import AccountsPage from './pages/AccountsPage'
 import StaffPage from './pages/StaffPage'
 import StoryEditPage, { StoryRedirect } from './pages/StoryEditPage'
-import CreatorInvitesPage from './pages/CreatorInvitesPage'
-import CreatorApplicationsPage from './pages/CreatorApplicationsPage'
+import ArchivedCreatorAccessPage from './pages/ArchivedCreatorAccessPage'
 import ModerationPage from './pages/ModerationPage'
 import AppVersionPolicyPage from './pages/AppVersionPolicyPage'
 import InteractionIntentCatalogPage from './pages/InteractionIntentCatalogPage'
@@ -98,8 +97,10 @@ function AppRoutes() {
         <Route path="stories/:id/:version" element={<StoryEditPage />} />
         <Route path="accounts" element={<AccountsPage />} />
         <Route path="overview" element={<OverviewPage />} />
-        <Route path="creator-applications" element={<OperationsGate page={<CreatorApplicationsPage />} />} />
-        <Route path="creator-invites" element={<OperationsGate page={<CreatorInvitesPage />} />} />
+        <Route path="referral-rewards" element={<Navigate to="/settings" replace />} />
+        <Route path="creator-applications" element={<Navigate to="/archived/creator-applications" replace />} />
+        <Route path="creator-invites" element={<Navigate to="/archived/creator-invites" replace />} />
+        <Route path="archived/:section" element={<OperationsGate page={<ArchivedCreatorAccessPage />} />} />
         <Route path="moderation" element={<OperationsGate page={<ModerationPage />} />} />
         <Route path="html-imports" element={<OperationsGate page={<Navigate to="/?source=manual_upload" replace />} />} />
         <Route path="seedance" element={<OperationsGate page={<SeedanceVideoPage />} />} />
@@ -107,7 +108,7 @@ function AppRoutes() {
         <Route path="trash" element={<TrashPage />} />
         <Route path="interaction-intents" element={<AdminGate page={<InteractionIntentCatalogPage />} />} />
         <Route path="app-versions" element={<AdminGate page={<AppVersionPolicyPage />} />} />
-        <Route path="settings" element={<AdminGate page={<SettingsPage />} />} />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

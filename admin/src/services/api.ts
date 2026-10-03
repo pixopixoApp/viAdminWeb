@@ -153,7 +153,16 @@ export function getEngineSettings() {
   return api<EngineSettings>('/api/v1/settings/engine')
 }
 
-export function saveEngineSettings(body: { model_base_url: string; model_name_default: string; model_api_key?: string }) {
+export function saveEngineSettings(body: {
+  model_base_url: string
+  model_name_default: string
+  model_api_key?: string
+  model_profiles?: Record<string, {
+    enabled?: boolean
+    base_url?: string
+    api_key?: string
+  }>
+}) {
   return api<EngineSettings>('/api/v1/settings/engine', {
     method: 'PUT',
     body: JSON.stringify(body),
@@ -162,6 +171,28 @@ export function saveEngineSettings(body: { model_base_url: string; model_name_de
 
 export function getEngineReady() {
   return api<{ ready: boolean }>('/api/v1/settings/engine/ready')
+}
+
+export type ReferralRewardPolicy = {
+  version: number
+  inviter_activation_reward_credits: number
+  invitee_registration_reward_credits: number
+  updated_by: string
+  updated_at: string
+}
+
+export function getReferralRewardPolicy() {
+  return api<ReferralRewardPolicy>('/api/v1/settings/referral-rewards')
+}
+
+export function saveReferralRewardPolicy(body: {
+  inviter_activation_reward_credits: number
+  invitee_registration_reward_credits: number
+}) {
+  return api<ReferralRewardPolicy>('/api/v1/settings/referral-rewards', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
 }
 
 export function getModels() {

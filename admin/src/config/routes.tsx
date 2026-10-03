@@ -1,7 +1,7 @@
 import {
   DashboardOutlined,
   IdcardOutlined,
-  KeyOutlined,
+  InboxOutlined,
   BulbOutlined,
   CloudDownloadOutlined,
   SettingOutlined,
@@ -9,7 +9,6 @@ import {
   SafetyCertificateOutlined,
   VideoCameraOutlined,
   ThunderboltOutlined,
-  UserAddOutlined,
 } from '@ant-design/icons'
 import type { ReactElement } from 'react'
 
@@ -46,17 +45,10 @@ export const menuConfig: MenuItemConfig[] = [
     permission: 'authenticated',
   },
   {
-    key: '/creator-applications',
-    path: '/creator-applications',
-    label: '创作权限申请',
-    icon: <UserAddOutlined />,
-    permission: 'operator',
-  },
-  {
-    key: '/creator-invites',
-    path: '/creator-invites',
-    label: '创作兑换码',
-    icon: <KeyOutlined />,
+    key: '/archived',
+    path: '/archived/creator-applications',
+    label: '已归档功能',
+    icon: <InboxOutlined />,
     permission: 'operator',
   },
   {
@@ -97,9 +89,9 @@ export const menuConfig: MenuItemConfig[] = [
   {
     key: '/settings',
     path: '/settings',
-    label: '引擎配置',
+    label: '全局配置',
     icon: <SettingOutlined />,
-    permission: 'admin',
+    permission: 'authenticated',
   },
 ]
 

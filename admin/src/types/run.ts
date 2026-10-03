@@ -197,6 +197,11 @@ export type EngineSettings = {
   dify_base_url: string
   model_base_url: string
   model_name_default: string
+  model_profiles: Record<string, {
+    enabled: boolean
+    base_url: string
+    api_key: SecretField
+  }>
   dify_api_key: SecretField
   model_api_key: SecretField
 }

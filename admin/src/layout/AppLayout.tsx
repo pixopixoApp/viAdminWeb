@@ -26,6 +26,7 @@ export function selectedMenuKey(pathname: string): string {
   ) {
     return '/'
   }
+  if (pathname.startsWith('/archived/')) return '/archived'
   return pathname
 }
 
