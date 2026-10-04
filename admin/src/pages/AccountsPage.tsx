@@ -27,6 +27,8 @@ export default function AccountsPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [q, setQ] = useState('')
+  const [page, setPage] = useState(1)
+  const pageSize = 50
   const [createOpen, setCreateOpen] = useState(false)
   const [reassignTarget, setReassignTarget] = useState<Account | null>(null)
   const [operators, setOperators] = useState<Staff[]>([])
@@ -37,22 +39,30 @@ export default function AccountsPage() {
     try {
       const data = await accountsApi.list({
         scope: canAll ? scope : 'mine',
-        limit: 50,
-        offset: 0,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
         ...(q.trim() ? { q: q.trim() } : {}),
       })
       setRows(data.items)
       setTotal(data.total)
+      // 当前页超出范围（如操作后数据减少），回到最后一页
+      const maxPage = Math.max(1, Math.ceil(data.total / pageSize))
+      if (page > maxPage) setPage(maxPage)
     } catch (err) {
       messageApi.error(err instanceof Error ? err.message : '加载失败')
     } finally {
       setLoading(false)
     }
-  }, [canAll, scope, q, messageApi])
+  }, [canAll, scope, q, page, pageSize, messageApi])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  // 切换筛选或搜索时回到第一页，避免停留在超出范围的页码
+  useEffect(() => {
+    setPage(1)
+  }, [scope, q])
 
   async function loadOperators() {
     if (!canAll) return
@@ -209,7 +219,20 @@ export default function AccountsPage() {
         </Space>
       </Space>
       <Typography.Paragraph type="secondary">共 {total} 个</Typography.Paragraph>
-      <Table rowKey="user_id" loading={loading} columns={columns} dataSource={rows} pagination={false} />
+      <Table
+        rowKey="user_id"
+        loading={loading}
+        columns={columns}
+        dataSource={rows}
+        pagination={{
+          current: page,
+          pageSize,
+          total,
+          showSizeChanger: false,
+          showTotal: (t) => `共 ${t} 个`,
+          onChange: (p) => setPage(p),
+        }}
+      />
 
       <Modal title="创建账号" open={createOpen} onCancel={() => setCreateOpen(false)} footer={null} destroyOnClose>
         <Form
