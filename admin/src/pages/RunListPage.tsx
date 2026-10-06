@@ -12,6 +12,7 @@ import {
   UploadRunModal,
   ReviewRunModal,
   EditWeightModal,
+  SeedInjectModal,
   sourceOptions,
   normalizeProcessStatus,
   isRetryable,
@@ -52,6 +53,8 @@ export default function RunListPage() {
   const [reviewModalOpen, setReviewModalOpen] = useState(false)
   const [weightRun, setWeightRun] = useState<Run | null>(null)
   const [weightModalOpen, setWeightModalOpen] = useState(false)
+  const [seedRun, setSeedRun] = useState<Run | null>(null)
+  const [seedModalOpen, setSeedModalOpen] = useState(false)
   const [messageApi, contextHolder] = message.useMessage()
   const [seoStatus, setSeoStatus] = useState<{ pending: number; running: number; ready: number; failed: number } | null>(null)
   const [seoBackfilling, setSeoBackfilling] = useState(false)
@@ -368,6 +371,7 @@ export default function RunListPage() {
       ) : (
         <RunTable
           manageAll={manageAll}
+          canSeedInject={me?.role === 'admin'}
           rows={visibleRows}
           loading={loading}
           total={tableTotal}
@@ -379,6 +383,7 @@ export default function RunListPage() {
           onTrash={handleTrash}
           onEditWeight={handleEditWeight}
           onReanalyze={handleReanalyze}
+          onSeedInject={(run) => { setSeedRun(run); setSeedModalOpen(true) }}
         />
       )}
       <UploadRunModal
@@ -405,6 +410,11 @@ export default function RunListPage() {
         run={weightRun}
         onClose={() => { setWeightModalOpen(false); setWeightRun(null) }}
         onSave={handleSaveWeight}
+      />
+      <SeedInjectModal
+        open={seedModalOpen}
+        run={seedRun}
+        onClose={() => { setSeedModalOpen(false); setSeedRun(null) }}
       />
     </>
   )

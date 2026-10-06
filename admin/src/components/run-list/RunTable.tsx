@@ -37,6 +37,7 @@ export function isRetryable(row: Run): boolean {
 
 interface RunTableProps {
   manageAll: boolean
+  canSeedInject?: boolean
   rows: Run[]
   loading: boolean
   total: number
@@ -48,10 +49,12 @@ interface RunTableProps {
   onTrash: (run: Run) => void
   onEditWeight: (run: Run) => void
   onReanalyze?: (run: Run) => void
+  onSeedInject?: (run: Run) => void
 }
 
 export default function RunTable({
   manageAll,
+  canSeedInject,
   rows,
   loading,
   total,
@@ -63,6 +66,7 @@ export default function RunTable({
   onTrash,
   onEditWeight,
   onReanalyze,
+  onSeedInject,
 }: RunTableProps) {
   const sourceColumn: ColumnsType<Run>[number] = {
     title: '来源',
@@ -223,6 +227,9 @@ export default function RunTable({
           {row.preview_url ? <Button size="small" href={row.preview_url} target="_blank">预览</Button> : null}
           {onReanalyze && isRetryable(row) ? (
             <Button size="small" onClick={() => onReanalyze(row)}>重新分析</Button>
+          ) : null}
+          {canSeedInject && onSeedInject ? (
+            <Button size="small" onClick={() => onSeedInject(row)}>注</Button>
           ) : null}
           <Button size="small" danger onClick={() => onDelete(row)}>下架</Button>
           <Button size="small" danger onClick={() => onTrash(row)}>删除</Button>

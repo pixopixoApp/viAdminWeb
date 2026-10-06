@@ -15,6 +15,16 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../auth'
 import { engineApi } from '../services/api'
 import ReferralRewardsPage from './ReferralRewardsPage'
+import SocialSeedPreviewCard from '../components/SocialSeedPreviewCard'
+
+function BusinessSettings() {
+  return (
+    <>
+      <ReferralRewardsPage embedded />
+      <SocialSeedPreviewCard />
+    </>
+  )
+}
 
 const US_MODEL = 'qwen3.7-plus-us'
 
@@ -184,7 +194,7 @@ function RegionalEngineSettings() {
 export default function SettingsPage() {
   const { me } = useAuth()
   const items = [
-    { key: 'business', label: '业务配置', children: <ReferralRewardsPage embedded /> },
+    { key: 'business', label: '业务配置', children: <BusinessSettings /> },
     ...(me?.role === 'admin' ? [{
       key: 'regions',
       label: '区域引擎',

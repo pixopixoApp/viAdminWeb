@@ -195,6 +195,24 @@ export function saveReferralRewardPolicy(body: {
   })
 }
 
+export type SocialSeedPreviewSetting = {
+  enabled: boolean
+  version: number
+  updated_by: string
+  updated_at: string
+}
+
+export function getSocialSeedPreview() {
+  return api<SocialSeedPreviewSetting>('/api/v1/settings/social-seed-preview')
+}
+
+export function saveSocialSeedPreview(enabled: boolean) {
+  return api<SocialSeedPreviewSetting>('/api/v1/settings/social-seed-preview', {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  })
+}
+
 export function getModels() {
   // 支持本地 / 弗吉尼亚双模型；弗吉尼亚网关的 /models 接口有 IP 限制，
   // 因此在前端直接提供静态模型列表，避免依赖 /api/v1/models。
@@ -458,6 +476,40 @@ export function switchRunVersion(id: string, version: string) {
 
 export function getPlaybackMetrics(id: string) {
   return api<PlaybackMetrics>(`/api/v1/runs/${id}/metrics`)
+}
+
+// ── Seed injection (admin) ────────────────────────
+
+export type SeedInjectJob = {
+  id: string
+  video_id: string
+  batch_id: string
+  likes_target: number
+  comments_target: number
+  likes_done: number
+  comments_done: number
+  likes_failed: number
+  comments_failed: number
+  status: 'pending' | 'running' | 'done' | 'failed'
+  error_message: string
+  created_by: string
+  created_at: string | null
+  updated_at: string | null
+  completed_at: string | null
+}
+
+/** 后台手动给某视频注入种子点赞/评论（异步入队，返回 job）。 */
+export function seedInject(videoId: string, body: { likes: number; comments: number }) {
+  return api<SeedInjectJob>(`/api/v1/content-management/${encodeURIComponent(videoId)}/seed-inject`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function getSeedInjectJob(videoId: string, jobId: string) {
+  return api<SeedInjectJob>(
+    `/api/v1/content-management/${encodeURIComponent(videoId)}/seed-inject/${encodeURIComponent(jobId)}`,
+  )
 }
 
 // ── Annotate ──────────────────────────────────────
