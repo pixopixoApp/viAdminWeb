@@ -6,6 +6,7 @@ import {
   CloudDownloadOutlined,
   SettingOutlined,
   TeamOutlined,
+  TagsOutlined,
   SafetyCertificateOutlined,
   VideoCameraOutlined,
   ThunderboltOutlined,
@@ -42,6 +43,13 @@ export const menuConfig: MenuItemConfig[] = [
     path: '/accounts',
     label: '账号管理',
     icon: <IdcardOutlined />,
+    permission: 'authenticated',
+  },
+  {
+    key: '/creator-topics',
+    path: '/creator-topics',
+    label: '创作者主题',
+    icon: <TagsOutlined />,
     permission: 'authenticated',
   },
   {

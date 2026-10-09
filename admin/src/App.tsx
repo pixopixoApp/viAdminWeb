@@ -20,6 +20,7 @@ import InteractionIntentCatalogPage from './pages/InteractionIntentCatalogPage'
 import PublishedContentDetailPage from './pages/PublishedContentDetailPage'
 import SeedanceVideoPage from './pages/SeedanceVideoPage'
 import TrashPage from './pages/TrashPage'
+import CreatorTopicsPage from './pages/CreatorTopicsPage'
 import ServiceBusyCard from './components/ServiceBusyCard'
 
 const LOCAL_EDITOR_DEMO_PATH =
@@ -96,6 +97,7 @@ function AppRoutes() {
         <Route path="stories/:id" element={<StoryRedirect />} />
         <Route path="stories/:id/:version" element={<StoryEditPage />} />
         <Route path="accounts" element={<AccountsPage />} />
+        <Route path="creator-topics" element={<CreatorTopicsPage />} />
         <Route path="overview" element={<OverviewPage />} />
         <Route path="referral-rewards" element={<Navigate to="/settings" replace />} />
         <Route path="creator-applications" element={<Navigate to="/archived/creator-applications" replace />} />

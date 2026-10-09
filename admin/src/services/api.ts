@@ -61,6 +61,27 @@ export type {
   SeedanceModel,
 }
 
+export type CreatorTopic = {
+  id: string
+  name: string
+  enabled: boolean
+  archived_at: string | null
+  creator_count: number
+  created_at: string | null
+  updated_at: string | null
+}
+
+export type CreatorTopicSummary = Pick<CreatorTopic, 'id' | 'name'>
+
+export type CreatorTopicCreator = {
+  user_id: string
+  nickname: string
+  handle: string
+  avatar_url: string
+  topics: CreatorTopicSummary[]
+  profile_updated_at: string | null
+}
+
 // ── Seedance（AI 生成视频）────────────────────────
 
 const SEEDANCE_BASE = '/api/v1/seedance'
@@ -121,6 +142,40 @@ export function seedanceFileUrl(path: string): string {
 export function seedanceVideoUrl(task: Pick<SeedanceTask, 'id' | 'video_file' | 'video_url'>): string {
   if (task.video_file) return seedanceFileUrl(`videos/${task.id}.mp4`)
   return task.video_url || ''
+}
+
+export const creatorTopicsApi = {
+  list(q = '', includeArchived = true) {
+    const params = new URLSearchParams({ q, include_archived: String(includeArchived) })
+    return api<{ items: CreatorTopic[] }>(`/api/v1/creator-topics?${params}`)
+  },
+  create(name: string) {
+    return api<CreatorTopic>('/api/v1/creator-topics', {
+      method: 'POST', body: JSON.stringify({ name }),
+    })
+  },
+  update(topicId: string, body: { name?: string; enabled?: boolean }) {
+    return api<CreatorTopic>(`/api/v1/creator-topics/${encodeURIComponent(topicId)}`, {
+      method: 'PATCH', body: JSON.stringify(body),
+    })
+  },
+  archive(topicId: string, body: { strategy?: 'replace' | 'remove'; replacement_topic_id?: string }) {
+    return api<CreatorTopic>(`/api/v1/creator-topics/${encodeURIComponent(topicId)}/archive`, {
+      method: 'POST', body: JSON.stringify(body),
+    })
+  },
+  creators(q = '', offset = 0) {
+    const params = new URLSearchParams({ q, limit: '50', offset: String(offset) })
+    return api<{ items: CreatorTopicCreator[]; total: number; limit: number; offset: number }>(
+      `/api/v1/creator-topic-assignments?${params}`,
+    )
+  },
+  saveCreator(userId: string, topicIds: string[]) {
+    return api<{ user_id: string; topics: CreatorTopicSummary[]; profile_updated_at: string | null }>(
+      `/api/v1/creator-topic-assignments/${encodeURIComponent(userId)}`,
+      { method: 'PUT', body: JSON.stringify({ topic_ids: topicIds }) },
+    )
+  },
 }
 
 // ── Auth ──────────────────────────────────────────
