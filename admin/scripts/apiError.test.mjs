@@ -29,3 +29,12 @@ test('5xx and network failures use the service busy message', () => {
   assert.equal(networkError.status, null)
   assert.equal(apiError.isServiceUnavailableError(new Error('boom')), false)
 })
+
+test('storage capacity failures explain why uploads cannot start', () => {
+  const error = apiError.createServerError(507)
+
+  assert.equal(error.message, '服务器上传空间不足，请联系管理员清理后重试')
+  assert.equal(error.status, 507)
+  assert.equal(apiError.isServiceUnavailableError(error), false)
+  assert.equal(apiError.isServiceUnavailableError(apiError.createServerError(502)), true)
+})

@@ -1,5 +1,6 @@
 import {
   ApiError,
+  createServerError,
   createServiceUnavailableError,
   shouldInvalidateSession,
 } from './apiError'
@@ -52,7 +53,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
   }
   if (response.status >= 500) {
-    throw createServiceUnavailableError(response.status)
+    throw createServerError(response.status)
   }
   if (!response.ok) {
     let detail = response.statusText
@@ -96,7 +97,9 @@ export function uploadBinary<T>(
         window.location.href = '/login'
       }
       if (request.status === 0 || request.status >= 500) {
-        reject(createServiceUnavailableError(request.status || null))
+        reject(request.status
+          ? createServerError(request.status)
+          : createServiceUnavailableError())
         return
       }
       let body: unknown
@@ -148,7 +151,9 @@ export function uploadLocalMedia<T>(
         window.location.href = '/login'
       }
       if (request.status === 0 || request.status >= 500) {
-        reject(createServiceUnavailableError(request.status || null))
+        reject(request.status
+          ? createServerError(request.status)
+          : createServiceUnavailableError())
         return
       }
       let body: unknown
