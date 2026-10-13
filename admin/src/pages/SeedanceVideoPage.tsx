@@ -531,12 +531,12 @@ export default function SeedanceVideoPage() {
                   ref={promptRef}
                   value={prompt}
                   rows={3}
-                  maxLength={2000}
+                  maxLength={8000}
                   placeholder="上传参考图片/视频、输入文字，自由组合参考素材，定义精彩互动。例如：@视频1 中的运镜与动作，@图片1 中的场景缓缓推进，人物走向镜头……"
                   onChange={(e) => handlePromptChange(e.target.value)}
                   onBlur={() => window.setTimeout(() => setMentionOpen(false), 150)}
                 />
-                <span className="seedance-prompt-count">{prompt.length} / 2000</span>
+                <span className="seedance-prompt-count">{prompt.length} / 8000</span>
                 <span className="seedance-mention-hint" hidden={totalRefs === 0}>
                   输入 @ 可引用参考图/视频
                 </span>
