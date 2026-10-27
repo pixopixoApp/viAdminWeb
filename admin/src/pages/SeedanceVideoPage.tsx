@@ -327,6 +327,10 @@ export default function SeedanceVideoPage() {
       setError('模型尚未加载，请稍候再试')
       return
     }
+    if (model.requires_image && images.length === 0) {
+      setError(`${model.label} 仅支持图生视频，请先上传首帧参考图片`)
+      return
+    }
     if (model.video.max === 0 && videos.length > 0) {
       setError(`当前模型 ${model.label} 不支持参考视频`)
       return
@@ -521,7 +525,9 @@ export default function SeedanceVideoPage() {
                 ) : (
                   <>
                     <span className="seedance-ref-icon">▣</span>
-                    <span className="seedance-label">参考内容</span>
+                    <span className="seedance-label">
+                      {model?.requires_image ? '上传首帧图片（必填）' : '参考内容'}
+                    </span>
                   </>
                 )}
               </button>

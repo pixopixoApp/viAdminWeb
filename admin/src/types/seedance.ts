@@ -50,6 +50,8 @@ export type SeedanceModel = {
   resolutions: string[]
   ratios: string[]
   video: SeedanceModelVideoLimit
+  /** 该模型必须上传参考图片（如 Vidu Q4 仅支持图生视频） */
+  requires_image?: boolean
 }
 
 export type SeedanceSettings = {
