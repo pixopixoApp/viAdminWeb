@@ -14,7 +14,7 @@ export default function ModerationPage() {
   const [page, setPage] = useState(1)
   const [actingId, setActingId] = useState<string | null>(null)
   const [status, setStatus] = useState<ReportStatus | undefined>('pending')
-  const [targetType, setTargetType] = useState<'video' | 'user' | undefined>()
+  const [targetType, setTargetType] = useState<Report['target_type'] | undefined>()
   const [messageApi, contextHolder] = message.useMessage()
 
   const load = useCallback(async () => {
@@ -39,11 +39,13 @@ export default function ModerationPage() {
 
   function decide(
     row: Report,
-    decision: { status: 'actioned' | 'dismissed'; action: 'none' | 'remove_content' | 'disable_user' },
+    decision: { status: 'actioned' | 'dismissed'; action: 'none' | 'remove_content' | 'remove_comment' | 'disable_user' },
   ) {
     const destructive = decision.action !== 'none'
     const actionLabel = decision.action === 'remove_content'
       ? '下架内容'
+      : decision.action === 'remove_comment'
+        ? '删除评论'
       : decision.action === 'disable_user'
         ? '停用用户'
         : decision.status === 'dismissed' ? '驳回举报' : '标记已处理'
@@ -76,8 +78,14 @@ export default function ModerationPage() {
       width: 240,
       render: (_, row) => (
         <div>
-          <Space><Tag>{row.target_type === 'video' ? '视频' : '用户'}</Tag>{row.target_label}</Space>
+          <Space><Tag>{({video: '视频', user: '用户', comment: '评论', ai_source: 'AI片段', ai_version: 'AI版本'})[row.target_type]}</Tag>{row.target_label}</Space>
           <div><Typography.Text type="secondary" style={{ fontSize: 12 }}>{row.target_id}</Typography.Text></div>
+          {typeof row.target_context?.preview_url === 'string' && /^https?:\/\//.test(row.target_context.preview_url) ? (
+            <div><a href={row.target_context.preview_url} target="_blank" rel="noopener noreferrer">查看举报片段</a></div>
+          ) : null}
+          {row.target_context && Object.keys(row.target_context).length > 0 ? (
+            <details><summary>查看生成记录</summary><pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 240, overflow: 'auto' }}>{JSON.stringify(row.target_context, null, 2)}</pre></details>
+          ) : null}
         </div>
       ),
     },
@@ -130,6 +138,10 @@ export default function ModerationPage() {
               下架内容
             </Button>
           ) : null}
+          {row.target_type === 'comment' ? (
+            <Button size="small" danger loading={actingId === row.id} onClick={() => decide(row, { status: 'actioned', action: 'remove_comment' })}>删除评论</Button>
+          ) : null}
+          <Button size="small" loading={actingId === row.id} onClick={() => decide(row, { status: 'actioned', action: 'none' })}>标记已处理</Button>
           {row.target_user_id ? (
             <Button size="small" danger icon={<StopOutlined />} loading={actingId === row.id} onClick={() => decide(row, { status: 'actioned', action: 'disable_user' })}>
               停用用户
@@ -174,7 +186,7 @@ export default function ModerationPage() {
               placeholder="全部对象"
               value={targetType}
               onChange={(value) => { setPage(1); setTargetType(value) }}
-              options={[{ value: 'video', label: '视频' }, { value: 'user', label: '用户' }]}
+              options={[{ value: 'video', label: '视频' }, { value: 'user', label: '用户' }, { value: 'comment', label: '评论' }, { value: 'ai_source', label: 'AI片段' }, { value: 'ai_version', label: 'AI版本' }]}
             />
           </Space>
           <Table

@@ -4,10 +4,11 @@ export type Report = {
   id: string
   reporter_user_id: string
   reporter_label: string
-  target_type: 'video' | 'user'
+  target_type: 'video' | 'user' | 'comment' | 'ai_source' | 'ai_version'
   target_id: string
   target_user_id?: string | null
   target_label: string
+  target_context?: Record<string, unknown>
   reason: string
   details: string
   status: ReportStatus

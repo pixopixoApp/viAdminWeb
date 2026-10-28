@@ -729,7 +729,7 @@ export function listReports(params: ListReportsParams = {}) {
   return api<{ items: Report[]; total: number }>(`/api/v1/moderation/reports?${query.toString()}`)
 }
 
-export function decideReport(id: string, body: { status: 'actioned' | 'dismissed'; action: 'none' | 'remove_content' | 'disable_user'; resolution: string }) {
+export function decideReport(id: string, body: { status: 'actioned' | 'dismissed'; action: 'none' | 'remove_content' | 'remove_comment' | 'disable_user'; resolution: string }) {
   return api(`/api/v1/moderation/reports/${id}/decision`, { method: 'POST', body: JSON.stringify(body) })
 }
 
