@@ -21,6 +21,10 @@ import type { SeedanceImageInput, SeedanceModel, SeedanceTask } from '../types'
 import UploadRunModal from '../components/run-list/UploadRunModal'
 
 const MAX_VIDEO_BYTES = 200 * 1024 * 1024
+const MAX_AUDIOS = 5
+const MAX_AUDIO_BYTES = 20 * 1024 * 1024
+// 方舟要求参考音频时长 >= 1.8 秒
+const MIN_AUDIO_SECONDS = 1.8
 const STATUS_TEXT: Record<SeedanceTask['status'], string> = {
   queued: '排队中',
   running: '生成中',
@@ -45,6 +49,17 @@ type LocalVideo = {
   previewUrl: string
 }
 
+type LocalAudio = {
+  name: string
+  blob: File
+  file: string | null
+  previewUrl: string
+  /** 音频时长（秒）；null 表示尚未读取或读取失败 */
+  duration: number | null
+  /** 说明文字，用于在提示词里说明这段音频参考的对象（音色/节奏等） */
+  note: string
+}
+
 export default function SeedanceVideoPage() {
   const navigate = useNavigate()
   const [messageApi, contextHolder] = message.useMessage()
@@ -54,12 +69,14 @@ export default function SeedanceVideoPage() {
   const [duration, setDuration] = useState(10)
   const [resolution, setResolution] = useState('720p')
   const [ratio, setRatio] = useState('16:9')
-  const [generateAudio, setGenerateAudio] = useState(false)
+  // 默认开启配音/音效：绝大多数场景需要带声音的视频，关掉才会得到静音视频
+  const [generateAudio, setGenerateAudio] = useState(true)
   const [watermark, setWatermark] = useState(false)
 
   const [prompt, setPrompt] = useState('')
   const [images, setImages] = useState<LocalImage[]>([])
   const [videos, setVideos] = useState<LocalVideo[]>([])
+  const [audios, setAudios] = useState<LocalAudio[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -157,7 +174,72 @@ export default function SeedanceVideoPage() {
       addVideo(file)
       return
     }
-    setError(`不支持的文件格式：${file.type || file.name}，请上传 PNG/JPG/WebP 图片或 MP4/MOV 视频`)
+    if (
+      /^audio\/(mpeg|mp3|wav|x-wav|wave|mp4|x-m4a|aac|ogg)$/i.test(file.type) ||
+      /\.(mp3|wav|m4a|aac|ogg)$/i.test(file.name || '')
+    ) {
+      if (model.provider === 'vidu') {
+        setError('Vidu 模型暂不支持参考音频，请改用 Seedance 模型')
+        return
+      }
+      addAudio(file)
+      return
+    }
+    setError(
+      `不支持的文件格式：${file.type || file.name}，请上传 PNG/JPG/WebP 图片、MP4/MOV 视频，或 MP3/WAV/M4A/AAC 音频`,
+    )
+  }
+
+  function addAudio(file: File) {
+    if (audios.length >= MAX_AUDIOS) {
+      setError(`最多上传 ${MAX_AUDIOS} 段参考音频`)
+      return
+    }
+    if (file.size > MAX_AUDIO_BYTES) {
+      setError(`音频 ${file.name} 超过 20MB`)
+      return
+    }
+    const previewUrl = URL.createObjectURL(file)
+    const item: LocalAudio = {
+      name: file.name,
+      blob: file,
+      file: null,
+      previewUrl,
+      duration: null,
+      note: '',
+    }
+    setAudios((current) => [...current, item])
+    // 上传参考音频后自动开启配音/音效，避免生成无声视频（用户仍可手动关闭）
+    setGenerateAudio(true)
+    setError('')
+
+    // 读取音频时长，用于校验方舟要求的最短时长（>= 1.8s）
+    const probe = document.createElement('audio')
+    probe.preload = 'metadata'
+    probe.onloadedmetadata = () => {
+      const dur = Number.isFinite(probe.duration) ? Math.round(probe.duration * 100) / 100 : null
+      setAudios((current) =>
+        current.map((cur) => (cur === item ? { ...cur, duration: dur } : cur)),
+      )
+      if (dur !== null && dur < MIN_AUDIO_SECONDS) {
+        setError(`音频「${file.name}」时长约 ${dur} 秒，方舟要求不少于 ${MIN_AUDIO_SECONDS} 秒`)
+      }
+    }
+    probe.onerror = () => {
+      setAudios((current) =>
+        current.map((cur) => (cur === item ? { ...cur, duration: null } : cur)),
+      )
+      setError(`无法读取音频「${file.name}」的时长，请确认文件格式正确`)
+    }
+    probe.src = previewUrl
+  }
+
+  function removeAudio(index: number) {
+    setAudios((current) => {
+      const target = current[index]
+      if (target) URL.revokeObjectURL(target.previewUrl)
+      return current.filter((_, i) => i !== index)
+    })
   }
 
   function addImage(file: File) {
@@ -290,8 +372,14 @@ export default function SeedanceVideoPage() {
         desc: '参考视频',
         src: video.previewUrl,
       })),
+      ...audios.map((audio, i) => ({
+        kind: 'audio' as const,
+        label: `音频${i + 1}`,
+        desc: audio.note.trim() || '参考音频',
+        src: '',
+      })),
     ],
-    [images, videos],
+    [images, videos, audios],
   )
 
   function handlePromptChange(value: string) {
@@ -339,6 +427,25 @@ export default function SeedanceVideoPage() {
       setError(`当前模型最多支持 ${model.video.max} 段参考视频`)
       return
     }
+    if (audios.length > 0 && model.provider === 'vidu') {
+      setError('Vidu 模型暂不支持参考音频，请改用 Seedance 模型')
+      return
+    }
+    // 方舟限制：参考音频时长需 >= 1.8 秒（可单独使用）
+    const shortAudio = audios.find(
+      (a) => a.duration !== null && a.duration < MIN_AUDIO_SECONDS,
+    )
+    if (shortAudio) {
+      setError(
+        `参考音频「${shortAudio.name}」时长约 ${shortAudio.duration?.toFixed(1)} 秒，方舟要求不少于 ${MIN_AUDIO_SECONDS} 秒`,
+      )
+      return
+    }
+    const unknownDurationAudio = audios.find((a) => a.duration === null)
+    if (unknownDurationAudio) {
+      setError(`无法读取音频「${unknownDurationAudio.name}」时长，请确认文件有效或更换音频`)
+      return
+    }
     setSubmitting(true)
     try {
       const uploadedVideos = []
@@ -351,15 +458,32 @@ export default function SeedanceVideoPage() {
         v.file = data.file
         uploadedVideos.push({ file: data.file })
       }
+      const uploadedAudios = []
+      for (const a of audios) {
+        if (a.file) {
+          uploadedAudios.push({ file: a.file, note: a.note.trim() || undefined, duration: a.duration ?? undefined })
+          continue
+        }
+        const data = await uploadSeedanceVideo(a.blob)
+        a.file = data.file
+        uploadedAudios.push({ file: data.file, note: a.note.trim() || undefined })
+      }
       const imagesPayload: SeedanceImageInput[] = images.map(({ data_url, role }) => ({
         data_url,
         role,
       }))
+      // 把音频说明拼进提示词，让模型知道哪段音频参考哪个角色/元素
+      const audioNotes = audios
+        .map((a, i) => (a.note.trim() ? `@音频${i + 1}：${a.note.trim()}` : ''))
+        .filter(Boolean)
+        .join('；')
+      const finalPrompt = audioNotes ? `${text}\n\n参考音频说明：${audioNotes}` : text
       const data = await createSeedanceTask({
-        prompt: text,
+        prompt: finalPrompt,
         model: model.id,
         images: imagesPayload,
         videos: uploadedVideos,
+        audios: uploadedAudios,
         duration,
         resolution,
         ratio,
@@ -371,6 +495,7 @@ export default function SeedanceVideoPage() {
       setImages([])
       videos.forEach((v) => URL.revokeObjectURL(v.previewUrl))
       setVideos([])
+      setAudios([])
     } catch (err) {
       setError(err instanceof Error ? err.message : '生成失败')
     } finally {
@@ -414,7 +539,7 @@ export default function SeedanceVideoPage() {
     }
   }
 
-  const totalRefs = images.length + videos.length
+  const totalRefs = images.length + videos.length + audios.length
   const firstRef = images[0] || videos[0]
 
   return (
@@ -495,6 +620,41 @@ export default function SeedanceVideoPage() {
                 </button>
               </div>
             ))}
+            {audios.map((audio, i) => (
+              <div className="seedance-ref-item seedance-ref-audio" key={`audio-${i}`}>
+                <div className="seedance-ref-audio-head">
+                  <span className="seedance-audio-icon">♪</span>
+                  <span className="seedance-audio-name" title={audio.name}>
+                    {audio.name}
+                  </span>
+                  <span className="seedance-audio-dur">
+                    {audio.duration !== null ? `${audio.duration.toFixed(1)}s` : '…'}
+                  </span>
+                </div>
+                <audio className="seedance-ref-audio-player" src={audio.previewUrl} controls preload="metadata" />
+                <input
+                  className="seedance-audio-note"
+                  value={audio.note}
+                  maxLength={200}
+                  placeholder="说明：如「女孩说话音色」「背景音乐节奏」"
+                  onChange={(e) =>
+                    setAudios((current) =>
+                      current.map((item, idx) =>
+                        idx === i ? { ...item, note: e.target.value } : item,
+                      ),
+                    )
+                  }
+                />
+                <button
+                  type="button"
+                  className="seedance-ref-del"
+                  title="移除"
+                  onClick={() => removeAudio(i)}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
           </div>
 
           <div className="seedance-gen-panel">
@@ -502,7 +662,7 @@ export default function SeedanceVideoPage() {
               <button
                 type="button"
                 className={`seedance-reference-upload ${totalRefs > 0 ? 'has-img' : ''}`}
-                title="上传参考图片（PNG/JPG/WebP）或参考视频（MP4/MOV，时长受所选模型限制）"
+                title="上传参考图片（PNG/JPG/WebP）、参考视频（MP4/MOV）或参考音频（MP3/WAV/M4A/AAC/OGG）"
                 onClick={() => fileInputRef.current?.click()}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
@@ -655,8 +815,16 @@ export default function SeedanceVideoPage() {
                     </div>
                   </div>
                   <div className="seedance-param-group seedance-param-switches">
-                    <label className="seedance-switch-row">
-                      <span>配音 / 音效</span>
+                    <label
+                      className="seedance-switch-row"
+                      title="开启后输出带音频的视频；关闭则生成无声视频"
+                    >
+                      <span>
+                        配音 / 音效
+                        <em className="seedance-switch-hint">
+                          {generateAudio ? '带声音' : '静音'}
+                        </em>
+                      </span>
                       <Switch size="small" checked={generateAudio} onChange={setGenerateAudio} />
                     </label>
                     <label className="seedance-switch-row">
@@ -743,6 +911,9 @@ export default function SeedanceVideoPage() {
                         <span className="seedance-tag">{task.params.resolution.toUpperCase()}</span>
                       ) : null}
                       {task.params?.ratio ? <span className="seedance-tag">{task.params.ratio}</span> : null}
+                      {task.audios && task.audios.length > 0 ? (
+                        <span className="seedance-tag">♪ {task.audios.length}</span>
+                      ) : null}
                       <span>{task.created_at || ''}</span>
                     </div>
                     {task.error ? <p className="seedance-task-error">失败：{task.error}</p> : null}
@@ -795,7 +966,7 @@ export default function SeedanceVideoPage() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime"
+        accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime,audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,.mp3,.wav,.m4a,.aac,.ogg"
         multiple
         hidden
         onChange={handleFileChange}

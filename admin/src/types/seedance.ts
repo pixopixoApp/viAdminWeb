@@ -9,6 +9,15 @@ export type SeedanceVideoInput = {
   url?: string
 }
 
+export type SeedanceAudioInput = {
+  file?: string
+  url?: string
+  /** 音频时长（秒），方舟要求 >= 1.8 秒 */
+  duration?: number
+  /** 运营填写的说明，用于在提示词里把该音频绑定到具体角色/元素 */
+  note?: string
+}
+
 export type SeedanceTask = {
   id: string
   mode: 'text' | 'image' | 'video'
@@ -16,6 +25,7 @@ export type SeedanceTask = {
   project?: string
   images: Array<SeedanceImageInput & { file?: string }>
   videos: Array<SeedanceVideoInput>
+  audios?: Array<SeedanceAudioInput>
   params: {
     resolution?: string
     duration?: number
@@ -76,6 +86,7 @@ export type SeedanceGenerateParams = {
   model?: string
   images: SeedanceImageInput[]
   videos: SeedanceVideoInput[]
+  audios?: SeedanceAudioInput[]
   resolution?: string
   duration?: number
   ratio?: string
